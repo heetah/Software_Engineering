@@ -11,6 +11,7 @@
 ### ESLint
 
 程式碼品質檢查和錯誤檢測工具，支援多種語言：
+
 - JavaScript
 - HTML
 - CSS
@@ -20,6 +21,7 @@
 ### Prettier
 
 程式碼自動格式化工具，確保程式碼風格一致性，支援多種語言：
+
 - JavaScript
 - HTML
 - CSS
@@ -108,7 +110,8 @@ PROJECT/
    npm run format:check
    ```
 
-4. **檢查程式碼格式**：
+6. **檢查程式碼格式**：
+
    ```bash
    npm run lint:js     # JavaScript
    npm run lint:html   # HTML
@@ -116,7 +119,7 @@ PROJECT/
    npm run lint:json   # JSON
    ```
 
-4. **格式化程式碼**：
+7. **格式化程式碼**：
 
    ```bash
    npm run format        # 所有語言
@@ -126,7 +129,7 @@ PROJECT/
    npm run format:json   # JSON
    ```
 
-5. **檢查程式碼格式**：
+8. **檢查程式碼格式**：
 
    ```bash
    npm run format:check:check

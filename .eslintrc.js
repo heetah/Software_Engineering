@@ -1,11 +1,13 @@
 module.exports = {
-  env: { // 環境
+  env: {
+    // 環境
     browser: true,
     node: true,
     es2022: true,
   },
   extends: ['eslint:recommended'], // 繼承
-  parserOptions: { // 解析器選項
+  parserOptions: {
+    // 解析器選項
     ecmaVersion: 'latest',
     sourceType: 'module',
   },
@@ -32,7 +34,7 @@ module.exports = {
     },
     {
       files: ['*.json'], // 文件
-      plugins: ['json'], 
+      plugins: ['json'],
       rules: {
         indent: 'off', // 縮排
         quotes: 'off', // 引號
