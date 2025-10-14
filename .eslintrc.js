@@ -1,43 +1,43 @@
 module.exports = {
-  env: {
+  env: { // 環境
     browser: true,
     node: true,
     es2022: true,
   },
-  extends: ['eslint:recommended'],
-  parserOptions: {
+  extends: ['eslint:recommended'], // 繼承
+  parserOptions: { // 解析器選項
     ecmaVersion: 'latest',
     sourceType: 'module',
   },
-  plugins: ['html', 'json'],
+  plugins: ['html', 'json'], // 插件
   rules: {
-    indent: ['error', 2],
-    'linebreak-style': 'off', // 關閉行結束符檢查，因為我們支援跨平台
-    quotes: ['error', 'single'],
-    semi: ['error', 'always'],
-    'no-unused-vars': 'warn',
+    indent: ['error', 2], // 縮排
+    'linebreak-style': 'off', // 行結束符
+    quotes: ['error', 'single'], // 引號
+    semi: ['error', 'always'], // 分號
+    'no-unused-vars': 'warn', // 未使用變量
     'no-console': 'off',
   },
-  ignorePatterns: [],
+  ignorePatterns: [], // 忽略文件
   overrides: [
     {
-      files: ['*.html'],
+      files: ['*.html'], // 文件
       plugins: ['html'],
       rules: {
-        indent: 'off',
-        quotes: 'off',
-        semi: 'off',
-        'no-console': 'off',
+        indent: 'off', // 縮排
+        quotes: 'off', // 引號
+        semi: 'off', // 分號
+        'no-console': 'off', // 控制台是否使用
       },
     },
     {
-      files: ['*.json'],
-      plugins: ['json'],
+      files: ['*.json'], // 文件
+      plugins: ['json'], 
       rules: {
-        indent: 'off',
-        quotes: 'off',
-        semi: 'off',
-        'no-console': 'off',
+        indent: 'off', // 縮排
+        quotes: 'off', // 引號
+        semi: 'off', // 分號
+        'no-console': 'off', // 控制台是否使用
       },
     },
   ],
