@@ -10,11 +10,21 @@
 
 ### ESLint
 
-程式碼品質檢查和錯誤檢測工具。
+程式碼品質檢查和錯誤檢測工具，支援多種語言：
+- JavaScript
+- HTML
+- CSS
+- JSON
+- Node.js
 
 ### Prettier
 
-程式碼自動格式化工具，確保程式碼風格一致性。
+程式碼自動格式化工具，確保程式碼風格一致性，支援多種語言：
+- JavaScript
+- HTML
+- CSS
+- JSON
+- Node.js
 
 ### Git
 
@@ -61,7 +71,7 @@ PROJECT/
 
 ### 程式碼品質
 
-1. **檢查程式碼品質**：
+1. **檢查所有語言的程式碼品質**：
 
    ```bash
    npm run lint
@@ -73,15 +83,53 @@ PROJECT/
    npm run lint:fix
    ```
 
-3. **格式化程式碼**：
+3. **檢查特定語言**：
 
    ```bash
-   npm run format
+   npm run lint:js     # JavaScript
+   npm run lint:html   # HTML
+   npm run lint:css    # CSS
+   npm run lint:json   # JSON
+   ```
+
+4. **格式化程式碼**：
+
+   ```bash
+   npm run format        # 所有語言
+   npm run format:js     # JavaScript
+   npm run format:html   # HTML
+   npm run format:css    # CSS
+   npm run format:json   # JSON
+   ```
+
+5. **檢查程式碼格式**：
+
+   ```bash
+   npm run format:check
    ```
 
 4. **檢查程式碼格式**：
    ```bash
-   npm run format:check
+   npm run lint:js     # JavaScript
+   npm run lint:html   # HTML
+   npm run lint:css    # CSS
+   npm run lint:json   # JSON
+   ```
+
+4. **格式化程式碼**：
+
+   ```bash
+   npm run format        # 所有語言
+   npm run format:js     # JavaScript
+   npm run format:html   # HTML
+   npm run format:css    # CSS
+   npm run format:json   # JSON
+   ```
+
+5. **檢查程式碼格式**：
+
+   ```bash
+   npm run format:check:check
    ```
 
 ### 版本控制
