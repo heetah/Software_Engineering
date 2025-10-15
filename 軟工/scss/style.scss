@@ -1,0 +1,29 @@
+// 基本重置
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif;
+  color: #222;
+  background: #f3f4f6; // Soft UI 背景
+}
+
+// 容器
+#app {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+// 標頭
+.app-header {
+  padding: 16px 20px;
+  background: #ffffff;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.04);
+}
+
+// 內容區塊
+#content {
+  padding: 24px;
+}
