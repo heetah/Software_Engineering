@@ -1,4 +1,7 @@
 import BaseAgent from "./agent-base.js";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 /**
  * Requirement Agent - 負責分析用戶需求並生成結構化的需求規格
@@ -6,7 +9,11 @@ import BaseAgent from "./agent-base.js";
  */
 export default class RequirementAgent extends BaseAgent {
   constructor() {
-    super("Requirement Agent", "JSON", "requirement");
+    // 使用 OpenAI API（從環境變數讀取）
+    super("Requirement Agent", "JSON", "requirement", {
+      baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+      apiKey: process.env.OPENAI_API_KEY
+    });
     // 需求分析需要更高的創造性和理解能力
     this.temperature = 0.6;
     // 限制輸出長度，避免過於冗長的需求規格
@@ -69,6 +76,7 @@ ${userInput}
    * @returns {Promise<string>} 驗證後的需求規格（原始字串形式）
    */
   async run(input) {
+    // 執行基類的 run 方法
     const output = await super.run(input);
 
     // 嘗試從輸出中萃取 JSON 內容（支援 ```json 與 ``` 包裹）

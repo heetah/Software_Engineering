@@ -1,13 +1,19 @@
 import BaseAgent from "./agent-base.js";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 /**
  * 將 Coder 任務分割為多個階段，避免單次生成過多檔案導致超時/拒絕
  */
 export default class CoderAgent extends BaseAgent {
   constructor() {
-    super("Coder Agent", "Markdown code", "coder");
+    // 使用 OpenAI API（從環境變數讀取）
+    super("Coder Agent", "Markdown code", "coder", {
+      baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+      apiKey: process.env.OPENAI_API_KEY
+    });
     this.temperature = 0.2;
-    this.maxTokens = 8000; // 限制輸出長度
   }
 
   async generateProject(architectureOutput) {

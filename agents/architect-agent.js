@@ -1,8 +1,15 @@
 import BaseAgent from "./agent-base.js";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 export default class ArchitectAgent extends BaseAgent {
   constructor() {
-    super("Architect Agent", "JSON", "architect");
+    // 使用 OpenAI API（從環境變數讀取）
+    super("Architect Agent", "JSON", "architect", {
+      baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+      apiKey: process.env.OPENAI_API_KEY
+    });
   }
 
   prompt(requirementOutput) {

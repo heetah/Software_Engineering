@@ -1,7 +1,7 @@
 export const logicalModelMap = {
-    requirement: "Qwen2.5-Coder-7B-Instruct",
-    clarifier: "Qwen2.5-Coder-7B-Instruct",
-    architect: "Qwen2.5-Coder-7B-Instruct",
-    coder: "Qwen2.5-Coder-7B-Instruct",
-    tester: "Qwen2.5-Coder-7B-Instruct",
+    requirement: "gpt-4-turbo",  // OpenAI 模型（支援 128k tokens）
+    clarifier: "gpt-4-turbo",    // OpenAI 模型（支援 128k tokens）
+    architect: "gpt-4-turbo",    // OpenAI 模型（支援 128k tokens）
+    coder: "gpt-4-turbo",       // OpenAI 模型（支援 128k tokens）
+    tester: "gpt-4-turbo",      // OpenAI 模型（支援 128k tokens）
 };
