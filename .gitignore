@@ -137,3 +137,9 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Local lint/format setup
+.eslintrc.json
+.prettierrc.json
+package.json
+package-lock.json
