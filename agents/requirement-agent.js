@@ -16,8 +16,6 @@ export default class RequirementAgent extends BaseAgent {
     });
     // 需求分析需要更高的創造性和理解能力
     this.temperature = 0.6;
-    // 限制輸出長度，避免過於冗長的需求規格
-    this.maxTokens = 3000;
   }
 
   /**

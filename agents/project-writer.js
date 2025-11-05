@@ -56,6 +56,20 @@ export function writeProjectFromMarkdown(markdown, outDir = "./generated_project
   fileBlocks.forEach(({ filePath, content }) => {
     const absPath = path.join(outDir, filePath);
     fs.mkdirSync(path.dirname(absPath), { recursive: true });
+    
+    // 檢查內容是否可能被截斷（以常見的截斷模式檢查）
+    const trimmedContent = content.trim();
+    if (trimmedContent.length > 0) {
+      // 檢查是否以未閉合的括號/引號結尾（可能表示被截斷）
+      const lastChar = trimmedContent[trimmedContent.length - 1];
+      const secondLastChar = trimmedContent.length > 1 ? trimmedContent[trimmedContent.length - 2] : '';
+      
+      // 如果內容看起來不完整，記錄警告但不阻止寫入
+      if (['{', '[', '(', '"', "'", '`'].includes(lastChar) && !['}', ']', ')', '"', "'", '`'].includes(secondLastChar)) {
+        console.warn(`  警告: 檔案 ${filePath} 可能不完整（未閉合的 ${lastChar}）`);
+      }
+    }
+    
     fs.writeFileSync(absPath, content, "utf8");
   });
 
