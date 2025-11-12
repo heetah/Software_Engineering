@@ -1,0 +1,8 @@
+/* 測試結果的樣式 */
+.pass {
+  color: green;
+}
+
+.fail {
+  color: red;
+}
