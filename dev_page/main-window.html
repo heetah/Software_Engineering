@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>AI Copilot Assistant</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-layout">
+        
+        <nav class="sidebar">
+            <div class="sidebar__header"></div>
+            <div class="sidebar__menu">
+                
+                <button class="menu-button is-active" id="chat-button">
+                    <span>●</span> 
+                    <span>對話</span>
+                </button>
+
+                <button class="menu-button" id="history-button">
+                    <span>≡</span>
+                    <span>歷史紀錄</span>
+                    <span class="dropdown-arrow">▼</span>
+                </button>
+                
+                <div class="history-list" id="history-list">
+                    <a href="#" class="history-item">🥹</a>
+                    
+                </div>
+                
+                <button class="menu-button" id="settings-button">
+                    <span>⚙</span>
+                    <span>設定</span>
+                </button>
+            </div>
+        </nav>
+
+        <main class="content-area">
+
+            <div id="page-chat" class="page is-active">
+                <section class="chat-display" id="chat-display">
+                    </section>
+                <footer class="input-area">
+                    <input type="file" id="file-upload-input" style="display: none;">
+                    <textarea class="input-field" id="text-input" placeholder="輸入您的訊息..." rows="1"></textarea>
+                    <div class="input-actions">
+                        <div class="char-counter" id="char-counter">0/2000</div>
+                        <button class="action-button--icon" id="file-upload-button">+</button>
+                        <button class="action-button--icon">o</button>
+                        <button class="action-button--send" id="send-button">→</button>
+                    </div>
+                </footer>
+            </div>
+
+            <div id="page-settings" class="page">
+                <h1 class="page-title">設定</h1>
+                <p>這裡是設定頁面的內容。 (例如：API 金鑰、主題切換等)</p>
+            </div>
+
+        </main>
+    </div>
+    <script src="main-window.js"></script>
+</body>
+</html>
