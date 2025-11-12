@@ -1,0 +1,101 @@
+<!-- file: package.json -->
+```json
+{
+  "name": "test-app",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "^27.0.0"
+  }
+}
+```
+
+<!-- file: tests/testPlan.md -->
+```markdown
+# Test Plan
+
+## Goals
+- Complete the test plan
+- Execute test cases to validate system functionality
+- Generate test report to evaluate system performance
+
+## Constraints
+- Must be completed within 2 weeks
+- Use automated testing tools
+- Test environment must match production
+
+## Test Cases
+1. **Functional Requirement 1**
+   - Description: Validate the functionality of myFunction.
+   - Expected Result: Should return expectedValue.
+
+2. **Functional Requirement 2**
+   - Description: Validate the functionality of anotherFunction.
+   - Expected Result: Should return anotherExpectedValue.
+```
+
+<!-- file: tests/functional.test.js -->
+```javascript
+const { myFunction, anotherFunction } = require('../src/myModule');
+
+test('myFunction should do something', () => {
+  expect(myFunction()).toBe(expectedValue);
+});
+
+test('anotherFunction should do something else', () => {
+  expect(anotherFunction()).toBe(anotherExpectedValue);
+});
+```
+
+<!-- file: Dockerfile -->
+```
+# 完整的 Dockerfile，包含所有必要的階段
+FROM node:18
+
+# 設定工作目錄
+WORKDIR /app
+
+# 複製 package.json 和 package-lock.json
+COPY package.json package-lock.json ./
+
+# 安裝依賴
+RUN npm install
+
+# 複製其餘的應用程式檔案
+COPY . .
+
+# 暴露應用程式埠
+EXPOSE 3000
+
+# 啟動應用程式
+CMD ["npm", "start"]
+```
+
+<!-- file: docker-compose.yml -->
+```yaml
+# 完整的 docker-compose 配置
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=db
+      - DB_PORT=5432
+    depends_on:
+      - db
+
+  db:
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: testdb
+    ports:
+      - "5432:5432"
+```
