@@ -1,17 +1,19 @@
-{
+﻿{
   "configurations": [
     {
-      "name": "macos-clang-x64",
+      "name": "windows-msvc-x64",
       "includePath": [
         "${workspaceFolder}/**"
       ],
-      "compilerPath": "/usr/bin/clang",
-      "cStandard": "${default}",
-      "cppStandard": "${default}",
-      "intelliSenseMode": "macos-clang-x64",
-      "compilerArgs": [
-        ""
-      ]
+      "defines": [
+        "_DEBUG",
+        "UNICODE",
+        "_UNICODE"
+      ],
+      "compilerPath": "cl.exe",
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "windows-msvc-x64"
     }
   ],
   "version": 4
