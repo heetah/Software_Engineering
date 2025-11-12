@@ -137,3 +137,39 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Project-specific outputs
+outputs/
+vision-agent/outputs/
+coder-agent/outputs/
+generated/
+
+# Project-specific logs
+vision-agent-error.log
+
+# Temporary and debug files
+tmp_*.txt
+debug_*.txt
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~

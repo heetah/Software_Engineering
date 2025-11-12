@@ -1,0 +1,252 @@
+{
+  "comment": "Example 2: Task Manager with API - HAS contracts.api + contracts.storage",
+  "output": {
+    "coder_instructions": {
+      "task": "Build a task management application with REST API",
+      "requirements": "CRUD operations, localStorage persistence, responsive UI",
+      
+      "files": [
+        {
+          "path": "index.html",
+          "type": "html",
+          "description": "Task list UI with add/edit/delete buttons and filter options",
+          "dependencies": ["styles.css", "app.js"]
+        },
+        {
+          "path": "styles.css",
+          "type": "css",
+          "description": "Modern task manager styling with status colors",
+          "dependencies": []
+        },
+        {
+          "path": "app.js",
+          "type": "javascript",
+          "description": "Frontend logic for task CRUD operations and API calls",
+          "dependencies": []
+        },
+        {
+          "path": "api.py",
+          "type": "python",
+          "description": "Flask REST API with task endpoints and CORS support",
+          "dependencies": []
+        }
+      ],
+      
+      "contracts": {
+        "api": [
+          {
+            "endpoint": "GET /api/tasks",
+            "description": "Fetch all tasks",
+            "request": null,
+            "response": {
+              "type": "array",
+              "items": {
+                "id": "string (UUID)",
+                "title": "string (required)",
+                "completed": "boolean (default: false)",
+                "createdAt": "string (ISO 8601 timestamp)"
+              }
+            },
+            "producers": ["api.py"],
+            "consumers": ["app.js"]
+          },
+          {
+            "endpoint": "POST /api/tasks",
+            "description": "Create new task",
+            "request": {
+              "title": "string (required, max 200 chars)",
+              "completed": "boolean (optional, default: false)"
+            },
+            "response": {
+              "id": "string (UUID)",
+              "title": "string",
+              "completed": "boolean",
+              "createdAt": "string (ISO 8601)"
+            },
+            "producers": ["api.py"],
+            "consumers": ["app.js"]
+          },
+          {
+            "endpoint": "PATCH /api/tasks/:id",
+            "description": "Update task status or title",
+            "request": {
+              "title": "string (optional)",
+              "completed": "boolean (optional)"
+            },
+            "response": {
+              "id": "string",
+              "title": "string",
+              "completed": "boolean",
+              "createdAt": "string"
+            },
+            "producers": ["api.py"],
+            "consumers": ["app.js"]
+          },
+          {
+            "endpoint": "DELETE /api/tasks/:id",
+            "description": "Delete task by ID",
+            "request": null,
+            "response": {
+              "success": "boolean",
+              "message": "string"
+            },
+            "producers": ["api.py"],
+            "consumers": ["app.js"]
+          }
+        ],
+        "storage": [
+          {
+            "key": "tasks_cache",
+            "type": "localStorage",
+            "description": "Cached task list for offline viewing",
+            "schema": {
+              "type": "array",
+              "items": {
+                "id": "string",
+                "title": "string",
+                "completed": "boolean",
+                "createdAt": "string"
+              }
+            },
+            "writers": ["app.js (saveTasks)"],
+            "readers": ["app.js (loadTasks)"]
+          },
+          {
+            "key": "filter_preference",
+            "type": "localStorage",
+            "description": "User's preferred filter (all, active, completed)",
+            "schema": "string (enum: 'all' | 'active' | 'completed')",
+            "writers": ["app.js (setFilter)"],
+            "readers": ["app.js (getFilter)"]
+          }
+        ],
+        "dom": [
+          {
+            "templateId": "task-item-template",
+            "containerId": "task-list",
+            "description": "Task list item template structure for rendering tasks",
+            "requiredElements": [
+              {
+                "selector": ".task-item__title",
+                "element": "h3",
+                "purpose": "Display task title text",
+                "consumers": ["app.js (renderTasks line ~137)"]
+              },
+              {
+                "selector": ".task-item__description",
+                "element": "p",
+                "purpose": "Display task description text",
+                "consumers": ["app.js (renderTasks line ~138)"]
+              },
+              {
+                "selector": ".status-badge",
+                "element": "span",
+                "purpose": "Display task status with color-coded badge",
+                "consumers": ["app.js (renderTasks line ~140-143)"]
+              },
+              {
+                "selector": "[data-action='edit']",
+                "element": "button",
+                "purpose": "Edit button to trigger task editing",
+                "consumers": ["app.js (handleTaskListClick)"]
+              },
+              {
+                "selector": "[data-action='delete']",
+                "element": "button",
+                "purpose": "Delete button to trigger task deletion",
+                "consumers": ["app.js (handleTaskListClick)"]
+              }
+            ],
+            "producers": ["index.html"],
+            "consumers": ["app.js"]
+          },
+          {
+            "description": "Task form structure for creating and editing tasks",
+            "requiredElements": [
+              {
+                "selector": "#task-form",
+                "element": "form",
+                "purpose": "Main form for task input",
+                "consumers": ["app.js (handleFormSubmit)"]
+              },
+              {
+                "selector": "#task-id",
+                "element": "input",
+                "attributes": { "type": "hidden", "name": "taskId" },
+                "purpose": "Hidden input to store task ID when editing",
+                "consumers": ["app.js (populateFormForEdit, clearForm)"]
+              },
+              {
+                "selector": "#task-title",
+                "element": "input",
+                "attributes": { "type": "text", "name": "title", "required": true },
+                "purpose": "Input for task title",
+                "consumers": ["app.js (populateFormForEdit)"]
+              },
+              {
+                "selector": "#task-description",
+                "element": "textarea",
+                "attributes": { "name": "description" },
+                "purpose": "Input for task description",
+                "consumers": ["app.js (populateFormForEdit)"]
+              },
+              {
+                "selector": "#task-status",
+                "element": "select",
+                "attributes": { "name": "status" },
+                "purpose": "Dropdown for task status selection",
+                "consumers": ["app.js (populateFormForEdit)"]
+              },
+              {
+                "selector": "#cancel-edit-btn",
+                "element": "button",
+                "attributes": { "type": "button" },
+                "purpose": "Button to cancel edit mode",
+                "consumers": ["app.js (clearForm event listener)"]
+              }
+            ],
+            "producers": ["index.html"],
+            "consumers": ["app.js"]
+          },
+          {
+            "containerId": "filter-controls",
+            "description": "Filter buttons for task status filtering",
+            "requiredElements": [
+              {
+                "selector": "[data-filter]",
+                "element": "button",
+                "attributes": { "data-filter": "all|pending|in-progress|completed" },
+                "purpose": "Filter buttons to show tasks by status",
+                "consumers": ["app.js (handleFilterClick)"]
+              }
+            ],
+            "producers": ["index.html"],
+            "consumers": ["app.js"]
+          }
+        ]
+      },
+
+      "setup": {
+        "runtime": "mixed",
+        "pythonVersion": "3.8+",
+        "dependencies": {
+          "python": [
+            "flask==3.0.0",
+            "flask-cors==4.0.0"
+          ]
+        },
+        "environmentVariables": {
+          "FLASK_APP": "api.py",
+          "FLASK_ENV": "development",
+          "PORT": "5000",
+          "CORS_ORIGINS": "http://localhost:3000"
+        },
+        "startCommands": {
+          "backend": "python api.py",
+          "frontend": "Open index.html in your browser"
+        },
+        "instructions": "1. Install Python dependencies: `pip install -r requirements.txt`\n2. Copy `.env.example` to `.env` and configure if needed\n3. Start backend: `python api.py`\n4. Open `index.html` in your browser\n5. API will be available at http://localhost:5000"
+      }
+    }
+  }
+}

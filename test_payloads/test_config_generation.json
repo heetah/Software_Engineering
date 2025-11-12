@@ -1,0 +1,115 @@
+{
+  "comment": "Test payload with projectConfig - Simple API with frontend",
+  "output": {
+    "coder_instructions": {
+      "task": "Create a simple user management API with web interface",
+      "requirements": "User list, add/delete users, responsive UI",
+      
+      "projectConfig": {
+        "backend": {
+          "host": "localhost",
+          "port": 5000,
+          "protocol": "http",
+          "enableCORS": true,
+          "corsOrigins": ["*"]
+        },
+        "frontend": {
+          "canBeServedFrom": "any",
+          "mustConnectToBackend": true
+        },
+        "database": {
+          "type": "sqlite",
+          "file": "users.db"
+        },
+        "testAccounts": [
+          {"username": "admin", "password": "admin123", "role": "admin"},
+          {"username": "user", "password": "user123", "role": "user"}
+        ]
+      },
+      
+      "files": [
+        {
+          "path": "index.html",
+          "type": "html",
+          "description": "User management UI with list, add, and delete buttons",
+          "dependencies": ["app.js", "styles.css"]
+        },
+        {
+          "path": "app.js",
+          "type": "javascript",
+          "description": "Frontend logic using CONFIG for all API calls",
+          "dependencies": ["config.js"]
+        },
+        {
+          "path": "styles.css",
+          "type": "css",
+          "description": "Modern styling for user management interface",
+          "dependencies": []
+        },
+        {
+          "path": "server.py",
+          "type": "python",
+          "description": "Flask REST API with user endpoints, MUST use config.py",
+          "dependencies": ["config.py"]
+        }
+      ],
+      
+      "contracts": {
+        "api": [
+          {
+            "endpoint": "GET /api/users",
+            "description": "Get all users",
+            "request": null,
+            "response": {
+              "type": "array",
+              "items": {
+                "id": "string",
+                "username": "string",
+                "role": "string"
+              }
+            },
+            "producers": ["server.py"],
+            "consumers": ["app.js"]
+          },
+          {
+            "endpoint": "POST /api/users",
+            "description": "Add new user",
+            "request": {
+              "username": "string (required)",
+              "role": "string (default: user)"
+            },
+            "response": {
+              "id": "string",
+              "username": "string",
+              "role": "string"
+            },
+            "producers": ["server.py"],
+            "consumers": ["app.js"]
+          },
+          {
+            "endpoint": "DELETE /api/users/:id",
+            "description": "Delete user by ID",
+            "request": null,
+            "response": {
+              "success": "boolean",
+              "message": "string"
+            },
+            "producers": ["server.py"],
+            "consumers": ["app.js"]
+          }
+        ]
+      },
+      
+      "setup": {
+        "runtime": "Python 3.8+",
+        "dependencies": ["flask", "flask-cors"],
+        "environmentVariables": {},
+        "startCommands": {
+          "backend": "python server.py",
+          "frontend": "Open index.html in browser or python -m http.server 8000"
+        },
+        "instructions": "1. Install dependencies\n2. Run backend\n3. Open frontend"
+      }
+    }
+  }
+}
