@@ -6,8 +6,12 @@ import RequirementAgent from "./agents/requirement-agent.js";
 import ArchitectAgent from "./agents/architect-agent.js";
 import CoderAgent from "./agents/coder-agent.js";
 import TesterAgent from "./agents/tester-agent.js";
+import VerifiedAgent from "./agents/verified-agent.js";
 // 將 Coder 產出的 Markdown 生成專案
 import { writeProjectFromMarkdown } from "./agents/project-writer.js";
+// 新增：寫出執行摘要
+import fs from 'fs';
+import path from 'path';
 
 async function main() {
   console.log(" Multi-Agent Coordinator Started");
@@ -20,6 +24,7 @@ async function main() {
   const architect = new ArchitectAgent();
   const coder = new CoderAgent();
   const tester = new TesterAgent();
+  const verified = new VerifiedAgent();
 
   // Requirement Agent
   const reqPrompt = requirement.prompt(userInput);
@@ -44,9 +49,29 @@ async function main() {
     console.warn(" 生成專案失敗：", e.message);
   }
 
-  // Tester Agent
-  const testPrompt = tester.prompt(coderOutput);
-  const testerOutput = await tester.run(testPrompt);
+  // Verified + Tester（嚴格依計畫、不使用 fallback）
+  try {
+    console.log("\nVerified Agent: generating test plan via LLM...");
+    await verified.generatePlan();
+  } catch (e) {
+    console.error(" Verified Agent plan generation failed:", e.message);
+    console.error(" Aborting Tester stage because requirePlan=true to avoid fallback.");
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log("\nTester Agent: using Verified plan to generate tests, run and analyze (no fallback)...");
+  const artifacts = await tester.runPipeline({ useVerifiedSummary: true, requirePlan: true });
+
+  // 寫入統一摘要（含錯誤報告檔）
+  const summary = {
+    timestamp: new Date().toISOString(),
+    planPath: path.resolve('outputs', 'test-plan.json'),
+    jestJsonPath: artifacts?.jestJsonPath,
+    reportPath: artifacts?.reportPath,
+    errorsPath: artifacts?.errorsPath
+  };
+  fs.writeFileSync(path.resolve('outputs', 'Coordinator_Run_Summary.json'), JSON.stringify(summary, null, 2), 'utf-8');
 
   console.log("\n All tasks completed successfully!");
 }
