@@ -140,11 +140,18 @@ class Coordinator {
     this.DETAIL_GENERATION_DELAY = config.detailDelay || 1500; // 毫秒
     
     // 支持多種環境變數名稱（CLOUD_API_* 或 OPENAI_*）
+    // 優先使用 Gemini，如果沒有則使用 OpenAI
     let endpoint = config.cloudApiEndpoint || 
       process.env.CLOUD_API_ENDPOINT || 
       process.env.OPENAI_BASE_URL ||
       null;
     
+    // 配置 Gemini API（優先）
+    this.GEMINI_API_ENDPOINT = process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta';
+    this.GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    this.GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    
+    // 配置 OpenAI API（備用）
     // 如果端點是 OpenAI 基礎 URL，自動添加 chat/completions 路徑
     if (endpoint && endpoint.includes('api.openai.com')) {
       // 如果已經是完整端點（包含 /chat/completions），保持不變
@@ -168,11 +175,16 @@ class Coordinator {
       endpoint = 'https://api.openai.com/v1/chat/completions';
     }
     
-    this.CLOUD_API_ENDPOINT = endpoint;
-    
-    this.CLOUD_API_KEY = config.cloudApiKey || 
+    this.OPENAI_API_ENDPOINT = endpoint;
+    this.OPENAI_API_KEY = config.cloudApiKey || 
       process.env.CLOUD_API_KEY || 
       process.env.OPENAI_API_KEY;
+    
+    // 為了向後兼容，保留舊的變數名（優先使用 Gemini）
+    this.CLOUD_API_ENDPOINT = this.GEMINI_API_KEY ? 
+      `${this.GEMINI_API_ENDPOINT}/models/${this.GEMINI_MODEL}:generateContent` : 
+      this.OPENAI_API_ENDPOINT;
+    this.CLOUD_API_KEY = this.GEMINI_API_KEY || this.OPENAI_API_KEY;
     
     // 預設使用 Worker Agents（如果明確要求使用 mock 才用 mock）
     this.USE_MOCK_API = config.useMockApi === true;
@@ -241,9 +253,9 @@ class Coordinator {
       logger.info('Phase 1: Generating skeletons', requestId);
       const skeletons = await this.generateAllSkeletons(coderInstructions, requestId);
       
-      // Phase 2: 序列化生成細節（傳遞 contracts）
+      // Phase 2: 序列化生成細節（傳遞 contracts 和完整的 coderInstructions）
       logger.info('Phase 2: Generating details sequentially', requestId);
-      const detailedFiles = await this.generateDetailsSequentially(files, skeletons, contracts, requestId);
+      const detailedFiles = await this.generateDetailsSequentially(files, skeletons, contracts, requestId, coderInstructions);
       
       // Phase 3: 組裝（傳遞 payload 以便生成 setup 檔案）
       logger.info('Phase 3: Assembling results', requestId);
@@ -272,7 +284,7 @@ class Coordinator {
    */
   /**
    * Phase 1: 生成所有檔案的骨架（自動分批）
-   * @param {Object} coderInstructions - 包含 files, requirements, contracts
+   * @param {Object} coderInstructions - 包含 files, requirements, contracts, summary
    */
   async generateAllSkeletons(coderInstructions, requestId) {
     const files = Array.isArray(coderInstructions) ? coderInstructions : coderInstructions.files;
@@ -281,7 +293,9 @@ class Coordinator {
     });
     
     // 直接呼叫 generateSkeletonsBatch，它會自動決定是否分批
-    // 傳遞完整的 coderInstructions（包含 contracts）
+    // 傳遞完整的 coderInstructions（包含 contracts, summary, requirements）
+    // 保存 coderInstructions 以便在 generateSkeletonsViaAPI 中使用
+    this.currentCoderInstructions = coderInstructions;
     return await this.generateSkeletonsBatch(coderInstructions, requestId);
   }
 
@@ -475,8 +489,9 @@ class Coordinator {
    * @param {Array} files - 檔案列表
    * @param {Object} skeletons - 骨架對應表
    * @param {Object} contracts - 可選的跨檔案 contracts
+   * @param {Object} coderInstructions - 完整的 coder instructions（包含 summary, requirements 等）
    */
-  async generateDetailsSequentially(files, skeletons, contracts, requestId) {
+  async generateDetailsSequentially(files, skeletons, contracts, requestId, coderInstructions = {}) {
     // 分析檔案依賴關係
     const { order, groups, depGraph } = this.dependencyAnalyzer.analyze(files, requestId);
     
@@ -543,6 +558,11 @@ class Coordinator {
             dependencies: completedDeps,
             allFiles: files, // 傳遞所有檔案資訊（用於預知將來的檔案）
             contracts: contracts || null, // ← 新增：傳遞 contracts 給 Worker Agents
+            // 傳遞完整的用戶需求和項目信息
+            userRequirement: coderInstructions.summary || coderInstructions.requirements || '',
+            projectSummary: coderInstructions.summary || '',
+            projectRequirements: coderInstructions.requirements || [],
+            coderInstructions: coderInstructions, // 傳遞完整的 coder instructions
             fileSpec: {
               path: file.path,
               language: file.language,
@@ -1056,13 +1076,21 @@ ${hasContracts ? `
    - The content field should contain the code as-is without extra escaping
 `;
 
+    // 提取用戶需求（從 coderInstructions 或 payload）
+    const coderInstructions = this.currentCoderInstructions || {};
+    const userRequirement = payload.summary || payload.requirements || coderInstructions.summary || coderInstructions.requirements || '';
+    const projectRequirements = Array.isArray(payload.requirements) ? payload.requirements : (payload.requirements ? [payload.requirements] : []);
+    
     let userPrompt = `Generate skeletons for these files:
 
-Project Requirements:
-${payload.requirements || 'No specific requirements'}
+${userRequirement ? `=== USER REQUIREMENT ===
+${userRequirement}
 
-Files to generate:
-${payload.files.map((f, i) => `${i + 1}. ${f.path} (${f.type}): ${f.description}`).join('\n')}
+` : ''}${projectRequirements.length > 0 ? `=== PROJECT REQUIREMENTS ===
+${projectRequirements.join('\n')}
+
+` : ''}Files to generate:
+${payload.files.map((f, i) => `${i + 1}. ${f.path} (${f.type}): ${f.description || 'No description'}${f.requirements && f.requirements.length > 0 ? `\n   Requirements: ${Array.isArray(f.requirements) ? f.requirements.join(', ') : f.requirements}` : ''}`).join('\n')}
 `;
 
     // 如果有 contracts，附加到 prompt
@@ -1171,48 +1199,129 @@ Do not include any text before or after the JSON array.
 
 Return ONLY the JSON array, no markdown or explanation.`;
 
-    try {
-      // 檢測 API 類型（Gemini 或 OpenAI）
-      const isGemini = this.CLOUD_API_ENDPOINT.includes('generativelanguage.googleapis.com');
-      
-      let requestBody, headers;
-      
-      if (isGemini) {
-        // Gemini API 格式
-        requestBody = {
-          contents: [{
-            parts: [{
-              text: `${systemPrompt}\n\n${userPrompt}`
-            }]
-          }],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 16384  // 提高到 16384 以處理複雜專案（實際會被 Gemini 限制在 8192）
+    // 優先嘗試 Gemini，失敗時切換到 OpenAI（一次只使用一個 API）
+    const apiProviders = [];
+    
+    // 優先添加 Gemini
+    if (this.GEMINI_API_KEY) {
+      apiProviders.push({
+        name: 'Gemini',
+        endpoint: `${this.GEMINI_API_ENDPOINT}/models/${this.GEMINI_MODEL}:generateContent`,
+        key: this.GEMINI_API_KEY,
+        isGemini: true
+      });
+    }
+    
+    // 然後添加 OpenAI（備用）
+    if (this.OPENAI_API_ENDPOINT && this.OPENAI_API_KEY) {
+      apiProviders.push({
+        name: 'OpenAI',
+        endpoint: this.OPENAI_API_ENDPOINT,
+        key: this.OPENAI_API_KEY,
+        isGemini: false
+      });
+    }
+    
+    if (apiProviders.length === 0) {
+      throw new Error('No API providers configured (neither Gemini nor OpenAI)');
+    }
+    
+    let lastError = null;
+    
+    // 依次嘗試每個 API 提供者（優先 Gemini）
+    for (const provider of apiProviders) {
+      try {
+        logger.info(`Trying ${provider.name} API for skeleton generation`, requestId);
+        
+        let requestBody, headers, apiUrl, response, result, generatedText;
+        
+        if (provider.isGemini) {
+          // Gemini API 格式
+          requestBody = {
+            contents: [{
+              parts: [{
+                text: `${systemPrompt}\n\n${userPrompt}`
+              }]
+            }],
+            generationConfig: {
+              temperature: 0.3,
+              maxOutputTokens: 16384
+            }
+          };
+          
+          headers = {
+            'Content-Type': 'application/json'
+          };
+          
+          // Gemini 使用 query parameter 認證
+          apiUrl = `${provider.endpoint}?key=${provider.key}`;
+          
+          response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(requestBody)
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            const statusCode = response.status;
+            const errorCode = JSON.parse(errorText || '{}')?.error?.code;
+            
+            // 如果是配額錯誤或認證錯誤，嘗試下一個提供者
+            if (statusCode === 429 || errorCode === 'insufficient_quota' || statusCode === 401 || statusCode === 403) {
+              logger.warn(`${provider.name} API failed (${statusCode || errorCode}), switching to next provider...`, requestId);
+              lastError = new Error(`${provider.name} API error: ${statusCode} - ${errorText}`);
+              continue; // 嘗試下一個提供者
+            }
+            throw new Error(`Gemini API error: ${statusCode} - ${errorText}`);
           }
-        };
-        
-        headers = {
-          'Content-Type': 'application/json'
-        };
-        
-        // Gemini 使用 query parameter 認證
-        const apiUrl = `${this.CLOUD_API_ENDPOINT}?key=${this.CLOUD_API_KEY}`;
-        
-        const response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: headers,
-          body: JSON.stringify(requestBody)
-        });
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+          result = await response.json();
+          generatedText = result.candidates[0].content.parts[0].text;
+          
+        } else {
+          // OpenAI API 格式
+          requestBody = {
+            model: 'gpt-4',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt }
+            ],
+            temperature: 0.3,
+            max_tokens: 4000
+          };
+          
+          headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${provider.key}`
+          };
+          
+          response = await fetch(provider.endpoint, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(requestBody)
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            const statusCode = response.status;
+            const errorCode = JSON.parse(errorText || '{}')?.error?.code;
+            
+            // 如果是配額錯誤或認證錯誤，嘗試下一個提供者
+            if (statusCode === 429 || errorCode === 'insufficient_quota' || statusCode === 401 || statusCode === 403) {
+              logger.warn(`${provider.name} API failed (${statusCode || errorCode}), switching to next provider...`, requestId);
+              lastError = new Error(`OpenAI API error: ${statusCode} - ${errorText}`);
+              continue; // 嘗試下一個提供者
+            }
+            throw new Error(`OpenAI API error: ${statusCode} - ${errorText}`);
+          }
+
+          result = await response.json();
+          generatedText = result.choices[0].message.content;
         }
-
-        const result = await response.json();
-        const generatedText = result.candidates[0].content.parts[0].text;
         
         logger.info('Raw API response received', requestId, {
+          provider: provider.name,
           textLength: generatedText.length,
           preview: generatedText.substring(0, 200)
         });
@@ -1229,7 +1338,7 @@ Return ONLY the JSON array, no markdown or explanation.`;
         const jsonMatch = cleanedText.match(/\[[\s\S]*\]/);
         if (!jsonMatch) {
           logger.error('No JSON array found in response', requestId, {
-            fullText: cleanedText.substring(0, 2000)  // 增加顯示長度
+            fullText: cleanedText.substring(0, 2000)
           });
           throw new Error('API response does not contain valid JSON array');
         }
@@ -1240,17 +1349,16 @@ Return ONLY the JSON array, no markdown or explanation.`;
         } catch (parseError) {
           logger.error('JSON parse failed', requestId, {
             error: parseError.message,
-            jsonPreview: jsonMatch[0].substring(0, 1000),  // 增加預覽長度
+            jsonPreview: jsonMatch[0].substring(0, 1000),
             jsonLength: jsonMatch[0].length
           });
           
           // 嘗試修復常見的轉義問題
           try {
-            // 移除多餘的反斜線轉義
             let fixedJson = jsonMatch[0]
-              .replace(/\\\\\\\\/g, '\\')  // 4個反斜線 → 1個
-              .replace(/\\\\\"/g, '"')     // 2個反斜線+引號 → 引號
-              .replace(/\\\\n/g, '\\n');   // 2個反斜線+n → \n
+              .replace(/\\\\\\\\/g, '\\')
+              .replace(/\\\\\"/g, '"')
+              .replace(/\\\\n/g, '\\n');
             
             skeletons = JSON.parse(fixedJson);
             logger.info('JSON parse succeeded after fixing escaping', requestId);
@@ -1263,65 +1371,33 @@ Return ONLY the JSON array, no markdown or explanation.`;
         }
         
         logger.info('Skeleton generation via API completed', requestId, {
+          provider: provider.name,
           fileCount: skeletons.length,
-          tokensUsed: result.usageMetadata?.totalTokenCount || 0
+          tokensUsed: provider.isGemini ? (result.usageMetadata?.totalTokenCount || 0) : (result.usage?.total_tokens || 0)
         });
         
         return { skeletons };
         
-      } else {
-        // OpenAI API 格式
-        requestBody = {
-          model: 'gpt-4',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          temperature: 0.3,
-          max_tokens: 4000
-        };
-        
-        headers = {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.CLOUD_API_KEY}`
-        };
-        
-        const response = await fetch(this.CLOUD_API_ENDPOINT, {
-          method: 'POST',
-          headers: headers,
-          body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+      } catch (error) {
+        lastError = error;
+        // 如果還有其他提供者可以嘗試，繼續
+        if (apiProviders.indexOf(provider) < apiProviders.length - 1) {
+          logger.warn(`${provider.name} API request failed, trying next provider...`, requestId, {
+            error: error.message
+          });
+          continue;
         }
-
-        const result = await response.json();
-        const generatedText = result.choices[0].message.content;
-        
-        // 解析 JSON
-        const jsonMatch = generatedText.match(/\[[\s\S]*\]/);
-        if (!jsonMatch) {
-          throw new Error('API response does not contain valid JSON array');
-        }
-        
-        const skeletons = JSON.parse(jsonMatch[0]);
-        
-        logger.info('Skeleton generation via API completed', requestId, {
-          fileCount: skeletons.length,
-          tokensUsed: result.usage?.total_tokens || 0
+        // 如果是最後一個提供者，拋出錯誤
+        logger.error('Failed to generate skeletons via API', requestId, { 
+          error: error.message,
+          triedProviders: apiProviders.map(p => p.name).join(', ')
         });
-        
-        return { skeletons };
+        throw error;
       }
-      
-    } catch (error) {
-      logger.error('Failed to generate skeletons via API', requestId, { 
-        error: error.message 
-      });
-      throw error;
     }
+    
+    // 所有提供者都失敗了
+    throw lastError || new Error('All API providers failed');
   }
 
   /**
@@ -1352,10 +1428,24 @@ Requirements:
 - Maintain consistency with skeleton structure
 - If context includes completed files, ensure compatibility`;
 
+    // 構建包含用戶需求的完整 prompt
+    const userRequirement = context.userRequirement || context.projectSummary || '';
+    const projectRequirements = context.projectRequirements || [];
+    
     const userPrompt = `Generate complete implementation for: ${fileSpec.path}
 
-File Type: ${fileSpec.language || 'unknown'}
+${userRequirement ? `=== USER REQUIREMENT ===
+${userRequirement}
+
+` : ''}${projectRequirements.length > 0 ? `=== PROJECT REQUIREMENTS ===
+${Array.isArray(projectRequirements) ? projectRequirements.join('\n') : projectRequirements}
+
+` : ''}File Type: ${fileSpec.language || 'unknown'}
 Description: ${fileSpec.description || 'No description'}
+${fileSpec.requirements && fileSpec.requirements.length > 0 ? `
+File-Specific Requirements:
+${Array.isArray(fileSpec.requirements) ? fileSpec.requirements.join('\n') : fileSpec.requirements}
+` : ''}
 
 Skeleton Code:
 \`\`\`${fileSpec.language || 'text'}
@@ -1375,53 +1465,141 @@ ${context.dependencies.map(d => `- ${d.path}`).join('\n')}
 Generate the complete implementation now. 
 
 CRITICAL REQUIREMENTS:
+- The code MUST implement the user's requirement: "${userRequirement || 'see description above'}"
 - Return ONLY the code content, no explanations, no apologies, no markdown formatting
 - For JSON files: Return valid JSON only, no text before or after
-- For JavaScript files: Return complete, working code
+- For JavaScript files: Return complete, working code that fulfills the user's requirement
 - For config files: Return appropriate configuration based on file path (backend config should export module.exports, frontend config should use window.APP_CONFIG)
-- If the skeleton is empty or unclear, infer reasonable defaults based on the file path and description
+- If the skeleton is empty or unclear, infer reasonable defaults based on the user requirement and file path/description
+- The implementation should be specific to the user's needs, not a generic template
 
 DO NOT include phrases like "Apologies", "I'm sorry", "Here's the code", etc. Just return the code directly.`;
 
-    try {
-      // 檢測 API 類型（Gemini 或 OpenAI）
-      const isGemini = this.CLOUD_API_ENDPOINT.includes('generativelanguage.googleapis.com');
-      
-      let requestBody, headers;
-      
-      if (isGemini) {
-        // Gemini API 格式
-        requestBody = {
-          contents: [{
-            parts: [{
-              text: `${systemPrompt}\n\n${userPrompt}`
-            }]
-          }],
-          generationConfig: {
-            temperature: 0.5,
-            maxOutputTokens: 8192
-          }
-        };
-        
-        headers = {
-          'Content-Type': 'application/json'
-        };
-        
-        const apiUrl = `${this.CLOUD_API_ENDPOINT}?key=${this.CLOUD_API_KEY}`;
-        
-        const response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: headers,
-          body: JSON.stringify(requestBody)
+    // 優先嘗試 Gemini，失敗時切換到 OpenAI（一次只使用一個 API）
+    const apiProviders = [];
+    
+    // 優先添加 Gemini
+    if (this.GEMINI_API_KEY) {
+      apiProviders.push({
+        name: 'Gemini',
+        endpoint: `${this.GEMINI_API_ENDPOINT}/models/${this.GEMINI_MODEL}:generateContent`,
+        key: this.GEMINI_API_KEY,
+        isGemini: true
+      });
+    }
+    
+    // 然後添加 OpenAI（備用）
+    if (this.OPENAI_API_ENDPOINT && this.OPENAI_API_KEY) {
+      apiProviders.push({
+        name: 'OpenAI',
+        endpoint: this.OPENAI_API_ENDPOINT,
+        key: this.OPENAI_API_KEY,
+        isGemini: false
+      });
+    }
+    
+    if (apiProviders.length === 0) {
+      throw new Error('No API providers configured (neither Gemini nor OpenAI)');
+    }
+    
+    let lastError = null;
+    
+    // 依次嘗試每個 API 提供者（優先 Gemini）
+    for (const provider of apiProviders) {
+      try {
+        logger.info(`Trying ${provider.name} API for detail generation`, requestId, {
+          file: fileSpec.path
         });
+        
+        let requestBody, headers, apiUrl, response, result, generatedText;
+        
+        if (provider.isGemini) {
+          // Gemini API 格式
+          requestBody = {
+            contents: [{
+              parts: [{
+                text: `${systemPrompt}\n\n${userPrompt}`
+              }]
+            }],
+            generationConfig: {
+              temperature: 0.5,
+              maxOutputTokens: 8192
+            }
+          };
+          
+          headers = {
+            'Content-Type': 'application/json'
+          };
+          
+          apiUrl = `${provider.endpoint}?key=${provider.key}`;
+          
+          response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(requestBody)
+          });
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+          if (!response.ok) {
+            const errorText = await response.text();
+            const statusCode = response.status;
+            const errorCode = JSON.parse(errorText || '{}')?.error?.code;
+            
+            // 如果是配額錯誤或認證錯誤，嘗試下一個提供者
+            if (statusCode === 429 || errorCode === 'insufficient_quota' || statusCode === 401 || statusCode === 403) {
+              logger.warn(`${provider.name} API failed (${statusCode || errorCode}), switching to next provider...`, requestId, {
+                file: fileSpec.path
+              });
+              lastError = new Error(`Gemini API error: ${statusCode} - ${errorText}`);
+              continue; // 嘗試下一個提供者
+            }
+            throw new Error(`Gemini API error: ${statusCode} - ${errorText}`);
+          }
+
+          result = await response.json();
+          generatedText = result.candidates[0].content.parts[0].text;
+          
+        } else {
+          // OpenAI API 格式
+          requestBody = {
+            model: 'gpt-4',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt }
+            ],
+            temperature: 0.5,
+            max_tokens: 4000
+          };
+          
+          headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${provider.key}`
+          };
+          
+          response = await fetch(provider.endpoint, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(requestBody)
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            const statusCode = response.status;
+            const errorCode = JSON.parse(errorText || '{}')?.error?.code;
+            
+            // 如果是配額錯誤或認證錯誤，嘗試下一個提供者
+            if (statusCode === 429 || errorCode === 'insufficient_quota' || statusCode === 401 || statusCode === 403) {
+              logger.warn(`${provider.name} API failed (${statusCode || errorCode}), switching to next provider...`, requestId, {
+                file: fileSpec.path
+              });
+              lastError = new Error(`OpenAI API error: ${statusCode} - ${errorText}`);
+              continue; // 嘗試下一個提供者
+            }
+            throw new Error(`OpenAI API error: ${statusCode} - ${errorText}`);
+          }
+
+          result = await response.json();
+          generatedText = result.choices[0].message.content;
         }
-
-        const result = await response.json();
-        const generatedText = result.candidates[0].content.parts[0].text;
         
         // 移除可能的 markdown code block 包裝和錯誤訊息
         let content = generatedText.trim();
@@ -1450,99 +1628,43 @@ DO NOT include phrases like "Apologies", "I'm sorry", "Here's the code", etc. Ju
         content = content.replace(/^(here's|here is|the code|code:|implementation:)\s*/i, '');
         
         logger.info('Detail generation via Cloud API completed', requestId, {
+          provider: provider.name,
           file: fileSpec.path,
           contentLength: content.length,
-          tokensUsed: result.usageMetadata?.totalTokenCount || 0
+          tokensUsed: provider.isGemini ? (result.usageMetadata?.totalTokenCount || 0) : (result.usage?.total_tokens || 0)
         });
         
         return {
           content: content,
           metadata: {
-            tokens_used: result.usageMetadata?.totalTokenCount || 0,
-            model: 'gemini-pro',
+            tokens_used: provider.isGemini ? (result.usageMetadata?.totalTokenCount || 0) : (result.usage?.total_tokens || 0),
+            model: provider.isGemini ? 'gemini-2.5-flash' : 'gpt-4',
             method: 'cloud_api'
           }
         };
         
-      } else {
-        // OpenAI API 格式
-        requestBody = {
-          model: 'gpt-4',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          temperature: 0.5,
-          max_tokens: 4000
-        };
-        
-        headers = {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.CLOUD_API_KEY}`
-        };
-        
-        const response = await fetch(this.CLOUD_API_ENDPOINT, {
-          method: 'POST',
-          headers: headers,
-          body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
-        }
-
-        const result = await response.json();
-        const generatedText = result.choices[0].message.content;
-        
-        // 移除可能的 markdown code block 包裝和錯誤訊息
-        let content = generatedText.trim();
-        
-        // 檢查是否包含錯誤訊息（API 可能返回錯誤而不是代碼）
-        if (content.toLowerCase().includes('apologies') || 
-            content.toLowerCase().includes('i\'m sorry') ||
-            content.toLowerCase().includes('i cannot') ||
-            content.toLowerCase().includes('unclear') ||
-            content.toLowerCase().includes('confusion')) {
-          logger.warn('Cloud API returned error message instead of code, using skeleton', requestId, {
+      } catch (error) {
+        lastError = error;
+        // 如果還有其他提供者可以嘗試，繼續
+        if (apiProviders.indexOf(provider) < apiProviders.length - 1) {
+          logger.warn(`${provider.name} API request failed, trying next provider...`, requestId, {
             file: fileSpec.path,
-            preview: content.substring(0, 200)
+            error: error.message
           });
-          // 使用骨架作為 fallback
-          content = skeleton || '';
+          continue;
         }
-        
-        // 移除 markdown code block 包裝
-        if (content.startsWith('```')) {
-          content = content.replace(/^```[\w]*\s*\n/, '').replace(/\n```\s*$/, '');
-        }
-        
-        // 移除常見的前綴文字
-        content = content.replace(/^(here's|here is|the code|code:|implementation:)\s*/i, '');
-        
-        logger.info('Detail generation via Cloud API completed', requestId, {
+        // 如果是最後一個提供者，拋出錯誤
+        logger.error('Failed to generate details via Cloud API', requestId, {
+          error: error.message,
           file: fileSpec.path,
-          contentLength: content.length,
-          tokensUsed: result.usage?.total_tokens || 0
+          triedProviders: apiProviders.map(p => p.name).join(', ')
         });
-        
-        return {
-          content: content,
-          metadata: {
-            tokens_used: result.usage?.total_tokens || 0,
-            model: 'gpt-4',
-            method: 'cloud_api'
-          }
-        };
+        throw error;
       }
-      
-    } catch (error) {
-      logger.error('Failed to generate details via Cloud API', requestId, { 
-        error: error.message,
-        file: fileSpec.path
-      });
-      throw error;
     }
+    
+    // 所有提供者都失敗了
+    throw lastError || new Error('All API providers failed');
   }
 
   /**

@@ -76,18 +76,40 @@ export class Config {
    */
   validate() {
     const errors = [];
+    const warnings = [];
 
-    if (!this.api.apiKey) {
-      errors.push('API Key 未設置');
+    // 檢查是否有至少一個 API 提供者
+    const hasOpenAI = !!(process.env.OPENAI_API_KEY || process.env.API_KEY);
+    const hasGemini = !!process.env.GEMINI_API_KEY;
+
+    if (!hasOpenAI && !hasGemini) {
+      errors.push('至少需要設置一個 API Key (OPENAI_API_KEY 或 GEMINI_API_KEY)');
+    } else {
+      if (hasOpenAI && hasGemini) {
+        // 兩個都有，這是好的
+        warnings.push('已配置多個 API 提供者，系統將自動進行負載均衡和故障轉移');
+      } else if (hasOpenAI) {
+        warnings.push('僅配置了 OpenAI API，建議同時配置 Gemini API 以提高可用性');
+      } else if (hasGemini) {
+        warnings.push('僅配置了 Gemini API，建議同時配置 OpenAI API 以提高可用性');
+      }
     }
 
-    if (!this.api.baseUrl) {
-      errors.push('API Base URL 未設置');
+    // 如果使用單一 API，檢查基本配置
+    if (!hasOpenAI && !hasGemini) {
+      if (!this.api.apiKey) {
+        errors.push('API Key 未設置');
+      }
+
+      if (!this.api.baseUrl) {
+        errors.push('API Base URL 未設置');
+      }
     }
 
     return {
       valid: errors.length === 0,
-      errors
+      errors,
+      warnings
     };
   }
 
@@ -115,6 +137,9 @@ export const config = new Config();
 // 在載入時驗證配置
 const validation = config.validate();
 if (!validation.valid) {
-  console.warn('配置驗證警告:', validation.errors);
+  console.warn('Configuration validation errors:', validation.errors);
+}
+if (validation.warnings && validation.warnings.length > 0) {
+  console.info('Configuration tips:', validation.warnings);
 }
 

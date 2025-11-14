@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Agent Calculator</title>
+    <meta name="description" content="A web-based calculator with AI agent integration capabilities for future agent communication.">
+    <!-- CRITICAL: Links to the main stylesheet for application styling -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="app-header">
+        <h1>AI Agent Calculator</h1>
+        <p>Perform calculations and interact with an AI agent for advanced features.</p>
+    </header>
+
+    <main class="calculator-container" role="main" aria-labelledby="calculator-heading">
+        <!-- Visually hidden heading for accessibility, providing context for the calculator section -->
+        <h2 id="calculator-heading" class="sr-only">Calculator Interface</h2>
+        
+        <section class="calculator-display-area">
+            <!-- Display area for calculator input and results -->
+            <output id="calculatorDisplay" class="calculator-display" aria-live="polite" aria-atomic="true">0</output>
+        </section>
+
+        <section class="calculator-buttons" role="group" aria-label="Calculator buttons">
+            <!-- Clear button to reset the calculator -->
+            <button class="calculator-button button-clear" data-type="clear" aria-label="Clear calculator">C</button>
+            
+            <!-- Operator buttons -->
+            <button class="calculator-button button-operator" data-type="operator" data-value="/" aria-label="Divide">/</button>
+            <button class="calculator-button button-operator" data-type="operator" data-value="*" aria-label="Multiply">*</button>
+            <button class="calculator-button button-operator" data-type="operator" data-value="-" aria-label="Subtract">-</button>
+
+            <!-- Number buttons (7, 8, 9) -->
+            <button class="calculator-button button-number" data-type="number" data-value="7" aria-label="Seven">7</button>
+            <button class="calculator-button button-number" data-type="number" data-value="8" aria-label="Eight">8</button>
+            <button class="calculator-button button-number" data-type="number" data-value="9" aria-label="Nine">9</button>
+            <!-- Addition operator button -->
+            <button class="calculator-button button-operator button-plus" data-type="operator" data-value="+" aria-label="Add">+</button>
+
+            <!-- Number buttons (4, 5, 6) -->
+            <button class="calculator-button button-number" data-type="number" data-value="4" aria-label="Four">4</button>
+            <button class="calculator-button button-number" data-type="number" data-value="5" aria-label="Five">5</button>
+            <button class="calculator-button button-number" data-type="number" data-value="6" aria-label="Six">6</button>
+
+            <!-- Number buttons (1, 2, 3) -->
+            <button class="calculator-button button-number" data-type="number" data-value="1" aria-label="One">1</button>
+            <button class="calculator-button button-number" data-type="number" data-value="2" aria-label="Two">2</button>
+            <button class="calculator-button button-number" data-type="number" data-value="3" aria-label="Three">3</button>
+
+            <!-- Number button (0) and decimal point button -->
+            <button class="calculator-button button-number button-zero" data-type="number" data-value="0" aria-label="Zero">0</button>
+            <button class="calculator-button button-decimal" data-type="decimal" data-value="." aria-label="Decimal point">.</button>
+
+            <!-- Equals button to trigger calculation -->
+            <button class="calculator-button button-equals" data-type="equals" aria-label="Calculate result">=</button>
+        </section>
+    </main>
+
+    <footer class="app-footer">
+        <p>&copy; 2023 AI Agent Project</p>
+    </footer>
+
+    <!-- CRITICAL: Links to the main JavaScript file for application logic -->
+    <script src="index.js"></script>
+</body>
+</html>

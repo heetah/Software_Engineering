@@ -40,10 +40,42 @@ export function handleAPIError(error, agentName) {
   const statusCode = error?.response?.status;
   const responseData = error?.response?.data;
   const requestData = error?.config;
+  const responseHeaders = error?.response?.headers || {};
   
   if (statusCode) {
+    let errorMessage = `API call failed (${statusCode})`;
+    
+    // 針對常見的 HTTP 狀態碼提供更友好的錯誤訊息
+    switch (statusCode) {
+      case 429:
+        const retryAfter = responseHeaders['retry-after'] || responseHeaders['Retry-After'];
+        if (retryAfter) {
+          errorMessage = `API rate limit (429): Too many requests, please wait ${retryAfter} seconds before retrying. If the problem persists, check your API quota or reduce request frequency.`;
+        } else {
+          errorMessage = `API rate limit (429): Too many requests. System has automatically retried, but all retries failed. Please try again later or check your API quota.`;
+        }
+        break;
+      case 401:
+        errorMessage = `API authentication failed (401): Please check if your API Key is correct or has expired.`;
+        break;
+      case 403:
+        errorMessage = `API permission denied (403): Please check if your API Key has sufficient permissions.`;
+        break;
+      case 500:
+      case 502:
+      case 503:
+      case 504:
+        errorMessage = `API server error (${statusCode}): Service temporarily unavailable, please try again later.`;
+        break;
+      default:
+        // 嘗試從響應數據中提取錯誤訊息
+        if (responseData?.error?.message) {
+          errorMessage = `API call failed (${statusCode}): ${responseData.error.message}`;
+        }
+    }
+    
     return new APIError(
-      `API 調用失敗 (${statusCode})`,
+      errorMessage,
       statusCode,
       responseData,
       requestData
@@ -52,7 +84,7 @@ export function handleAPIError(error, agentName) {
   
   return new AgentError(
     agentName,
-    `API 調用失敗: ${error.message}`,
+    `API call failed: ${error.message}`,
     error
   );
 }
@@ -83,9 +115,9 @@ export class ErrorLogger {
     };
 
     if (this.verbose) {
-      console.error('錯誤詳情:', JSON.stringify(errorInfo, null, 2));
+      console.error('Error details:', JSON.stringify(errorInfo, null, 2));
     } else {
-      console.error(`[錯誤] ${error.toString()}`);
+      console.error(`[Error] ${error.toString()}`);
     }
   }
 
@@ -94,7 +126,7 @@ export class ErrorLogger {
    */
   warn(message, context = {}) {
     if (!this.enabled) return;
-    console.warn(`[警告] ${message}`, context);
+    console.warn(`[Warning] ${message}`, context);
   }
 }
 

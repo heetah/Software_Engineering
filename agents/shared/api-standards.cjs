@@ -72,7 +72,7 @@ const API_BASE_URL = window.APP_CONFIG?.API_BASE_URL || '/api';
 
 // 安全檢查：確保配置已載入
 if (!window.APP_CONFIG) {
-  console.error('❌ 錯誤：config.js 未載入！請在 HTML 中先引入 config.js');
+  console.error('❌ Error: config.js not loaded! Please include config.js in HTML first');
 }
 `,
 

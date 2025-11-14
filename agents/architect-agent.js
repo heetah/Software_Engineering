@@ -5,8 +5,7 @@
 
 import BaseAgent from "./agent-base.js";
 import dotenv from "dotenv";
-import axios from "axios";
-import { logicalModelMap } from "./logical-modelMap.js";
+import { tokenTracker } from "../utils/token-tracker.js";
 
 dotenv.config();
 
@@ -100,10 +99,9 @@ Rules:
       }
     });
 
-    // 直接調用 API（因為 BaseAgent.run 會自動添加 system message，我們需要自定義）
-    const logicalModel = logicalModelMap[this.logicalName];
+    // 使用 BaseAgent 的重試機制（因為 BaseAgent.run 會自動添加 system message，我們需要自定義 payload）
+    // 不指定 model，讓 API Provider Manager 使用默認模型
     const payload = {
-      model: logicalModel,
       temperature: this.temperature,
       messages: [
         { role: "system", content: systemPrompt },
@@ -112,12 +110,15 @@ Rules:
     };
 
     try {
-      const res = await axios.post(`${this.baseUrl}/chat/completions`, payload, {
-        headers: {
-          "Authorization": `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json"
-        }
-      });
+      // 使用 BaseAgent 的 _executeAPI 方法，自動處理重試和 429 錯誤
+      const res = await this._executeAPI(payload);
+
+      // 記錄 Token 使用情況
+      const usage = res?.data?.usage;
+      if (usage) {
+        tokenTracker.record(this.role, usage);
+        console.log(`  Token usage: Input=${usage.prompt_tokens}, Output=${usage.completion_tokens}, Total=${usage.total_tokens}`);
+      }
 
       const content = res?.data?.choices?.[0]?.message?.content?.trim();
       if (!content) {
@@ -146,7 +147,7 @@ Rules:
 
       return {
         ...parsed,
-        usage: res?.data?.usage || null
+        usage: usage || null
       };
     } catch (err) {
       console.error(` ${this.role} Error:`, err.message);
@@ -210,10 +211,8 @@ Rules:
 - "markdown" should be a concise handoff addressed to the Coder Agent summarizing what to implement now.
 - Mirror the user's request language when possible; otherwise use English.`;
 
-    const logicalModel = logicalModelMap[this.logicalName];
-
+    // 不指定 model，讓 API Provider Manager 使用默認模型
     const payload = {
-      model: logicalModel,
       temperature: this.temperature,
       messages: [
         { role: "system", content: systemPrompt },
@@ -223,12 +222,15 @@ Rules:
     };
 
     try {
-      const res = await axios.post(`${this.baseUrl}/chat/completions`, payload, {
-        headers: {
-          "Authorization": `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json"
-        }
-      });
+      // 使用 BaseAgent 的 _executeAPI 方法，自動處理重試和 429 錯誤
+      const res = await this._executeAPI(payload);
+
+      // 記錄 Token 使用情況
+      const usage = res?.data?.usage;
+      if (usage) {
+        tokenTracker.record(this.role, usage);
+        console.log(`  Token usage: Input=${usage.prompt_tokens}, Output=${usage.completion_tokens}, Total=${usage.total_tokens}`);
+      }
 
       const content = res?.data?.choices?.[0]?.message?.content?.trim();
       if (!content) {
@@ -250,7 +252,7 @@ Rules:
 
       return {
         ...parsed,
-        usage: res?.data?.usage || null
+        usage: usage || null
       };
     } catch (err) {
       console.error(` ${this.role} Error:`, err.message);
