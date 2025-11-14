@@ -1245,7 +1245,7 @@ Return ONLY the JSON array, no markdown or explanation.`;
             }],
             generationConfig: {
               temperature: 0.3,
-              maxOutputTokens: 16384
+              maxOutputTokens: 16384  // 保持 16384 以支持複雜的骨架生成
             }
           };
           
@@ -1523,7 +1523,7 @@ DO NOT include phrases like "Apologies", "I'm sorry", "Here's the code", etc. Ju
             }],
             generationConfig: {
               temperature: 0.5,
-              maxOutputTokens: 8192
+              maxOutputTokens: 16384  // 增加到 16384 以支持更長的 CSS 和完整功能實現
             }
           };
           

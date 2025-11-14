@@ -250,11 +250,19 @@ class MarkupGenerator {
       prompt += `CRITICAL: Match the EXACT filename from the relative path above.\n\n`;
     }
     
-    // 獲取使用者需求以生成創意風格
-    const userRequirement = fileSpec.description || '';
+    // 優先使用 context 中的完整用戶需求，而不是僅依賴文件描述
+    const userRequirement = context.userRequirement || context.projectSummary || fileSpec.description || '';
+    const projectRequirements = context.projectRequirements || [];
     const isCalculator = userRequirement.toLowerCase().includes('calculator') || 
                         userRequirement.toLowerCase().includes('計算') ||
-                        userRequirement.toLowerCase().includes('計算機');
+                        userRequirement.toLowerCase().includes('計算機') ||
+                        fileSpec.description?.toLowerCase().includes('calculator') ||
+                        fileSpec.description?.toLowerCase().includes('計算');
+    
+    // 在 prompt 開頭添加用戶需求
+    if (userRequirement && userRequirement !== fileSpec.description) {
+      prompt = `=== USER REQUIREMENT ===\n${userRequirement}\n\n${projectRequirements.length > 0 ? `=== PROJECT REQUIREMENTS ===\n${projectRequirements.join('\n')}\n\n` : ''}${prompt}`;
+    }
     
     prompt += `Generate complete, production-ready HTML with:\n`;
     prompt += `- Semantic HTML5 structure\n`;

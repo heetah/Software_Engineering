@@ -159,33 +159,51 @@ body {
       prompt += `Skeleton:\n\`\`\`css\n${skeleton}\n\`\`\`\n\n`;
     }
     
-    // 獲取使用者需求以生成創意風格
-    const userRequirement = fileSpec.description || '';
+    // 優先使用 context 中的完整用戶需求，而不是僅依賴文件描述
+    const userRequirement = context.userRequirement || context.projectSummary || fileSpec.description || '';
+    const projectRequirements = context.projectRequirements || [];
     const isCalculator = userRequirement.toLowerCase().includes('calculator') || 
                         userRequirement.toLowerCase().includes('計算') ||
-                        userRequirement.toLowerCase().includes('計算機');
+                        userRequirement.toLowerCase().includes('計算機') ||
+                        fileSpec.description?.toLowerCase().includes('calculator') ||
+                        fileSpec.description?.toLowerCase().includes('計算');
+    
+    // 在 prompt 開頭添加用戶需求
+    if (userRequirement && userRequirement !== fileSpec.description) {
+      prompt = `=== USER REQUIREMENT ===\n${userRequirement}\n\n${projectRequirements.length > 0 ? `=== PROJECT REQUIREMENTS ===\n${projectRequirements.join('\n')}\n\n` : ''}${prompt}`;
+    }
     
     prompt += `Generate complete, production-ready CSS with:\n`;
     prompt += `- Modern layout techniques (Flexbox/Grid) - use Grid for calculator button layouts\n`;
     prompt += `- Responsive design (mobile-first approach)\n`;
     prompt += `- Creative and beautiful design with:\n`;
     prompt += `  * Modern color schemes (use gradients, not flat colors)\n`;
-    prompt += `  * Smooth transitions and hover effects\n`;
-    prompt += `  * Box shadows for depth (use multiple shadows for modern look)\n`;
-    prompt += `  * Rounded corners (border-radius)\n`;
+    prompt += `  * Smooth transitions and hover effects (0.2s-0.3s ease)\n`;
+    prompt += `  * Box shadows for depth (use multiple shadows for modern look: 0 2px 4px rgba(0,0,0,0.1), 0 4px 8px rgba(0,0,0,0.1))\n`;
+    prompt += `  * Rounded corners (border-radius: 8px-12px for buttons, 4px-8px for containers)\n`;
     prompt += `  * Creative button styles (different colors for operators vs numbers)\n`;
     if (isCalculator) {
-      prompt += `  * Calculator-specific: Make display area prominent, buttons well-spaced, operator buttons visually distinct\n`;
+      prompt += `  * Calculator-specific styling:\n`;
+      prompt += `    - Display area (#calculatorDisplay or .calculator-display): Large font (2rem-3rem), prominent background, good contrast\n`;
+      prompt += `    - Button grid (.calculator-buttons): Use CSS Grid with 4 columns, gap: 1rem, well-spaced\n`;
+      prompt += `    - Number buttons (.button-number): Clean, modern style with hover effects\n`;
+      prompt += `    - Operator buttons (.button-operator): Distinct color (e.g., orange/blue), visually different from numbers\n`;
+      prompt += `    - Equals button (.button-equals): Prominent, often spans 2 rows, accent color\n`;
+      prompt += `    - Clear button (.button-clear): Warning/danger color (red/orange)\n`;
+      prompt += `    - Make buttons large enough for touch (min 60px height), with good spacing\n`;
     }
     prompt += `- Consistent color scheme and typography\n`;
     prompt += `- Interactive states (hover, focus, active) with smooth transitions\n`;
     prompt += `- CRITICAL: All selectors (.class, #id, [data-*]) MUST match HTML attributes exactly\n`;
     prompt += `- CRITICAL: Every class and ID used in HTML must have corresponding CSS rules\n`;
-    prompt += `- CRITICAL: If HTML has .buttons container, style it with Grid/Flexbox for button layout\n`;
-    prompt += `- CRITICAL: If HTML has .display, make it prominent and readable\n`;
+    prompt += `- CRITICAL: If HTML has .calculator-buttons or .calculator-container, style it with Grid/Flexbox\n`;
+    prompt += `- CRITICAL: If HTML has #calculatorDisplay or .calculator-display, make it prominent and readable\n`;
+    prompt += `- CRITICAL: Style ALL elements in the HTML - do not leave any unstyled\n`;
     prompt += `- Ensure visual hierarchy matches the application's purpose\n`;
-    prompt += `- Add your own creative style touches while maintaining functionality\n\n`;
-    prompt += `Return ONLY the code, no markdown.`;
+    prompt += `- Add your own creative style touches while maintaining functionality\n`;
+    prompt += `- Make the design modern, professional, and visually appealing\n`;
+    prompt += `- Use CSS custom properties (variables) for colors and spacing for maintainability\n\n`;
+    prompt += `Return ONLY the complete CSS code, no markdown, no explanations. Include ALL styles needed.`;
     
     return prompt;
   }

@@ -312,10 +312,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // 獲取使用者需求以生成對應功能
-    const userRequirement = fileSpec.description || '';
+    // 優先使用 context 中的完整用戶需求，而不是僅依賴文件描述
+    const userRequirement = context.userRequirement || context.projectSummary || fileSpec.description || '';
+    const projectRequirements = context.projectRequirements || [];
     const isCalculator = userRequirement.toLowerCase().includes('calculator') || 
                         userRequirement.toLowerCase().includes('計算') ||
-                        userRequirement.toLowerCase().includes('計算機');
+                        userRequirement.toLowerCase().includes('計算機') ||
+                        fileSpec.description?.toLowerCase().includes('calculator') ||
+                        fileSpec.description?.toLowerCase().includes('計算');
+    
+    // 在 prompt 開頭添加用戶需求
+    if (userRequirement && userRequirement !== fileSpec.description) {
+      prompt = `=== USER REQUIREMENT ===\n${userRequirement}\n\n${projectRequirements.length > 0 ? `=== PROJECT REQUIREMENTS ===\n${projectRequirements.join('\n')}\n\n` : ''}${prompt}`;
+    }
     
     prompt += `Generate complete, production-ready JavaScript with:\n`;
     prompt += `- Modern ES6+ syntax (NO import/export, use plain script)\n`;
@@ -326,19 +335,40 @@ document.addEventListener('DOMContentLoaded', () => {
     prompt += `- CRITICAL: All selectors (querySelector, getElementById) MUST match HTML attributes exactly\n`;
     prompt += `- CRITICAL: When reading element.innerText, button.value, or data attributes, handle the EXACT values from HTML\n`;
     prompt += `- CRITICAL: Function names and event handlers must match skeleton signatures\n`;
+    prompt += `- CRITICAL: The code MUST implement the user requirement: "${userRequirement}"\n`;
+    prompt += `- CRITICAL: Do NOT generate generic template code - implement the SPECIFIC functionality requested by the user\n`;
+    
     if (isCalculator && htmlFiles.length > 0) {
-      prompt += `\nCALCULATOR-SPECIFIC REQUIREMENTS:\n`;
-      prompt += `- Implement complete calculator functionality:\n`;
-      prompt += `  * Handle number button clicks (0-9)\n`;
-      prompt += `  * Handle operator button clicks (+, -, *, /)\n`;
-      prompt += `  * Handle equals button (=) to calculate result\n`;
-      prompt += `  * Handle clear button (C) to reset\n`;
-      prompt += `  * Update display with current input/result\n`;
-      prompt += `  * Handle decimal point (.)\n`;
-      prompt += `  * Prevent invalid operations (division by zero, etc.)\n`;
-      prompt += `- Use the EXACT selectors from the HTML above\n`;
-      prompt += `- If HTML uses button.value or data attributes, use those exact values\n`;
-      prompt += `- Make the calculator fully functional and user-friendly\n\n`;
+      prompt += `\n🔢 CALCULATOR-SPECIFIC REQUIREMENTS (HIGHEST PRIORITY):\n`;
+      prompt += `The user requirement is to build a CALCULATOR. You MUST implement:\n`;
+      prompt += `1. Complete calculator logic:\n`;
+      prompt += `   - Number buttons (0-9) append digits to display\n`;
+      prompt += `   - Operator buttons (+, -, *, /) store operator and previous number\n`;
+      prompt += `   - Equals button (=) performs calculation and displays result\n`;
+      prompt += `   - Clear button (C) resets calculator to initial state\n`;
+      prompt += `   - Decimal point (.) adds decimal to current number\n`;
+      prompt += `   - Handle chained operations (e.g., 2 + 3 * 4)\n`;
+      prompt += `   - Prevent division by zero and other invalid operations\n`;
+      prompt += `2. Display management:\n`;
+      prompt += `   - Update display element (#calculatorDisplay or .calculator-display) with current input/result\n`;
+      prompt += `   - Format numbers appropriately (handle decimals, large numbers)\n`;
+      prompt += `3. State management:\n`;
+      prompt += `   - Track current number, previous number, and current operator\n`;
+      prompt += `   - Handle edge cases (multiple decimal points, operator changes, etc.)\n`;
+      prompt += `4. Use the EXACT selectors from the HTML above\n`;
+      prompt += `5. If HTML uses data attributes (data-type, data-value), use those exact values\n`;
+      prompt += `6. Make the calculator FULLY FUNCTIONAL - test your logic mentally before writing code\n\n`;
+      prompt += `EXAMPLE: If HTML has <button data-type="number" data-value="7">, your code should:\n`;
+      prompt += `  const buttons = document.querySelectorAll('[data-type="number"]');\n`;
+      prompt += `  buttons.forEach(btn => btn.addEventListener('click', () => appendNumber(btn.dataset.value)));\n\n`;
+    } else if (userRequirement && !isCalculator) {
+      // 對於非計算機的需求，也要明確要求實現特定功能
+      prompt += `\n🎯 USER REQUIREMENT IMPLEMENTATION:\n`;
+      prompt += `The user wants: "${userRequirement}"\n`;
+      prompt += `- Analyze the HTML structure above to understand what elements are available\n`;
+      prompt += `- Implement the SPECIFIC functionality requested, not generic template code\n`;
+      prompt += `- Make sure all interactive elements work as expected\n`;
+      prompt += `- Connect frontend to backend APIs if needed (use window.APP_CONFIG for API URLs)\n\n`;
     }
     if (contracts) {
       prompt += `- CRITICAL: Follow contract structures EXACTLY - no field name changes allowed\n`;
