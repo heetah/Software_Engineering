@@ -3,27 +3,30 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import ArchitectAgent from './architect-agent.js';
 
-// 資料儲存目錄
+// Data storage directory
 const DATA_DIR = path.join(process.cwd(), 'data');
 const SESSIONS_DIR = path.join(DATA_DIR, 'sessions');
-// 會話工作區目錄
-const SESSION_WORKSPACES_DIR = SESSIONS_DIR;
+// Session workspace directory - changed to output/
+const OUTPUT_DIR = path.join(process.cwd(), 'output');
+const SESSION_WORKSPACES_DIR = OUTPUT_DIR;
 
 function ensureDirs() {
-  // 確保資料儲存目錄存在
+  // Ensure data storage directory exists
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-  // 確保會話目錄存在
+  // Ensure sessions directory exists
   if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR);
-  // 確保會話工作區目錄存在
+  // Ensure output directory exists
+  if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
+  // Ensure session workspace directory exists
   if (!fs.existsSync(SESSION_WORKSPACES_DIR)) fs.mkdirSync(SESSION_WORKSPACES_DIR);
 }
 
 function ensureSessionWorkspace(sessionId) {
-  // 如果沒有會話 ID，則返回 null
+  // If no session ID, return null
   if (!sessionId) return null;
-  // 創建會話工作區目錄
+  // Create session workspace directory in output/
   const sessionDir = path.join(SESSION_WORKSPACES_DIR, sessionId);
-  // 確保會話工作區目錄存在
+  // Ensure session workspace directory exists
   if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
   return sessionDir;
 }

@@ -1,3 +1,8 @@
+/**
+ * Architect Agent
+ * 負責理解使用者需求，並生成系統架構，並生成計劃給 Coder Agent 執行
+ */
+
 import BaseAgent from "./agent-base.js";
 import dotenv from "dotenv";
 import axios from "axios";

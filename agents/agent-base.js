@@ -1,3 +1,8 @@
+/**
+ * 提供 Agent 的Base Class，包含API調用、重試機制、Token追蹤、錯誤處理等功能
+ * 統一錯誤處理、輸出檔案儲存、Token追蹤
+ */
+
 import axios from "axios";
 import fs from "fs";
 import dotenv from "dotenv";

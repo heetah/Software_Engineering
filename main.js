@@ -1,4 +1,9 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+/**
+ * 主程式
+ * 負責初始化資料庫、註冊 Coordinator 橋接、建立主視窗等功能
+ */
+
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
@@ -153,6 +158,42 @@ function registerHistoryHandlers() {
 
     return { ok: true };
   });
+
+  ipcMain.handle('history:clear-all', async () => {
+    // 顯示確認對話框
+    const result = await dialog.showMessageBox({
+      type: 'warning',
+      buttons: ['取消', '確認清除'],
+      defaultId: 0,
+      cancelId: 0,
+      title: '確認清除歷史記錄',
+      message: '您確定要清除所有歷史記錄嗎？',
+      detail: '此操作無法復原，所有會話和訊息都將被永久刪除。'
+    });
+
+    if (result.response === 0) {
+      // 使用者按了取消
+      return { ok: false, cancelled: true };
+    }
+
+    try {
+      // 清除所有訊息
+      await run('DELETE FROM messages');
+      // 清除所有會話
+      await run('DELETE FROM sessions');
+      
+      return { ok: true };
+    } catch (error) {
+      console.error('Failed to clear history:', error);
+      return { ok: false, error: error.message };
+    }
+  });
+}
+
+function registerSettingsHandlers() {
+  ipcMain.handle('settings:get-app-data-path', async () => {
+    return app.getPath('userData');
+  });
 }
 
 // 註冊 Coordinator 橋接，處理前端傳來的訊息
@@ -176,70 +217,70 @@ function registerCoordinatorBridge() {
       const { type, content, session } = payload || {};
 
       if (!content || type !== 'text') {
-        console.warn('收到無效的訊息格式:', payload);
+        console.warn('Received invalid message format:', payload);
         return;
       }
 
-      console.log(`[Coordinator Bridge] 收到使用者輸入: ${content.substring(0, 50)}...`);
+      console.log(`[Coordinator Bridge] Received user input: ${content.substring(0, 50)}...`);
 
-      // 發送處理中的訊息給前端
+      // Send processing message to frontend
       event.sender.send('message-from-agent', {
         type: 'text',
-        content: '正在處理您的需求，請稍候...'
+        content: 'Processing your request, please wait...'
       });
 
-      // 初始化 Coordinator（使用 try-catch 包裹以避免初始化錯誤）
+      // Initialize Coordinator (wrapped in try-catch to avoid initialization errors)
       let coordinatorModule, initializedAgents;
       try {
         const result = await initializeCoordinator();
         coordinatorModule = result.coordinatorModule;
         initializedAgents = result.agents;
       } catch (initError) {
-        console.error('[Coordinator Bridge] 初始化 Coordinator 失敗:', initError);
-        throw new Error(`初始化失敗: ${initError.message}`);
+        console.error('[Coordinator Bridge] Failed to initialize Coordinator:', initError);
+        throw new Error(`Initialization failed: ${initError.message}`);
       }
 
-      // 調用 Coordinator 處理使用者輸入（使用獨立的 try-catch 來捕獲處理錯誤）
+      // Call Coordinator to process user input (use separate try-catch to catch processing errors)
       let plan;
       try {
         plan = await coordinatorModule.runWithInstructionService(content, initializedAgents);
       } catch (processError) {
-        console.error('[Coordinator Bridge] Coordinator 處理失敗:', processError);
-        // 如果錯誤是 native 崩潰相關，提供更友好的錯誤訊息
+        console.error('[Coordinator Bridge] Coordinator processing failed:', processError);
+        // If error is related to native crash, provide a more friendly error message
         if (processError.message && processError.message.includes('napi')) {
-          throw new Error('處理過程中發生內部錯誤，請稍後再試或檢查日誌');
+          throw new Error('Internal error occurred during processing, please try again later or check logs');
         }
         throw processError;
       }
 
-      // 構建回應訊息
+      // Build response message
       let responseText = '';
       
       if (plan) {
-        responseText = `✅ 專案生成完成！\n\n`;
-        responseText += `會話 ID: ${plan.id}\n`;
-        responseText += `工作區: ${plan.workspaceDir || 'N/A'}\n`;
-        responseText += `檔案操作: 創建=${plan.fileOps?.created?.length || 0}, 跳過=${plan.fileOps?.skipped?.length || 0}\n\n`;
+        responseText = `✅ Project generation completed!\n\n`;
+        responseText += `Session ID: ${plan.id}\n`;
+        responseText += `Workspace: ${plan.workspaceDir || 'N/A'}\n`;
+        responseText += `File operations: Created=${plan.fileOps?.created?.length || 0}, Skipped=${plan.fileOps?.skipped?.length || 0}\n\n`;
 
         if (plan.output?.plan) {
-          responseText += `📋 計劃標題: ${plan.output.plan.title}\n`;
-          responseText += `📝 計劃摘要: ${plan.output.plan.summary}\n`;
-          responseText += `📊 步驟數: ${plan.output.plan.steps?.length || 0}\n\n`;
+          responseText += `📋 Plan title: ${plan.output.plan.title}\n`;
+          responseText += `📝 Plan summary: ${plan.output.plan.summary}\n`;
+          responseText += `📊 Steps: ${plan.output.plan.steps?.length || 0}\n\n`;
         }
 
         if (plan.fileOps?.created?.length > 0) {
-          responseText += `📁 已生成的檔案:\n`;
+          responseText += `📁 Generated files:\n`;
           plan.fileOps.created.slice(0, 10).forEach(file => {
             responseText += `  • ${file}\n`;
           });
           if (plan.fileOps.created.length > 10) {
-            responseText += `  ... 還有 ${plan.fileOps.created.length - 10} 個檔案\n`;
+            responseText += `  ... and ${plan.fileOps.created.length - 10} more files\n`;
           }
         }
 
-        responseText += `\n💡 提示: 專案已生成在 ${plan.workspaceDir || 'data/sessions/' + plan.id} 目錄中`;
+        responseText += `\n💡 Tip: Project generated in ${plan.workspaceDir || 'output/' + plan.id} directory`;
       } else {
-        responseText = '⚠️ 處理完成，但未返回計劃資訊';
+        responseText = '⚠️ Processing completed, but no plan information returned';
       }
 
       // 回傳結果給前端
@@ -248,35 +289,35 @@ function registerCoordinatorBridge() {
         content: responseText
       });
 
-      // 同步寫入歷史紀錄（如果 session 存在）
+      // Synchronously write to history (if session exists)
       if (session?.id) {
         await run(
           'INSERT INTO messages (session_id, role, payload_json) VALUES (?, ?, ?)',
           [session.id, 'ai', JSON.stringify({ role: 'ai', content: responseText })]
         ).catch(err => {
-          console.error('寫入 AI 回應到歷史紀錄失敗:', err);
+          console.error('Failed to write AI response to history:', err);
         });
       }
 
-      console.log(`[Coordinator Bridge] 處理完成，會話 ID: ${plan?.id || 'N/A'}`);
+      console.log(`[Coordinator Bridge] Processing completed, Session ID: ${plan?.id || 'N/A'}`);
 
     } catch (error) {
-      console.error('[Coordinator Bridge] 處理訊息時發生錯誤:', error);
+      console.error('[Coordinator Bridge] Error processing message:', error);
       
-      const errorMessage = `❌ 處理失敗: ${error.message}\n\n請檢查控制台以獲取詳細錯誤資訊。`;
+      const errorMessage = `❌ Processing failed: ${error.message}\n\nPlease check console for detailed error information.`;
       
       event.sender.send('message-from-agent', {
         type: 'error',
         content: errorMessage
       });
 
-      // 如果 session 存在，也把錯誤訊息寫入歷史
+      // If session exists, also write error message to history
       if (payload?.session?.id) {
         await run(
           'INSERT INTO messages (session_id, role, payload_json) VALUES (?, ?, ?)',
           [payload.session.id, 'ai', JSON.stringify({ role: 'ai', content: errorMessage })]
         ).catch(err => {
-          console.error('寫入錯誤訊息到歷史紀錄失敗:', err);
+          console.error('Failed to write error message to history:', err);
         });
       }
     }
@@ -295,13 +336,14 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'dev_page', 'main-window.html'));
-  mainWindow.webContents.openDevTools();
+  // mainWindow.webContents.openDevTools(); // 已關閉自動開啟開發者工具
 }
 
 app.whenReady().then(async () => {
   try {
     await initDatabase();
     registerHistoryHandlers();
+    registerSettingsHandlers(); // 註冊設定處理程序
     registerCoordinatorBridge(); // 註冊 Coordinator 橋接
     createWindow();
   } catch (error) {
