@@ -1,0 +1,28 @@
+{
+  "operations": [
+    {
+      "operation": "add",
+      "operands": [1, 2]
+    },
+    {
+      "operation": "subtract",
+      "operands": [5, 3]
+    },
+    {
+      "operation": "multiply",
+      "operands": [3, 4]
+    },
+    {
+      "operation": "divide",
+      "operands": [10, 2]
+    },
+    {
+      "operation": "modulus",
+      "operands": [7, 3]
+    },
+    {
+      "operation": "exponent",
+      "operands": [2, 3]
+    }
+  ]
+}

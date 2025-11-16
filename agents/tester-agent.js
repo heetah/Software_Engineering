@@ -1,367 +1,275 @@
+// agents/tester-agent.js
+// Tester Agent：負責根據 test-plan.json 產生測試碼、執行 Jest、產生報告
+// 主要流程：
+// 1. 載入 test-plan.json
+// 2. 針對每個 testFile 產生測試碼並寫入檔案
+// 3. 執行 jest 並取得報告
+// 4. 建立測試報告與錯誤報告
+// 5. 對失敗案例進行原因分析並補充建議
+// 6. 寫出報告檔案
+
+// ===== Import Modules =====
+// 引入必要模組
+// 1. fs：檔案系統操作
+// 2. path：路徑操作
+// 3. fileURLToPath：取得模組檔案路徑
+// 4. child_process.exec：執行外部命令
+// 5. util.promisify：將 callback 轉成 Promise
+// 6. BaseAgent：基底 Agent 類別
+// 7. dotenv：載入環境變數
+// 8. templates.js：引入 Tester Agent 專用模板
+// ===== Import Modules =====
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { exec as execCallback } from "child_process";
+import { promisify } from "util";
 import BaseAgent from "./agent-base.js";
 import dotenv from "dotenv";
-import fs from 'fs';
-import path from 'path';
-import { spawn } from 'child_process';
+import {
+  TESTER_CODEGEN_PROMPT_TEMPLATE,
+  TESTER_ERROR_ANALYSIS_TEMPLATE,
+  TESTER_REPORT_MARKDOWN_TEMPLATE
+} from "./templates.js";
 
+// 載入環境變數
 dotenv.config();
 
+// 將 exec 轉成 Promise 版本
+const exec = promisify(execCallback);
+
+// 取得目前模組的檔案路徑與目錄
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// ===== TesterAgent Class =====
+// Tester Agent 主類別
+// ===== TesterAgent Class =====
 export default class TesterAgent extends BaseAgent {
   constructor() {
     super("Tester Agent", "Markdown code", "tester", {
-      baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-      apiKey: process.env.OPENAI_API_KEY
+      baseUrl: process.env.OPENAI_BASE_URL || process.env.BASE_URL || "https://api.openai.com/v1",
+      apiKey: process.env.OPENAI_API_KEY || process.env.API_KEY
     });
+    this.temperature = 0.1;
   }
 
-  prompt(coderOutput) {
-    return `
-Write automated tests for the following code:
-${coderOutput}
-
-Output unit tests or integration test scripts.`;
+  // ===== File & Plan Utilities =====
+  //讀取 ../data/sessions/<sessionId>/test-plan.json
+  async loadTestPlan(sessionId) {
+    const planPath = path.resolve(__dirname, `../data/sessions/${sessionId}/test-plan.json`);
+    const raw = await fs.promises.readFile(planPath, "utf-8");
+    return JSON.parse(raw);
   }
 
-  async runPipeline({ useVerifiedSummary = true, requirePlan = false } = {}) {
-    const outputsDir = path.resolve('./outputs');
-    const planPath = path.join(outputsDir, 'test-plan.json');
-    let plan;
-    if (fs.existsSync(planPath)) {
-      const raw = fs.readFileSync(planPath, 'utf-8');
-      plan = JSON.parse(raw);
-    } else {
-      if (requirePlan) {
-        throw new Error('Test plan not found at outputs/test-plan.json and fallback disabled (requirePlan=true).');
-      }
-      plan = this.generateTestPlan({ useVerifiedSummary, outputsDir, planPath });
-    }
-    const testsDir = path.resolve('./tests');
-    this.generateTestsFromPlan({ plan, testsDir });
-    const jestJsonPath = path.join(outputsDir, 'jest-results.json');
-    await this.runJestAndCollect({ outputJson: jestJsonPath });
-    const analysis = this.analyzeResults({ plan, jestJsonPath });
-    const reportPath = path.join(outputsDir, 'Test_Report.json');
-    fs.writeFileSync(reportPath, JSON.stringify(analysis, null, 2), 'utf-8');
-    // Write unified error report for downstream LLM analysis
-    const errorsPath = path.join(outputsDir, 'Test_Errors.json');
-    fs.writeFileSync(errorsPath, JSON.stringify(analysis.errors || [], null, 2), 'utf-8');
-    const brief = `Test Summary (generated ${new Date().toISOString()}):\n` +
-      `Total: ${analysis.summary.total}, Passed: ${analysis.summary.passed}, Failed: ${analysis.summary.failed}`;
-    fs.writeFileSync(path.join(outputsDir, 'Tester_Agent.txt'), brief, 'utf-8');
-    return { planPath, testsDir, jestJsonPath, reportPath, errorsPath };
+  //建立目錄（若不存在）
+  async ensureDir(dir) {
+    await fs.promises.mkdir(dir, { recursive: true });
   }
 
-  generateTestPlan({ useVerifiedSummary = true, outputsDir = path.resolve('./outputs'), planPath = path.join(path.resolve('./outputs'), 'test-plan.json') } = {}) {
-    fs.mkdirSync(outputsDir, { recursive: true });
-    let summary = null;
-    if (useVerifiedSummary) {
-      const verifiedPath = path.join(outputsDir, 'verified-summary.json');
-      if (fs.existsSync(verifiedPath)) {
-        summary = JSON.parse(fs.readFileSync(verifiedPath, 'utf-8'));
-      }
-    }
-    const reqPath = path.join(outputsDir, 'Requirement_Agent.txt');
-    const coderPath = path.join(outputsDir, 'Coder_Agent.txt');
-    const requirementRaw = fs.existsSync(reqPath) ? fs.readFileSync(reqPath, 'utf-8') : '';
-    const coderRaw = fs.existsSync(coderPath) ? fs.readFileSync(coderPath, 'utf-8') : '';
+  // ===== Prompt and LLM =====
 
-    const features = summary?.features || this._extractLines(requirementRaw, ['加法', '減法']);
-    const components = summary?.components || this._extractComponents(coderRaw);
-    const apiRoutes = summary?.apiRoutes || this._extractApiRoutes(coderRaw);
-
-    const projectFiles = [
-      'generated_project/src/index.js',
-      'generated_project/src/components/App.js',
-      'generated_project/src/components/InputComponent.js',
-      'generated_project/src/components/OperationComponent.js',
-      'generated_project/src/components/ResultDisplayComponent.js'
-    ];
-
-    const plan = {
-      metadata: {
-        generatedAt: new Date().toISOString(),
-        sources: summary?.metadata?.sources || ['Requirement_Agent.txt', 'Coder_Agent.txt']
-      },
-      scope: { features, components, apiRoutes },
-      suites: [
-        {
-          id: 'S1',
-          title: 'Project structure checks',
-          type: 'integration',
-          cases: projectFiles.map((p, i) => ({ id: `S1-C${i+1}`, title: `File exists: ${p}`, kind: 'file_exists', target: p }))
-        },
-        {
-          id: 'S2',
-          title: 'UI operation options present',
-          type: 'static-analysis',
-          cases: [
-            { id: 'S2-C1', title: 'OperationComponent has Add', kind: 'file_contains', target: 'generated_project/src/components/OperationComponent.js', pattern: 'Add' },
-            { id: 'S2-C2', title: 'OperationComponent has Subtract', kind: 'file_contains', target: 'generated_project/src/components/OperationComponent.js', pattern: 'Subtract' }
-          ]
-        },
-        {
-          id: 'S3',
-          title: 'API route exposure (design doc)',
-          type: 'static-analysis',
-          cases: apiRoutes.map((r, i) => ({ id: `S3-C${i+1}`, title: `Coder output mentions API ${r}`, kind: 'outputs_contains', target: 'Coder_Agent.txt', pattern: r }))
-        },
-        {
-          id: 'S4',
-          title: 'Requirements coverage (presence)',
-          type: 'static-analysis',
-          cases: features.map((f, i) => ({ id: `S4-C${i+1}`, title: `Requirement mentions: ${f}`, kind: 'outputs_contains', target: 'Requirement_Agent.txt', pattern: f }))
-        },
-        {
-          id: 'S5',
-          title: 'Computation logic present in App.js',
-          type: 'static-analysis',
-          cases: [
-            { id: 'S5-C1', title: 'App.js includes addition logic', kind: 'file_contains', target: 'generated_project/src/components/App.js', pattern: 'number1 + number2' },
-            { id: 'S5-C2', title: 'App.js includes subtraction logic', kind: 'file_contains', target: 'generated_project/src/components/App.js', pattern: 'number1 - number2' }
-          ]
-        }
-      ]
-    };
-
-    fs.writeFileSync(planPath, JSON.stringify(plan, null, 2), 'utf-8');
-    return plan;
+  //套入 TESTER_CODEGEN_PROMPT_TEMPLATE，內嵌 testFile JSON，要求只輸出一個 ```javascript 區塊。
+  // testFile 結構參考 templates.js 定義
+  generateTestFilePrompt(testFile) {
+    const tfJson = JSON.stringify(testFile, null, 2);
+    return `${TESTER_CODEGEN_PROMPT_TEMPLATE}\n\n<TEST_FILE>\n${tfJson}\n</TEST_FILE>\n\n請依據 TEST_FILE 內容僅輸出一個 \`\`\`javascript 區塊，內容為可執行的 Jest 測試碼。`;
   }
 
-  generateTestsFromPlan({ plan, testsDir }) {
-    fs.mkdirSync(testsDir, { recursive: true });
-    const filePath = path.join(testsDir, 'generated_from_plan.test.js');
-    const testCode = this._buildJestFromPlan(plan);
-    fs.writeFileSync(filePath, testCode, 'utf-8');
+  //呼叫 LLM 並抽取 ```javascript 區塊。
+  async askLLMForCode(prompt) {
+    const raw = await this.run(prompt);
+    return this.extractJavaScript(raw);
+  }
+
+  // 從 LLM 回傳文字中抽取 JavaScript 程式碼
+  // 支援 ```javascript、```js、``` 三種標記
+  extractJavaScript(text) {
+    if (typeof text !== "string") return "";
+    const fence = text.match(/```javascript[\s\S]*?```/i) || text.match(/```js[\s\S]*?```/i) || text.match(/```[\s\S]*?```/i);
+    let code = fence ? fence[0] : text;
+    code = code.replace(/^```(?:javascript|js)?/i, "").replace(/```$/i, "").trim();
+    return code;
+  }
+
+  // ===== Write Generated Tests =====
+  // 將產生的測試碼寫入 ../data/sessions/<sessionId>/generated-tests/<filename>
+  // 確保目錄存在
+  async writeGeneratedTestFile(sessionId, filename, content) {
+    const dir = path.resolve(__dirname, `../data/sessions/${sessionId}/generated-tests`);
+    await this.ensureDir(dir);
+    const filePath = path.join(dir, filename);
+    await fs.promises.writeFile(filePath, content, "utf-8");
     return filePath;
   }
 
-  async runJestAndCollect({ outputJson }) {
-    await new Promise((resolve, reject) => {
-      const args = [
-        '--experimental-vm-modules',
-        path.join('node_modules', 'jest', 'bin', 'jest.js'),
-        '--json',
-        `--outputFile=${outputJson}`
-      ];
-      const child = spawn(process.execPath, args, { stdio: 'inherit' });
-      child.on('exit', code => {
-        if (code === 0 || code === 1) {
-          resolve();
-        } else {
-          reject(new Error(`Jest exited with code ${code}`));
-        }
-      });
-      child.on('error', reject);
-    });
+  // ===== Run Jest =====
+  // 執行 jest，並輸出報告到 ../data/sessions/<sessionId>/jest-report.json
+  // 以 session 目錄為 cwd 執行 npx jest --json --outputFile jest-report.json
+  async runJest(sessionId) {
+    const sessionDir = path.resolve(__dirname, `../data/sessions/${sessionId}`);
+    const cmd = `npx jest --json --outputFile jest-report.json`;
+    try {
+      await exec(cmd, { cwd: sessionDir, windowsHide: true, maxBuffer: 1024 * 1024 * 10 });
+      return path.join(sessionDir, "jest-report.json");
+    } catch (err) {
+      // 即使 jest 有失敗測試也會回傳非零碼，但仍會輸出報告
+      return path.join(sessionDir, "jest-report.json");
+    }
   }
 
-  analyzeResults({ plan, jestJsonPath }) {
-    const raw = fs.readFileSync(jestJsonPath, 'utf-8');
-    const res = JSON.parse(raw);
-    const total = res.numTotalTests || 0;
-    const passed = res.numPassedTests || 0;
-    const failed = res.numFailedTests || 0;
-    const errors = [];
-    (res.testResults || []).forEach(tr => {
-      const filePath = tr.name;
-      (tr.assertionResults || []).forEach(ar => {
-        if (ar.status !== 'passed') {
-          errors.push({
-            status: ar.status,
-            title: ar.title,
-            fullName: ar.fullName,
-            ancestorTitles: ar.ancestorTitles || [],
-            location: { testFilePath: filePath, status: tr.status },
-            failureMessages: Array.isArray(ar.failureMessages) ? ar.failureMessages : (tr.message ? String(tr.message).split('\n') : [])
+  // 解析 ../data/sessions/<sessionId>/jest-report.json
+  // 讀取並解析 Jest JSON 報告，失敗則回傳 null
+  async parseJestReport(reportPath) {
+    try {
+      const raw = await fs.promises.readFile(reportPath, "utf-8");
+      const data = JSON.parse(raw);
+      return data;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  // ===== Reporting =====
+  // 建立測試報告與錯誤報告物件
+  // 從 jest-report.json 生成 testReport 與 errorReport 物件
+  // testReport 包含每個測試檔案的通過/失敗狀態與統計
+  // errorReport 包含失敗案例的詳細資訊
+  buildReports(sessionId, jestJson) {
+    const now = new Date().toISOString();
+    const testResults = Array.isArray(jestJson?.testResults) ? jestJson.testResults : [];
+    let totalTests = 0;
+    let totalPassed = 0;
+    let totalFailed = 0;
+    const files = [];
+    const failures = [];
+
+    for (const tr of testResults) {
+      const assertionResults = Array.isArray(tr.assertionResults) ? tr.assertionResults : [];
+      const passed = assertionResults.filter(a => a.status === "passed").length;
+      const failed = assertionResults.filter(a => a.status === "failed").length;
+      const fileItem = {
+        filename: tr.name || tr.testFilePath || "unknown",
+        status: failed > 0 ? "failed" : "passed",
+        passed,
+        failed,
+        assertions: assertionResults.map(a => ({ title: a.title, status: a.status }))
+      };
+      files.push(fileItem);
+      totalTests += assertionResults.length;
+      totalPassed += passed;
+      totalFailed += failed;
+
+      if (failed > 0) {
+        for (const a of assertionResults.filter(x => x.status === "failed")) {
+          failures.push({
+            filename: tr.name || tr.testFilePath || "unknown",
+            title: a.title,
+            fullName: a.fullName,
+            failureMessages: Array.isArray(a.failureMessages) ? a.failureMessages : (tr.message ? [tr.message] : [])
           });
         }
-      });
-    });
-    return {
-      summary: { total, passed, failed },
-      errors,
-      planMeta: plan.metadata
+      }
+    }
+
+    const testReport = {
+      sessionId,
+      generatedAt: now,
+      totals: { files: files.length, tests: totalTests, passed: totalPassed, failed: totalFailed },
+      files
     };
+
+    const errorReport = {
+      sessionId,
+      generatedAt: now,
+      failures
+    };
+
+    return { testReport, errorReport };
   }
 
-  _extractLines(text, keywords = []) { return keywords.filter(k => text.includes(k)); }
-  _extractComponents(text) {
-    const components = [];
-    const matches = text.match(/components:\s*\[[^\]]*\]/g) || [];
-    matches.forEach(m => { const names = [...m.matchAll(/"([^"]+)"/g)].map(mm => mm[1]); components.push(...names); });
-    return Array.from(new Set(components));
+  // 對失敗案例進行原因分析並補充建議
+  // 針對失敗案例用 TESTER_ERROR_ANALYSIS_TEMPLATE 取得 suggestedCause
+  // 若 LLM 失敗則略過該案例
+  
+  async enrichFailuresWithSuggestions(failures) {
+    const enriched = [];
+    for (const f of failures) {
+      try {
+        const tmpl = TESTER_ERROR_ANALYSIS_TEMPLATE
+          .replace("{{filename}}", f.filename || "")
+          .replace("{{caseId}}", f.fullName || f.title || "")
+          .replace("{{name}}", f.title || "")
+          .replace("{{errorMessage}}", (f.failureMessages && f.failureMessages[0]) || "")
+          .replace("{{stack}}", "");
+        const suggestion = await this.run(tmpl);
+        enriched.push({ ...f, suggestedCause: suggestion });
+      } catch {
+        enriched.push(f);
+      }
+    }
+    return enriched;
   }
-  _extractApiRoutes(text) { return [...(text.matchAll(/endpoint:\s*"([^\"]+)"/g) || [])].map(m => m[1]); }
 
-  _buildJestFromPlan(plan) {
-    const lines = [];
-  lines.push(`import fs from 'fs';`);
-  lines.push(`import path from 'path';`);
-  lines.push(`import { jest } from '@jest/globals';`);
-    lines.push(`import { spawn, execFile } from 'child_process';`);
-    lines.push(`import { pathToFileURL } from 'url';`);
-    lines.push(`const candidates = (p) => [p, path.join('generated_project', p)];`);
-    lines.push(`const firstExisting = (arr) => { for (const p of arr) { const abs = path.resolve(p); if (fs.existsSync(abs)) return abs; } return null; };`);
-    lines.push(`const walk = (dir, acc=[]) => {`);
-    lines.push(`  const entries = fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : [];`);
-    lines.push(`  for (const e of entries) {`);
-    lines.push(`    const p = path.join(dir, e.name);`);
-    lines.push(`    if (e.isDirectory()) {`);
-    lines.push(`      if (!['node_modules', '.git', 'dist', 'build'].includes(e.name)) walk(p, acc);`);
-    lines.push(`    } else { acc.push(p); }`);
-    lines.push(`  }`);
-    lines.push(`  return acc;`);
-    lines.push(`};`);
-    lines.push(`const poolFiles = () => ([...walk('.'), ...walk('generated_project'), ...walk(path.join('generated_project','public')), ...walk(path.join('generated_project','src'))]);`);
-    lines.push(`const globMatches = (pattern) => { if (!pattern || !pattern.includes('*')) return []; let s = pattern.replace(/\\\\/g, '/'); s = s.split('*').map(part => part.replace(/[.+?^()|[\]{}]/g, '\\$&')).join('.*'); const rx = new RegExp('^' + s + '$'); return poolFiles().map(p => p.replace(/\\\\/g,'/')).filter(p => rx.test(p)); };`);
-    lines.push(`const anyWildcardMatch = (pattern) => globMatches(pattern).length > 0;`);
-    lines.push(`const someFileContent = (files, pred) => { for (const f of files) { try { const c = fs.readFileSync(f, 'utf-8'); if (pred(c, f)) return true; } catch {} } return false; };`);
-    lines.push(`const resolveEither = (p) => firstExisting(candidates(p)) || path.resolve(p);`);
-    lines.push(`const sleep = (ms)=> new Promise(r=>setTimeout(r,ms));`);
-    lines.push(`const execFileAsync = (cmd, args=[], opts={}) => new Promise((resolve) => { const t = opts.timeoutMs || 10000; const child = execFile(cmd, args, { timeout: t }, (error, stdout, stderr) => { resolve({ code: error?.code ?? 0, stdout: String(stdout||''), stderr: String(stderr||'') }); }); });`);
-    lines.push(`const startServer = (cmd, args=[]) => spawn(cmd, args, { stdio: 'ignore', env: { ...process.env } });`);
-    lines.push(`const stopProcess = (child, signal='SIGINT') => { if (!child || child.killed) return; try { child.kill(signal); } catch {} };`);
-    lines.push(`const waitForHttpOk = async (url, timeoutMs=15000) => { if (typeof fetch !== 'function') return false; const end = Date.now()+timeoutMs; while (Date.now() < end) { try { const res = await fetch(url); if (res.ok) return true; } catch {} await sleep(300); } return false; };`);
-    lines.push('');
-    lines.push(`describe('Generated Test Plan', () => {`);
-    lines.push(`  jest.setTimeout(20000);`);
-    plan.suites.forEach(suite => {
-      lines.push(`  describe(${JSON.stringify(suite.title)}, () => {`);
-      suite.cases.forEach(cs => {
-        if (cs.kind === 'function_call') {
-          lines.push(`    test(${JSON.stringify(cs.title)}, async () => {`);
-          lines.push(`      const modPath = resolveEither(${JSON.stringify(cs.fn?.module)});`);
-          lines.push(`      expect(fs.existsSync(modPath)).toBe(true);`);
-          lines.push(`      if (!fs.existsSync(modPath)) return;`);
-          lines.push(`      const mod = await import(pathToFileURL(modPath).href);`);
-          lines.push(`      const fn = mod[${JSON.stringify(cs.fn?.export)}] || (mod.default && mod.default[${JSON.stringify(cs.fn?.export)}]);`);
-          lines.push(`      expect(typeof fn).toBe('function');`);
-          if (cs.fn?.expect && typeof cs.fn.expect === 'object' && cs.fn.expect.throws) {
-            const exp = cs.fn.expect.throws;
-            lines.push(`      let threw = false;`);
-            lines.push(`      try { await fn(...${JSON.stringify(cs.fn?.args || [])}); } catch (err) { threw = true;`);
-            if (exp.message) {
-              lines.push(`        expect(String(err.message)).toBe(${JSON.stringify(exp.message)});`);
-            }
-            lines.push(`      }`);
-            lines.push(`      expect(threw).toBe(true);`);
-          } else {
-            lines.push(`      const out = await fn(...${JSON.stringify(cs.fn?.args || [])});`);
-            lines.push(`      expect(out).toEqual(${JSON.stringify(cs.fn?.expect)});`);
-          }
-          lines.push(`    });`);
-        } else if (cs.kind === 'exec_command') {
-          lines.push(`    test(${JSON.stringify(cs.title)}, async () => {`);
-          lines.push(`      const res = await execFileAsync(${JSON.stringify(cs.cmd)}, ${JSON.stringify(cs.args || [])}, { timeoutMs: ${(cs.expect?.timeoutMs)||10000} });`);
-          if (cs.expect?.stdoutIncludes) {
-            lines.push(`      expect(res.stdout.includes(${JSON.stringify(cs.expect.stdoutIncludes)})).toBe(true);`);
-          }
-          if (cs.expect?.stderrIncludes) {
-            lines.push(`      expect(res.stderr.includes(${JSON.stringify(cs.expect.stderrIncludes)})).toBe(true);`);
-          }
-          if (cs.expect?.exitCode !== undefined) {
-            lines.push(`      expect(res.code).toBe(${JSON.stringify(cs.expect.exitCode)});`);
-          }
-          lines.push(`    });`);
-        } else if (cs.kind === 'server_request') {
-          lines.push(`    test(${JSON.stringify(cs.title)}, async () => {`);
-          lines.push(`      if (typeof fetch !== 'function') { expect(true).toBe(true); return; }`);
-          lines.push(`      const child = startServer(${JSON.stringify(cs.start?.cmd || 'node')}, ${JSON.stringify(cs.start?.args || [])});`);
-          lines.push(`      try {`);
-          lines.push(`        const ok = await waitForHttpOk(${JSON.stringify(cs.start?.healthUrl || 'http://127.0.0.1:3000/health')}, ${JSON.stringify(cs.start?.timeoutMs || 15000)});`);
-          lines.push(`        expect(ok).toBe(true);`);
-          lines.push(`        if (!ok) return;`);
-          lines.push(`        const req = ${JSON.stringify(cs.request || {})};`);
-          lines.push(`        const res = await fetch(req.url, { method: req.method || 'GET', headers: { 'Content-Type': 'application/json' }, body: req.json ? JSON.stringify(req.json) : undefined });`);
-          lines.push(`        const text = await res.text(); let json=null; try{ json = JSON.parse(text);}catch{}`);
-          if (cs.request?.expect?.status !== undefined) {
-            lines.push(`        expect(res.status).toBe(${JSON.stringify(cs.request.expect.status)});`);
-          }
-          if (cs.request?.expect?.bodyIncludes) {
-            lines.push(`        expect(text.includes(${JSON.stringify(cs.request.expect.bodyIncludes)})).toBe(true);`);
-          }
-          if (cs.request?.expect?.jsonPathEquals) {
-            const kv = cs.request.expect.jsonPathEquals;
-            const firstKey = kv && Object.keys(kv)[0];
-            if (firstKey) {
-              lines.push(`        expect(json?.[${JSON.stringify(firstKey)}]).toEqual(${JSON.stringify(cs.request.expect.jsonPathEquals[firstKey])});`);
-            }
-          }
-          lines.push(`      } finally { stopProcess(child, ${JSON.stringify(cs.stop?.signal || 'SIGINT')}); }`);
-          lines.push(`    });`);
-        } else if (cs.kind === 'file_exists') {
-          lines.push(`    test(${JSON.stringify(cs.title)}, () => {`);
-          if ((cs.target || '').includes('*')) {
-            lines.push(`      const ok = anyWildcardMatch(${JSON.stringify(cs.target)});`);
-            lines.push(`      expect(ok).toBe(true);`);
-          } else {
-            lines.push(`      const p = firstExisting(candidates(${JSON.stringify(cs.target)})) || path.resolve(${JSON.stringify(cs.target)});`);
-            lines.push(`      expect(fs.existsSync(p)).toBe(true);`);
-          }
-          lines.push(`    });`);
-        } else if (cs.kind === 'file_contains') {
-          lines.push(`    test(${JSON.stringify(cs.title)}, () => {`);
-          if ((cs.target || '').includes('*')) {
-            lines.push(`      const matches = globMatches(${JSON.stringify(cs.target)}).map(p => path.resolve(p));`);
-            lines.push(`      expect(matches.length > 0).toBe(true);`);
-            lines.push(`      const ok = someFileContent(matches, (content) => {`);
-            lines.push(`        if (content.includes(${JSON.stringify(cs.pattern)})) return true;`);
-            lines.push(`        const alt = ${JSON.stringify(cs.pattern)}
-          .replace(/\\\\/g, '')
-          .replace(/\\\\\"/g, '"')
-          .replace(/^\"?([A-Za-z0-9_]+)\"?\s*:\s*/, '$1: ');`);
-            lines.push(`        return content.includes(alt);`);
-            lines.push(`      });`);
-            lines.push(`      expect(ok).toBe(true);`);
-          } else {
-            lines.push(`      const p = firstExisting(candidates(${JSON.stringify(cs.target)})) || path.resolve(${JSON.stringify(cs.target)});`);
-            lines.push(`      const exists = fs.existsSync(p);`);
-            lines.push(`      expect(exists).toBe(true);`);
-            lines.push(`      if (exists) {`);
-            lines.push(`        const content = fs.readFileSync(p, 'utf-8');`);
-            lines.push(`        let ok = content.includes(${JSON.stringify(cs.pattern)});`);
-            lines.push(`        if (!ok) {`);
-            lines.push(`          const alt = ${JSON.stringify(cs.pattern)}
-            .replace(/\\\\/g, '')
-            .replace(/\\\\\"/g, '"')
-            .replace(/^\"?([A-Za-z0-9_]+)\"?\s*:\s*/, '$1: ');`);
-            lines.push(`          ok = content.includes(alt);`);
-            lines.push(`        }`);
-            lines.push(`        expect(ok).toBe(true);`);
-            lines.push(`      }`);
-          }
-          lines.push(`    });`);
-        } else if (cs.kind === 'outputs_contains') {
-          lines.push(`    test(${JSON.stringify(cs.title)}, () => {`);
-          lines.push(`      const p = path.resolve('./outputs', ${JSON.stringify(cs.target)});`);
-          lines.push(`      const content = fs.readFileSync(p, 'utf-8');`);
-          lines.push(`      const pat = ${JSON.stringify(cs.pattern)};`);
-          lines.push(`      let ok = content.includes(pat);`);
-          lines.push(`      if (!ok) {`);
-          lines.push(`        const alt = pat.replace(/\\\\/g, ''); // tolerate over-escaped patterns like \\(/`);
-          lines.push(`        ok = content.includes(alt);`);
-          lines.push(`      }`);
-          lines.push(`      expect(ok).toBe(true);`);
-          lines.push(`    });`);
-        } else if (cs.kind === 'regex_match') {
-          lines.push(`    test(${JSON.stringify(cs.title)}, () => {`);
-          if ((cs.target || '').includes('*')) {
-            lines.push(`      const matches = globMatches(${JSON.stringify(cs.target)}).map(p => path.resolve(p));`);
-            lines.push(`      const re = new RegExp(${JSON.stringify(cs.pattern || '')});`);
-            lines.push(`      const ok = someFileContent(matches, (content) => re.test(content));`);
-            lines.push(`      expect(ok).toBe(true);`);
-          } else {
-            lines.push(`      const p = firstExisting(candidates(${JSON.stringify(cs.target)})) || path.resolve(${JSON.stringify(cs.target)});`);
-            lines.push(`      const content = fs.readFileSync(p, 'utf-8');`);
-            lines.push(`      const re = new RegExp(${JSON.stringify(cs.pattern || '')});`);
-            lines.push(`      expect(re.test(content)).toBe(true);`);
-          }
-          lines.push(`    });`);
-        }
-      });
-      lines.push(`  });`);
-    });
-    lines.push('});');
-    return lines.join('\n');
+  // 寫出 test-plan.json、test-report.json、error-report.json
+  async writeReports(sessionId, testReport, errorReport) {
+    const dir = path.resolve(__dirname, `../data/sessions/${sessionId}`);
+    await this.ensureDir(dir);
+    const testReportPath = path.join(dir, "test-report.json");
+    const errorReportPath = path.join(dir, "error-report.json");
+    await fs.promises.writeFile(testReportPath, JSON.stringify(testReport, null, 2), "utf-8");
+    await fs.promises.writeFile(errorReportPath, JSON.stringify(errorReport, null, 2), "utf-8");
+    return { testReportPath, errorReportPath };
   }
+
+  // ===== Main Entrypoint =====
+  // 執行 Tester Agent 主流程
+  // 1. 載入 test-plan.json
+  // 2. 針對每個 testFile 產生測試碼並寫入檔案
+  // 3. 執行 jest 並取得報告
+  // 4. 建立測試報告與錯誤報告
+  // 5. 對失敗案例進行原因分析並補充建議
+  // 6. 寫出報告檔案
+  async runTesterAgent(sessionId) {
+    if (!sessionId) throw new Error("缺少 sessionId");
+
+    const plan = await this.loadTestPlan(sessionId);
+    if (!Array.isArray(plan?.testFiles) || plan.testFiles.length === 0) {
+      throw new Error("test-plan.json 缺少 testFiles 或為空");
+    }
+
+    for (const tf of plan.testFiles) {
+      if (!tf.filename || !tf.importTarget || !tf.inputsType) continue;
+      const prompt = this.generateTestFilePrompt(tf);
+      const code = await this.askLLMForCode(prompt);
+      await this.writeGeneratedTestFile(sessionId, tf.filename, code);
+    }
+
+    const jestReportPath = await this.runJest(sessionId);
+    const jestJson = await this.parseJestReport(jestReportPath);
+    if (!jestJson) {
+      // 回寫空報告以利後續流程
+      const empty = { sessionId, generatedAt: new Date().toISOString(), totals: { files: 0, tests: 0, passed: 0, failed: 0 }, files: [] };
+      await this.writeReports(sessionId, empty, { sessionId, generatedAt: new Date().toISOString(), failures: [] });
+      throw new Error("無法解析 jest-report.json");
+    }
+
+    let { testReport, errorReport } = this.buildReports(sessionId, jestJson);
+
+    if (errorReport.failures.length > 0) {
+      const enriched = await this.enrichFailuresWithSuggestions(errorReport.failures);
+      errorReport = { ...errorReport, failures: enriched };
+    }
+
+    await this.writeReports(sessionId, testReport, errorReport);
+    return { testReport, errorReport };
+  }
+}
+
+// 允許從 CLI 執行： node agents/tester-agent.js <sessionId>
+// 例如： node agents/tester-agent.js abc123
+if (process.argv[1] && path.basename(process.argv[1]) === path.basename(__filename)) {
+  const sid = process.argv[2];
+  const agent = new TesterAgent();
+  agent.runTesterAgent(sid).then(() => process.exit(0)).catch(() => process.exit(1));
 }

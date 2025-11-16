@@ -1,8 +1,4 @@
 .env
-/dist
-/generated_project
 /outputs
 /node_modules
-/tests
-.eslintrc.json
-.prettierrc.json
+/data

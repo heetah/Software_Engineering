@@ -1,0 +1,320 @@
+/* dev_page/scss/style.scss (最終版) */
+
+// --- 1. 設計變數定義 (Design Tokens) ---
+$color-background: #e4e9f2;
+$color-text-primary: #3d4a5f;
+$color-text-secondary: #99a3b5;
+$color-shadow-light: #f7fbff;
+$color-shadow-dark: #c8d0e0;
+$gradient-active: linear-gradient(135deg, #8692fd, #6272f4);
+$radius-large: 20px;
+$radius-medium: 15px;
+$radius-circle: 50%;
+
+// --- Mixins for Soft UI ---
+@mixin soft-ui-extruded($radius: $radius-medium, $bg: $color-background) {
+  border-radius: $radius;
+  background: $bg;
+  box-shadow: 6px 6px 12px $color-shadow-dark,
+              -6px -6px 12px $color-shadow-light;
+  transition: all 0.2s ease-in-out;
+}
+  
+@mixin soft-ui-indented($radius: $radius-medium) {
+  border-radius: $radius;
+  box-shadow: inset 4px 4px 8px $color-shadow-dark,
+              inset -4px -4px 8px $color-shadow-light;
+  transition: all 0.2s ease-in-out;
+}
+
+// --- 2. 基礎重置與全域樣式 ---
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    height: 100vh;
+    background-color: $color-background;
+    font-family: "Microsoft JhengHei UI", "Segoe UI", sans-serif;
+    color: $color-text-primary;
+    overflow: hidden;
+}
+
+// --- 3. 宏觀佈局 (Layout) ---
+.app-layout {
+    display: flex;
+    height: 100vh;
+    padding: 20px;
+    gap: 20px;
+}
+
+.sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    @include soft-ui-extruded($radius-large); // 側邊欄浮出
+}
+
+.content-area {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 20px 40px;
+    @include soft-ui-indented($radius-large); // 內容區凹陷
+}
+
+// --- 4. 模組樣式 (Modules) ---
+
+// 聊天頁面
+.chat-display {
+    flex-grow: 1;
+    overflow-y: auto;
+}
+
+// 側邊欄菜單
+.sidebar__menu {
+    margin-top: 40px;
+}
+
+.menu-button {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 15px 20px;
+    margin-bottom: 15px;
+    border: none;
+    font-size: 16px;
+    font-weight: 600;
+    color: $color-text-secondary;
+    cursor: pointer;
+    position: relative;
+    @include soft-ui-extruded($radius-medium);
+
+    span:first-child {
+        margin-right: 15px;
+    }
+
+    &.is-active {
+        background: $gradient-active;
+        color: white;
+        box-shadow: 4px 4px 10px $color-shadow-dark; 
+    }
+
+    &:not(.is-active):hover {
+        color: $color-text-primary;
+    }
+
+    &:active {
+        @include soft-ui-indented($radius-medium - 2px);
+    }
+
+    .dropdown-arrow {
+        position: absolute;
+        right: 20px;
+        top: 50%;
+        transform: translateY(-50%) rotate(0deg);
+        font-size: 10px;
+        transition: transform 0.3s ease;
+    }
+
+    &.is-open .dropdown-arrow {
+        transform: translateY(-50%) rotate(180deg);
+    }
+}
+
+// 歷史紀錄列表
+.history-list {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.15s ease-out; // 縮短動畫時間
+    margin: -10px 0 10px 0;
+
+    &.is-open {
+        max-height: 300px;
+        overflow-y: auto;
+    }
+
+    .history-item {
+        display: block;
+        padding: 10px 20px 10px 40px;
+        font-size: 14px;
+        color: $color-text-secondary;
+        text-decoration: none;
+        border-radius: $radius-medium;
+
+        &:hover {
+            background-color: darken($color-background, 5%);
+            color: $color-text-primary;
+        }
+    }
+}
+
+// 對話訊息樣式
+.message-group {
+    display: flex;
+    margin-bottom: 25px;
+    animation: fadeInUp 0.3s ease-out;
+    width: 100%; // 【修正】佔滿寬度才能置右
+
+    &--ai {
+        .message-avatar {
+            color: $color-text-secondary;
+            font-weight: bold;
+        }
+    }
+
+    &--user {
+        justify-content: flex-end;   // 【修正】讓內容靠右
+        flex-direction: row-reverse; // 【修正】翻轉頭像和泡泡
+
+        .message-avatar {
+            margin-left: 15px;
+            margin-right: 0;
+            @include soft-ui-extruded($radius-circle);
+        }
+        
+        .message-bubble {
+            @include soft-ui-extruded($radius-large);
+        }
+    }
+}
+
+.message-avatar {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    margin-right: 15px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    @include soft-ui-extruded($radius-circle); 
+}
+
+.message-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.message-bubble {
+    padding: 15px 20px;
+    @include soft-ui-extruded($radius-large);
+}
+
+.message-actions {
+    margin-top: 10px;
+    padding-left: 5px;
+
+    .action-button {
+        border: none;
+        background: none;
+        color: $color-text-secondary;
+        cursor: pointer;
+        font-size: 14px;
+        &:hover {
+            color: $color-text-primary;
+        }
+    }
+}
+
+// 輸入區塊樣式
+.input-area {
+    flex-shrink: 0;
+    margin-top: 20px;
+    padding: 8px;
+    display: flex;
+    align-items: flex-end;
+    @include soft-ui-indented($radius-large); // 【修正】凹陷效果+圓角
+}
+
+.input-field {
+    flex-grow: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    padding: 12px;
+    font-size: 16px;
+    color: $color-text-primary;
+    resize: none;
+}
+
+.input-actions {
+    display: flex;
+    align-items: center;
+    padding: 0 5px 5px 10px;
+}
+
+.char-counter {
+    font-size: 12px;
+    color: $color-text-secondary;
+    margin-right: 15px;
+}
+
+.action-button--icon {
+    width: 36px;
+    height: 36px;
+    border: none;
+    color: $color-text-secondary;
+    cursor: pointer;
+    margin: 0 5px;
+    @include soft-ui-extruded($radius-circle);
+
+    &:hover {
+        color: $color-text-primary;
+    }
+    &:active {
+        @include soft-ui-indented($radius-circle);
+    }
+}
+
+.action-button--send {
+    width: 48px;
+    height: 36px;
+    border: none;
+    color: white;
+    cursor: pointer;
+    margin-left: 5px;
+    font-size: 20px;
+    background: $gradient-active;
+    @include soft-ui-extruded($radius-medium);
+
+    &:active {
+        @include soft-ui-indented($radius-medium);
+    }
+}
+
+// 頁面切換邏輯
+.page {
+    width: 100%;
+    height: 100%;
+    display: none;
+    
+    &#page-chat {
+        flex-direction: column;
+    }
+
+    &.is-active {
+        display: flex;
+        animation: fadeInUp 0.3s ease-out;
+    }
+}
+
+.page-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: $color-text-primary;
+}
+
+// --- 動畫 ---
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
