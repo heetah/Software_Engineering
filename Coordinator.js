@@ -8,6 +8,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import ArchitectAgent from "./agents/architect-agent.js";
+import VerifierAgent from "./agents/verifier-agent.js";
 import TesterAgent from "./agents/tester-agent.js";
 // 將 Coder 產出的 Markdown 生成專案
 import { writeProjectFromMarkdown } from "./agents/project-writer.js";
@@ -44,6 +45,7 @@ export function initializeAgents(force = false) {
   
   agentCache = {
     architect: new ArchitectAgent(),
+    verifier: new VerifierAgent(),
     tester: new TesterAgent(),
     // Coder 功能由 agents/coder-agent/coordinator.js 負責
     // 使用時動態創建 Coordinator 實例
@@ -89,7 +91,7 @@ async function main() {
  * 可被外部調用來處理使用者輸入
  */
 export async function runWithInstructionService(userInput, agents) {
-  const { architect, tester } = agents;
+  const { architect, verifier, tester } = agents;
 
   try {
     // 初始化 InstructionService（Architect Agent 會直接處理用戶需求）
