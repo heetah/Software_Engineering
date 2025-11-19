@@ -1,6 +1,6 @@
 /**
  * @file 渲染器進程核心腳本 (main-window.js)
- * (最終整合版：含迎賓、Thinking 動畫、代碼框優化)
+ * (最終整合版：含迎賓、Thinking 動畫、代碼框優化、設定頁面功能)
  */
 
 /*
@@ -211,7 +211,7 @@ async function loadMessages(sessionId) {
       if (!text) {
         return;
       }
-      // 假設歷史紀錄目前都是 text
+      // 假設歷史紀錄目前都是 text，未來可以擴充儲存 type
       appendMessage(text, message.role, 'text');
     });
   } catch (error) {
@@ -307,6 +307,7 @@ function appendMessage(text, sender, messageType = 'text') {
   messageBubble.classList.add('message-bubble');
 
   // 建立 Actions 區塊 (包含 Copy 按鈕)
+  // 關鍵：確保在 if/else 之前定義
   const messageActions = document.createElement('div');
   messageActions.classList.add('message-actions');
 
