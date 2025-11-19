@@ -1,6 +1,7 @@
 /**
- * @file Electron 主進程 (Main Process) 腳本
- * 主程式：負責初始化資料庫、註冊 Coordinator 橋接、建立主視窗等功能
+ * 主程式 (main.js)
+ * 負責初始化資料庫、註冊 Coordinator 橋接、建立主視窗等功能
+ * 已修正：移除 "Processing..." 干擾訊息，新增 F12 開發者工具快捷鍵
  */
 
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
@@ -16,13 +17,12 @@ const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
 const sqlite3 = require('sqlite3').verbose();
 
-// 全域資料庫實例
 let db;
 
-/**
- * -------------------------------------------------------------------
- * 1. 資料庫初始化
- * -------------------------------------------------------------------
+/*
+ * ====================================================================
+ * 1. 資料庫初始化與輔助函式
+ * ====================================================================
  */
 
 function initDatabase() {
@@ -33,8 +33,6 @@ function initDatabase() {
         reject(connectionError);
         return;
       }
-
-      console.log(`Database opened successfully at: ${dbPath}`);
 
       db.exec(
         `
@@ -68,13 +66,6 @@ function initDatabase() {
   });
 }
 
-/**
- * -------------------------------------------------------------------
- * 2. 資料庫輔助函式 (Promisification)
- * -------------------------------------------------------------------
- */
-
-// 執行 INSERT, UPDATE, DELETE
 function run(sql, params = []) {
   return new Promise((resolve, reject) => {
     if (!db) {
@@ -92,7 +83,6 @@ function run(sql, params = []) {
   });
 }
 
-// 執行 SELECT ... LIMIT 1
 function get(sql, params = []) {
   return new Promise((resolve, reject) => {
     if (!db) {
@@ -110,7 +100,6 @@ function get(sql, params = []) {
   });
 }
 
-// 執行 SELECT (回傳多筆)
 function all(sql, params = []) {
   return new Promise((resolve, reject) => {
     if (!db) {
@@ -128,14 +117,13 @@ function all(sql, params = []) {
   });
 }
 
-/**
- * -------------------------------------------------------------------
- * 3. IPC (Inter-Process Communication) 處理器：歷史紀錄
- * -------------------------------------------------------------------
+/*
+ * ====================================================================
+ * 2. IPC 處理器 (歷史紀錄與設定)
+ * ====================================================================
  */
-function registerHistoryHandlers() {
-  console.log('✅ Main Process: Registering history handlers...');
 
+function registerHistoryHandlers() {
   ipcMain.handle('history:create-session', async () => {
     const row = await get('SELECT MAX(sequence) AS maxSeq FROM sessions');
     const nextSeq = (row?.maxSeq || 0) + 1;
@@ -148,28 +136,12 @@ function registerHistoryHandlers() {
     return {
       id: insertResult.lastID,
       sequence: nextSeq,
-      title,
+      title
     };
   });
 
   ipcMain.handle('history:get-sessions', async () => {
-    return all(
-      `
-        SELECT
-          s.id,
-          s.sequence,
-          s.title,
-          s.created_at,
-          COALESCE(m.message_count, 0) AS message_count
-        FROM sessions AS s
-        LEFT JOIN (
-          SELECT session_id, COUNT(*) AS message_count
-          FROM messages
-          GROUP BY session_id
-        ) AS m ON m.session_id = s.id
-        ORDER BY s.created_at DESC
-      `
-    );
+    return all('SELECT id, sequence, title, created_at FROM sessions ORDER BY created_at DESC');
   });
 
   ipcMain.handle('history:get-messages', async (_event, sessionId) => {
@@ -182,7 +154,7 @@ function registerHistoryHandlers() {
       id: row.id,
       role: row.role,
       createdAt: row.created_at,
-      payload: JSON.parse(row.payload_json),
+      payload: JSON.parse(row.payload_json)
     }));
   });
 
@@ -200,58 +172,48 @@ function registerHistoryHandlers() {
     return { ok: true };
   });
 
-  // 清除所有歷史紀錄（利用 ON DELETE CASCADE）
-  ipcMain.handle('history:clear-all', async (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-
-    const { response } = await dialog.showMessageBox(window, {
+  ipcMain.handle('history:clear-all', async () => {
+    const result = await dialog.showMessageBox({
       type: 'warning',
-      title: '確認清除',
-      message: '您確定要清除所有對話紀錄嗎？',
-      detail: '此操作將永久刪除所有會話與訊息，且無法復原。',
-      buttons: ['取消', '全部清除'], // 0: 取消, 1: 清除
+      buttons: ['取消', '確認清除'],
       defaultId: 0,
       cancelId: 0,
+      title: '確認清除歷史記錄',
+      message: '您確定要清除所有歷史記錄嗎？',
+      detail: '此操作無法復原，所有會話和訊息都將被永久刪除。'
     });
 
-    if (response !== 1) {
+    if (result.response === 0) {
       return { ok: false, cancelled: true };
     }
 
     try {
-      // 由於 ON DELETE CASCADE，只要刪 sessions 即可
+      await run('DELETE FROM messages');
       await run('DELETE FROM sessions');
-      console.log('History cleared successfully.');
-      return { ok: true, cancelled: false };
+      return { ok: true };
     } catch (error) {
-      console.error('Failed to clear history', error);
+      console.error('Failed to clear history:', error);
       return { ok: false, error: error.message };
     }
   });
 }
 
-/**
- * -------------------------------------------------------------------
- * 3-1. IPC：設定相關
- * -------------------------------------------------------------------
- */
 function registerSettingsHandlers() {
-  ipcMain.handle('settings:get-app-data-path', () => {
+  ipcMain.handle('settings:get-app-data-path', async () => {
     return app.getPath('userData');
   });
 }
 
-/**
- * -------------------------------------------------------------------
- * 3-2. IPC：Coordinator 橋接
- * -------------------------------------------------------------------
+/*
+ * ====================================================================
+ * 3. Coordinator 橋接 (AI 核心邏輯)
+ * ====================================================================
  */
+
 function registerCoordinatorBridge() {
-  // 動態載入 Coordinator（因為它是 ES module）
   let coordinatorModule = null;
   let agents = null;
 
-  // 延遲初始化 Coordinator
   async function initializeCoordinator() {
     if (!coordinatorModule) {
       coordinatorModule = await import('./Coordinator.js');
@@ -260,7 +222,6 @@ function registerCoordinatorBridge() {
     return { coordinatorModule, agents };
   }
 
-  // 處理前端送來的訊息
   ipcMain.on('message-to-agent', async (event, payload) => {
     try {
       const { type, content, session } = payload || {};
@@ -272,14 +233,11 @@ function registerCoordinatorBridge() {
 
       console.log(`[Coordinator Bridge] Received user input: ${content.substring(0, 50)}...`);
 
-      // Send processing message to frontend
-      event.sender.send('message-from-agent', {
-        type: 'text',
-        content: 'Processing your request, please wait...',
-      });
+      // ❌ 【已移除】: 不要發送 "Processing..."，讓前端顯示跳動氣泡即可
+      // event.sender.send('message-from-agent', { ... });
 
-      // Initialize Coordinator
-      let initializedAgents;
+      // 初始化 Coordinator
+      let coordinatorModule, initializedAgents;
       try {
         const result = await initializeCoordinator();
         coordinatorModule = result.coordinatorModule;
@@ -289,7 +247,7 @@ function registerCoordinatorBridge() {
         throw new Error(`Initialization failed: ${initError.message}`);
       }
 
-      // Call Coordinator to process user input
+      // 執行 Agent 邏輯
       let plan;
       try {
         plan = await coordinatorModule.runWithInstructionService(content, initializedAgents);
@@ -301,9 +259,9 @@ function registerCoordinatorBridge() {
         throw processError;
       }
 
-      // Build response message
+      // 組裝回應訊息
       let responseText = '';
-
+      
       if (plan) {
         responseText = `✅ Project generation completed!\n\n`;
         responseText += `Session ID: ${plan.id}\n`;
@@ -318,7 +276,7 @@ function registerCoordinatorBridge() {
 
         if (plan.fileOps?.created?.length > 0) {
           responseText += `📁 Generated files:\n`;
-          plan.fileOps.created.slice(0, 10).forEach((file) => {
+          plan.fileOps.created.slice(0, 10).forEach(file => {
             responseText += `  • ${file}\n`;
           });
           if (plan.fileOps.created.length > 10) {
@@ -331,39 +289,40 @@ function registerCoordinatorBridge() {
         responseText = '⚠️ Processing completed, but no plan information returned';
       }
 
-      // 回傳結果給前端
+      // 發送最終結果給前端 (這會觸發前端移除氣泡並顯示文字)
       event.sender.send('message-from-agent', {
         type: 'text',
-        content: responseText,
+        content: responseText
       });
 
-      // Synchronously write to history (if session exists)
+      // 寫入歷史紀錄
       if (session?.id) {
         await run(
           'INSERT INTO messages (session_id, role, payload_json) VALUES (?, ?, ?)',
           [session.id, 'ai', JSON.stringify({ role: 'ai', content: responseText })]
-        ).catch((err) => {
+        ).catch(err => {
           console.error('Failed to write AI response to history:', err);
         });
       }
 
       console.log(`[Coordinator Bridge] Processing completed, Session ID: ${plan?.id || 'N/A'}`);
+
     } catch (error) {
       console.error('[Coordinator Bridge] Error processing message:', error);
-
+      
       const errorMessage = `❌ Processing failed: ${error.message}\n\nPlease check console for detailed error information.`;
-
+      
+      // 發生錯誤時發送 Error 訊息
       event.sender.send('message-from-agent', {
         type: 'error',
-        content: errorMessage,
+        content: errorMessage
       });
 
-      // If session exists, also write error message to history
       if (payload?.session?.id) {
         await run(
           'INSERT INTO messages (session_id, role, payload_json) VALUES (?, ?, ?)',
           [payload.session.id, 'ai', JSON.stringify({ role: 'ai', content: errorMessage })]
-        ).catch((err) => {
+        ).catch(err => {
           console.error('Failed to write error message to history:', err);
         });
       }
@@ -371,40 +330,52 @@ function registerCoordinatorBridge() {
   });
 }
 
-/**
- * -------------------------------------------------------------------
- * 4. 視窗創建
- * -------------------------------------------------------------------
+/*
+ * ====================================================================
+ * 4. 視窗創建 (含 F12 快捷鍵)
+ * ====================================================================
  */
+
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
       // preload: path.join(__dirname, 'preload.js'),
-      // 安全性警告：這些設定不安全，但符合你目前的程式碼 (renderer.js 使用 'require')
       nodeIntegration: true,
-      contextIsolation: false,
-    },
+      contextIsolation: false
+    }
   });
 
   mainWindow.loadFile(path.join(__dirname, 'dev_page', 'main-window.html'));
-  mainWindow.webContents.openDevTools();
+  
+  // ★★★ 綁定開發者工具快捷鍵 (F12 / Ctrl+Shift+I) ★★★
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12' && input.type === 'keyDown') {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+    
+    if ((input.control || input.meta) && (input.shift || input.alt) && input.key.toLowerCase() === 'i' && input.type === 'keyDown') {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
 }
 
-/**
- * -------------------------------------------------------------------
- * 5. Electron 應用程式生命週期
- * -------------------------------------------------------------------
+/*
+ * ====================================================================
+ * 5. 應用程式生命週期
+ * ====================================================================
  */
 
 app.whenReady().then(async () => {
   try {
     await initDatabase();
-    registerHistoryHandlers();      // 註冊歷史紀錄 IPC
-    registerSettingsHandlers();     // 註冊設定 IPC
-    registerCoordinatorBridge();    // 註冊 Coordinator 橋接
-    createWindow();                 // 建立主視窗
+    registerHistoryHandlers();
+    registerSettingsHandlers();
+    registerCoordinatorBridge();
+    createWindow();
   } catch (error) {
     console.error('Failed to initialise database', error);
     app.quit();
@@ -425,7 +396,6 @@ app.on('window-all-closed', () => {
 
 app.on('quit', () => {
   if (db) {
-    console.log('Closing database connection...');
     db.close();
   }
 });
