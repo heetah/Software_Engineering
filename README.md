@@ -1,121 +1,179 @@
 # Screenshot Tool with Free-form Selection
 
-A powerful desktop screenshot application built with Electron, featuring free-form lasso selection and Vision Agent integration.
+一個功能強大的桌面截圖應用程式，使用 Electron 建構，具有任意形狀選取和 AI 圖片分析功能。
 
-## Features
+## 功能特色
 
-- **Free-form Selection**: Create custom-shaped selections using a lasso tool
-- **High DPI Support**: Full support for high DPI displays and proper scaling
-- **Vision Agent Integration**: Built-in image analysis capabilities (preview)
-- **Global Hotkey**: Quick access with `Ctrl+Shift+A` (Windows) or `Cmd+Shift+A` (macOS)
-- **Modern UI**: Soft UI design with smooth animations and visual feedback
+- **任意形狀選取**: 使用套索工具建立自訂形狀的選取區域
+- **高 DPI 支援**: 完整支援高 DPI 顯示器和適當的縮放
+- **AI 圖片分析**: 整合 Google Vision API 和 Gemini API 進行智慧圖片分析
+- **全域快捷鍵**: 使用 `Ctrl+Shift+A` (Windows) 或 `Cmd+Shift+A` (macOS) 快速啟動
+- **現代化 UI**: 具有流暢動畫和視覺回饋的 Soft UI 設計
 
-## Requirements
+## 系統需求
 
 - Node.js >= 16.0.0
 - npm >= 8.0.0
+- Google Cloud API Key（用於圖片分析功能）
 
-## Installation
+## 安裝步驟
 
-1. Clone the repository
-2. Install dependencies:
+1. 複製此專案
+2. 安裝相依套件：
 
 ```bash
 npm install
 ```
 
-## Development
+3. 設定 API Key：
 
-Start the application in development mode:
+```bash
+# 複製環境變數範例檔案
+copy .env.example .env
+
+# 編輯 .env 檔案，填入你的 API Key
+# GOOGLE_API_KEY=你的API金鑰
+# GEMINI_API_KEY=你的API金鑰
+```
+
+### 取得 Google API Key
+
+詳細步驟請參考 [API_SETUP.md](API_SETUP.md)
+
+簡要步驟：
+
+1. 前往 [Google Cloud Console](https://console.cloud.google.com/)
+2. 建立或選擇專案
+3. 啟用以下 API：
+   - Cloud Vision API
+   - Generative Language API
+   - Vertex AI API（可選）
+4. 建立 API 金鑰
+5. 將金鑰複製到 `.env` 檔案
+
+### 測試 API 連線
+
+```bash
+node test-api.js
+```
+
+如果看到 ✅，表示設定成功！
+
+## 開發模式
+
+啟動應用程式：
 
 ```bash
 npm start
 ```
 
-For debugging:
+啟用除錯模式：
 
 ```bash
-npm start -- --debug
+npm run dev
 ```
 
-## Usage
+## 使用方式
 
-1. Press `Ctrl+Shift+A` (Windows) or `Cmd+Shift+A` (macOS) to start capturing
-2. Draw a free-form selection using the lasso tool
-3. Release the mouse button to complete the selection
-4. View the analysis results in the Vision Agent dialog
-5. Press `Esc` to cancel the capture at any time
+1. 按下 `Ctrl+Shift+A` (Windows) 或 `Cmd+Shift+A` (macOS) 開始截圖
+2. 使用滑鼠繪製任意形狀的選取區域
+3. 放開滑鼠完成選取
+4. 等待 AI 分析結果顯示
+5. 按 `Esc` 可隨時取消截圖
 
-## Project Structure
+## 專案結構
 
-- `main.js`: Electron main process, handles window management and IPC
-- `preload.js`: Preload script for secure IPC communication
-- `renderer.js`: UI logic and screenshot capture implementation
-- `index.html`: Main application window
-- `style.css`: Application styling
-- `temp/`: Temporary storage for captured screenshots
+- `main.js`: Electron 主程序，處理視窗管理和 IPC 通訊
+- `preload.js`: 預載腳本，用於安全的 IPC 通訊
+- `renderer.js`: UI 邏輯和截圖功能實作
+- `index.html`: 主應用程式視窗
+- `style.css`: 應用程式樣式
+- `services/gemini.js`: Gemini API 服務
+- `temp/`: 截圖暫存目錄
+- `.env`: 環境變數設定（包含 API Key）
+- `API_SETUP.md`: API 設定詳細說明
 
-## Features in Detail
+## 功能詳解
 
-### Lasso Selection Tool
+### 套索選取工具
 
-- Smooth drawing with point interpolation
-- Real-time preview with size display
-- Multi-layer visual feedback
-- Automatic path closing
+- 流暢的繪製與點插值
+- 即時預覽與尺寸顯示
+- 多層次視覺回饋
+- 自動路徑閉合
 
-### Vision Agent Integration
+### AI 圖片分析
 
-- Image size and format detection
-- Content analysis preview
-- Customizable result display
-- Async processing support
+- **文字識別**：辨識圖片中的文字內容
+- **物件標籤**：識別圖片中的物件和場景
+- **智慧分析**：使用 Gemini AI 提供深入分析和建議
+- **多語言支援**：支援中英文等多種語言
 
-### Screenshot Processing
+### 截圖處理
 
-- Automatic temp directory management
-- Base64 image encoding/decoding
-- Proper cleanup of media streams
-- Error handling and recovery
+- 自動管理暫存目錄
+- Base64 圖片編碼/解碼
+- 適當的媒體串流清理
+- 完整的錯誤處理與恢復
 
-## Technical Details
+## 技術細節
 
-### Display Handling
+### 顯示處理
 
-- Native resolution detection
-- DPI scaling compensation
-- Multi-monitor support
-- Transparent window management
+- 原生解析度偵測
+- DPI 縮放補償
+- 多螢幕支援
+- 透明視窗管理
 
-### Security Features
+### 安全功能
 
-- Context isolation enabled
-- Node integration disabled
-- Secure IPC communication
-- Sandboxed renderer process
+- 啟用 Context Isolation
+- 停用 Node Integration
+- 安全的 IPC 通訊
+- 沙盒化 Renderer 程序
 
-## Error Handling
+## 錯誤處理
 
-The application includes comprehensive error handling for:
+應用程式包含完整的錯誤處理：
 
-- Window creation failures
-- Screenshot capture errors
-- File system operations
-- Global shortcut registration
+- 視窗建立失敗
+- 截圖擷取錯誤
+- 檔案系統操作
+- 全域快捷鍵註冊
+- API 連線失敗
 
-## Contributing
+## API 免費額度
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+- **Vision API**: 每月 1,000 次免費請求
+- **Gemini API**: 每分鐘 60 次免費請求
 
-## License
+## 疑難排解
+
+### API 無法連線？
+
+請檢查：
+
+1. `.env` 檔案中的 API Key 是否正確
+2. 是否已在 Google Cloud Console 啟用對應的 API
+3. 是否已設定帳單帳戶
+4. 執行 `node test-api.js` 測試連線
+
+詳細說明請參考 [API_SETUP.md](API_SETUP.md)
+
+## 貢獻
+
+1. Fork 此專案
+2. 建立功能分支
+3. 提交你的更改
+4. 推送到分支
+5. 建立 Pull Request
+
+## 授權
 
 [MIT License](LICENSE)
 
-## Acknowledgments
+## 致謝
 
-- Electron team for the excellent framework
-- Community contributors and testers
+- Electron 團隊提供的優秀框架
+- Google Cloud 提供的 AI API
+- 社群貢獻者和測試人員

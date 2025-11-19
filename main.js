@@ -1,3 +1,6 @@
+// 載入環境變數
+require("dotenv").config();
+
 const {
   app,
   BrowserWindow,
@@ -8,20 +11,11 @@ const {
   dialog,
 } = require("electron");
 const path = require("path");
-const os = require("os");
 const fetch = global.fetch || require("node-fetch");
 
-// 強制將 Electron 的 userData / cache 放到系統暫存資料夾，避免 OneDrive 等同步路徑造成快取異常
-try {
-  const tempBase = path.join(os.tmpdir(), "circle-electron");
-  app.setPath("userData", path.join(tempBase, "user-data"));
-  app.setPath("cache", path.join(tempBase, "cache"));
-} catch (e) {
-  console.warn("Failed to set Electron data/cache paths:", e);
-}
-
-// Vision API Key（不再使用硬編碼預設）
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || "";
+// Vision API Key
+const GOOGLE_API_KEY =
+  process.env.GOOGLE_API_KEY || "AIzaSyBnbtdTqWT80E7dyS3MUr0LTZ68lxjMWAc";
 
 // 禁用 Chromium 的自動 DPI 調整
 app.commandLine.appendSwitch("disable-features", "AutoResizeOutputDevice");
@@ -102,11 +96,6 @@ app.whenReady().then(() => {
   // Vision API + Gemini handler
   ipcMain.handle("api:image-search", async (event, imageData) => {
     try {
-      if (!GOOGLE_API_KEY) {
-        throw new Error(
-          "GOOGLE_API_KEY is not set. Please set your Google Cloud Vision API key in environment variables."
-        );
-      }
       console.log("Calling Vision API...");
       const content = imageData.replace(/^data:image\/\w+;base64,/, "");
       const url = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_API_KEY}`;
@@ -167,7 +156,7 @@ app.whenReady().then(() => {
       console.log("Detected text:", detectedText);
       console.log("Labels:", labels);
 
-      // 根據內容類型構建 Gemini prompt
+      // 根據內容類型構建 Gemini prompt（使用繁體中文）
       let prompt = "";
 
       // 檢測是否包含數學內容
@@ -178,7 +167,8 @@ app.whenReady().then(() => {
       ) {
         prompt = `我看到一個可能是數學相關的內容。文字是:
 "${detectedText}"
-請：
+
+請用繁體中文回答，並且：
 1. 判斷這是否是數學公式或問題
 2. 如果是，請解釋這個數學概念並提供解答步驟
 3. 如果不是，請說明這段內容的主要意思`;
@@ -193,7 +183,8 @@ app.whenReady().then(() => {
       ) {
         prompt = `我看到一段可能是程式碼的內容:
 "${detectedText}"
-請：
+
+請用繁體中文回答，並且：
 1. 判斷這是哪種程式語言
 2. 解釋這段程式碼的功能
 3. 提供可能的使用場景
@@ -207,7 +198,8 @@ app.whenReady().then(() => {
       ) {
         prompt = `我看到一個可能是圖表或表格的內容。看到的文字是:
 "${detectedText}"
-請：
+
+請用繁體中文回答，並且：
 1. 分析這些數據或資訊
 2. 提供主要觀察和見解
 3. 如果可能，提出可能的趨勢或建議`;
@@ -216,7 +208,10 @@ app.whenReady().then(() => {
       else {
         prompt = `我看到以下內容:
 "${detectedText}"
-請：
+
+標籤: ${labels}
+
+請用繁體中文回答，並且：
 1. 理解並分析這段內容的主要意思
 2. 如果是問題，請提供答案
 3. 如果是陳述，請提供見解或建議
@@ -242,11 +237,6 @@ app.whenReady().then(() => {
   // 處理截圖完成事件
   ipcMain.on("selection-complete", async (event, imageData) => {
     try {
-      if (!GOOGLE_API_KEY) {
-        throw new Error(
-          "GOOGLE_API_KEY is not set. Please set your Google Cloud Vision API key in environment variables."
-        );
-      }
       console.log("Screenshot data received");
       const fs = require("fs");
 
@@ -291,7 +281,7 @@ app.whenReady().then(() => {
         });
 
         if (!res.ok) {
-          // 讀取錯誤 body 以利除錯
+          // log response body for easier debugging
           let textBody = "";
           try {
             textBody = await res.text();
@@ -432,7 +422,17 @@ app.whenReady().then(() => {
         // 如有設定 Gemini，呼叫 Gemini 以取得更自然語言的分析總結
         try {
           const { askGemini } = require("./services/gemini");
-          const geminiPrompt = `Please analyze the following structured image information and provide a concise, user-friendly summary and suggestions.\n\nStructured info:\n${summary}`;
+          const geminiPrompt = `請用繁體中文分析以下圖片資訊，並提供簡潔、易懂的總結和建議。
+
+圖片資訊：
+${summary}
+
+請提供：
+1. 這張圖片的主要內容摘要
+2. 重要的觀察或見解
+3. 如果有建議或延伸思考，請一併說明
+
+請以親切、專業的語氣回答。`;
           console.log("Calling Gemini for summary...");
           const geminiResponse = await askGemini(geminiPrompt);
           if (geminiResponse && geminiResponse.ok) {
@@ -445,14 +445,14 @@ app.whenReady().then(() => {
             );
             event.reply(
               "update-vision-result",
-              summary + "\n\n(Note: Gemini analysis unavailable.)"
+              summary + "\n\n(注意：Gemini 分析功能暫時無法使用)"
             );
           }
         } catch (gemErr) {
           console.error("Error calling Gemini:", gemErr);
           event.reply(
             "update-vision-result",
-            summary + "\n\n(Note: Failed to call Gemini API.)"
+            summary + "\n\n(注意：無法呼叫 Gemini API)"
           );
         }
       } catch (error) {

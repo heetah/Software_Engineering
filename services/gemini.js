@@ -1,15 +1,27 @@
+// 載入環境變數
+require("dotenv").config();
+
 const fetch = global.fetch || require("node-fetch");
 
 // Gemini API 設定
 const GEMINI_API_KEY =
-  process.env.GEMINI_API_KEY || "AIzaSyCOdWdWxMn0anNCe-2_RGHq-LfKJR7Hf4U";
-// 正確的 API URL（若需要其他 model 或路徑，請調整此值）
+  process.env.GEMINI_API_KEY || "請在.env檔案中設定GEMINI_API_KEY";
+// 使用最新的 Gemini 2.0 Flash 模型
 const GEMINI_API_URL =
   process.env.GEMINI_API_URL ||
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
 async function askGemini(prompt) {
   try {
+    // 檢查 API Key 是否設定
+    if (!GEMINI_API_KEY || GEMINI_API_KEY.includes("請在.env檔案中設定")) {
+      console.warn("Gemini API Key 未設定");
+      return {
+        ok: false,
+        error: "Gemini API Key 未設定",
+      };
+    }
+
     const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
       method: "POST",
       headers: {
