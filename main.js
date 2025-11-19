@@ -1,10 +1,19 @@
 /**
  * @file Electron 主進程 (Main Process) 腳本
+ * 主程式：負責初始化資料庫、註冊 Coordinator 橋接、建立主視窗等功能
  */
 
-// * 修改：匯入 'dialog' 用於安全確認
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
-const path = require('path');
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
+
+// 在 ES module 中獲取 __dirname 的等效方式
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// 使用 createRequire 來導入 CommonJS 模組（sqlite3）
+const require = createRequire(import.meta.url);
 const sqlite3 = require('sqlite3').verbose();
 
 // 全域資料庫實例
@@ -15,6 +24,7 @@ let db;
  * 1. 資料庫初始化
  * -------------------------------------------------------------------
  */
+
 function initDatabase() {
   return new Promise((resolve, reject) => {
     const dbPath = path.join(app.getPath('userData'), 'chat-history.db');
@@ -71,6 +81,7 @@ function run(sql, params = []) {
       reject(new Error('Database is not initialised.'));
       return;
     }
+
     db.run(sql, params, function onComplete(runError) {
       if (runError) {
         reject(runError);
@@ -88,6 +99,7 @@ function get(sql, params = []) {
       reject(new Error('Database is not initialised.'));
       return;
     }
+
     db.get(sql, params, (getError, row) => {
       if (getError) {
         reject(getError);
@@ -105,6 +117,7 @@ function all(sql, params = []) {
       reject(new Error('Database is not initialised.'));
       return;
     }
+
     db.all(sql, params, (allError, rows) => {
       if (allError) {
         reject(allError);
@@ -117,51 +130,13 @@ function all(sql, params = []) {
 
 /**
  * -------------------------------------------------------------------
- * 3. IPC (Inter-Process Communication) 處理器
+ * 3. IPC (Inter-Process Communication) 處理器：歷史紀錄
  * -------------------------------------------------------------------
  */
 function registerHistoryHandlers() {
   console.log('✅ Main Process: Registering history handlers...');
-  
-  // *** 新增：獲取應用程式資料路徑 ***
-  ipcMain.handle('settings:get-app-data-path', () => {
-    return app.getPath('userData');
-  });
 
-  // *** 新增：清除所有歷史紀錄 ***
-  ipcMain.handle('history:clear-all', async (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-    
-    // 顯示原生確認對話框
-    const { response } = await dialog.showMessageBox(window, {
-      type: 'warning',
-      title: '確認清除',
-      message: '您確定要清除所有對話紀錄嗎？',
-      detail: '此操作將永久刪除所有會話與訊息，且無法復原。',
-      buttons: ['取消', '全部清除'], // 0: 取消, 1: 清除
-      defaultId: 0,
-      cancelId: 0,
-    });
-
-    if (response !== 1) { // 如果使用者點了 "取消"
-      return { ok: false, cancelled: true };
-    }
-
-    // 使用者已確認，執行刪除
-    try {
-      // 由於 "ON DELETE CASCADE"，我們只需要刪除 sessions
-      await run('DELETE FROM sessions');
-      console.log('History cleared successfully.');
-      return { ok: true, cancelled: false };
-    } catch (error) {
-      console.error('Failed to clear history', error);
-      return { ok: false, error: error.message };
-    }
-  });
-
-  // (現有的 handlers 保持不變)
   ipcMain.handle('history:create-session', async () => {
-    console.log('✅ Main Process: Registering CREATE-SESSION handler.');
     const row = await get('SELECT MAX(sequence) AS maxSeq FROM sessions');
     const nextSeq = (row?.maxSeq || 0) + 1;
     const title = `Session ${String(nextSeq).padStart(3, '0')}`;
@@ -173,12 +148,11 @@ function registerHistoryHandlers() {
     return {
       id: insertResult.lastID,
       sequence: nextSeq,
-      title
+      title,
     };
   });
 
   ipcMain.handle('history:get-sessions', async () => {
-    console.log('✅ Main Process: Registering GET-SESSIONS handler.');
     return all(
       `
         SELECT
@@ -208,7 +182,7 @@ function registerHistoryHandlers() {
       id: row.id,
       role: row.role,
       createdAt: row.created_at,
-      payload: JSON.parse(row.payload_json)
+      payload: JSON.parse(row.payload_json),
     }));
   });
 
@@ -226,6 +200,175 @@ function registerHistoryHandlers() {
     return { ok: true };
   });
 
+  // 清除所有歷史紀錄（利用 ON DELETE CASCADE）
+  ipcMain.handle('history:clear-all', async (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+
+    const { response } = await dialog.showMessageBox(window, {
+      type: 'warning',
+      title: '確認清除',
+      message: '您確定要清除所有對話紀錄嗎？',
+      detail: '此操作將永久刪除所有會話與訊息，且無法復原。',
+      buttons: ['取消', '全部清除'], // 0: 取消, 1: 清除
+      defaultId: 0,
+      cancelId: 0,
+    });
+
+    if (response !== 1) {
+      return { ok: false, cancelled: true };
+    }
+
+    try {
+      // 由於 ON DELETE CASCADE，只要刪 sessions 即可
+      await run('DELETE FROM sessions');
+      console.log('History cleared successfully.');
+      return { ok: true, cancelled: false };
+    } catch (error) {
+      console.error('Failed to clear history', error);
+      return { ok: false, error: error.message };
+    }
+  });
+}
+
+/**
+ * -------------------------------------------------------------------
+ * 3-1. IPC：設定相關
+ * -------------------------------------------------------------------
+ */
+function registerSettingsHandlers() {
+  ipcMain.handle('settings:get-app-data-path', () => {
+    return app.getPath('userData');
+  });
+}
+
+/**
+ * -------------------------------------------------------------------
+ * 3-2. IPC：Coordinator 橋接
+ * -------------------------------------------------------------------
+ */
+function registerCoordinatorBridge() {
+  // 動態載入 Coordinator（因為它是 ES module）
+  let coordinatorModule = null;
+  let agents = null;
+
+  // 延遲初始化 Coordinator
+  async function initializeCoordinator() {
+    if (!coordinatorModule) {
+      coordinatorModule = await import('./Coordinator.js');
+      agents = coordinatorModule.initializeAgents();
+    }
+    return { coordinatorModule, agents };
+  }
+
+  // 處理前端送來的訊息
+  ipcMain.on('message-to-agent', async (event, payload) => {
+    try {
+      const { type, content, session } = payload || {};
+
+      if (!content || type !== 'text') {
+        console.warn('Received invalid message format:', payload);
+        return;
+      }
+
+      console.log(`[Coordinator Bridge] Received user input: ${content.substring(0, 50)}...`);
+
+      // Send processing message to frontend
+      event.sender.send('message-from-agent', {
+        type: 'text',
+        content: 'Processing your request, please wait...',
+      });
+
+      // Initialize Coordinator
+      let initializedAgents;
+      try {
+        const result = await initializeCoordinator();
+        coordinatorModule = result.coordinatorModule;
+        initializedAgents = result.agents;
+      } catch (initError) {
+        console.error('[Coordinator Bridge] Failed to initialize Coordinator:', initError);
+        throw new Error(`Initialization failed: ${initError.message}`);
+      }
+
+      // Call Coordinator to process user input
+      let plan;
+      try {
+        plan = await coordinatorModule.runWithInstructionService(content, initializedAgents);
+      } catch (processError) {
+        console.error('[Coordinator Bridge] Coordinator processing failed:', processError);
+        if (processError.message && processError.message.includes('napi')) {
+          throw new Error('Internal error occurred during processing, please try again later or check logs');
+        }
+        throw processError;
+      }
+
+      // Build response message
+      let responseText = '';
+
+      if (plan) {
+        responseText = `✅ Project generation completed!\n\n`;
+        responseText += `Session ID: ${plan.id}\n`;
+        responseText += `Workspace: ${plan.workspaceDir || 'N/A'}\n`;
+        responseText += `File operations: Created=${plan.fileOps?.created?.length || 0}, Skipped=${plan.fileOps?.skipped?.length || 0}\n\n`;
+
+        if (plan.output?.plan) {
+          responseText += `📋 Plan title: ${plan.output.plan.title}\n`;
+          responseText += `📝 Plan summary: ${plan.output.plan.summary}\n`;
+          responseText += `📊 Steps: ${plan.output.plan.steps?.length || 0}\n\n`;
+        }
+
+        if (plan.fileOps?.created?.length > 0) {
+          responseText += `📁 Generated files:\n`;
+          plan.fileOps.created.slice(0, 10).forEach((file) => {
+            responseText += `  • ${file}\n`;
+          });
+          if (plan.fileOps.created.length > 10) {
+            responseText += `  ... and ${plan.fileOps.created.length - 10} more files\n`;
+          }
+        }
+
+        responseText += `\n💡 Tip: Project generated in ${plan.workspaceDir || 'output/' + plan.id} directory`;
+      } else {
+        responseText = '⚠️ Processing completed, but no plan information returned';
+      }
+
+      // 回傳結果給前端
+      event.sender.send('message-from-agent', {
+        type: 'text',
+        content: responseText,
+      });
+
+      // Synchronously write to history (if session exists)
+      if (session?.id) {
+        await run(
+          'INSERT INTO messages (session_id, role, payload_json) VALUES (?, ?, ?)',
+          [session.id, 'ai', JSON.stringify({ role: 'ai', content: responseText })]
+        ).catch((err) => {
+          console.error('Failed to write AI response to history:', err);
+        });
+      }
+
+      console.log(`[Coordinator Bridge] Processing completed, Session ID: ${plan?.id || 'N/A'}`);
+    } catch (error) {
+      console.error('[Coordinator Bridge] Error processing message:', error);
+
+      const errorMessage = `❌ Processing failed: ${error.message}\n\nPlease check console for detailed error information.`;
+
+      event.sender.send('message-from-agent', {
+        type: 'error',
+        content: errorMessage,
+      });
+
+      // If session exists, also write error message to history
+      if (payload?.session?.id) {
+        await run(
+          'INSERT INTO messages (session_id, role, payload_json) VALUES (?, ?, ?)',
+          [payload.session.id, 'ai', JSON.stringify({ role: 'ai', content: errorMessage })]
+        ).catch((err) => {
+          console.error('Failed to write error message to history:', err);
+        });
+      }
+    }
+  });
 }
 
 /**
@@ -241,8 +384,8 @@ function createWindow() {
       // preload: path.join(__dirname, 'preload.js'),
       // 安全性警告：這些設定不安全，但符合你目前的程式碼 (renderer.js 使用 'require')
       nodeIntegration: true,
-      contextIsolation: false
-    }
+      contextIsolation: false,
+    },
   });
 
   mainWindow.loadFile(path.join(__dirname, 'dev_page', 'main-window.html'));
@@ -258,10 +401,12 @@ function createWindow() {
 app.whenReady().then(async () => {
   try {
     await initDatabase();
-    registerHistoryHandlers(); // 註冊所有 IPC API
-    createWindow();
+    registerHistoryHandlers();      // 註冊歷史紀錄 IPC
+    registerSettingsHandlers();     // 註冊設定 IPC
+    registerCoordinatorBridge();    // 註冊 Coordinator 橋接
+    createWindow();                 // 建立主視窗
   } catch (error) {
-    console.error('Failed to initialise database. App will quit.', error);
+    console.error('Failed to initialise database', error);
     app.quit();
   }
 
