@@ -1,5 +1,6 @@
 /**
  * @file 渲染器進程核心腳本 (main-window.js)
+ * (最終整合版：含迎賓、Thinking 動畫、代碼框優化、設定頁面功能)
  */
 
 /*
@@ -18,7 +19,7 @@ const fileUploadButton = document.getElementById('file-upload-button');
 const fileUploadInput = document.getElementById('file-upload-input');
 const charCounter = document.getElementById('char-counter');
 
-// 導航 (Navigation) 與頁面 (Pages) 相關
+// 導航與頁面相關
 const chatButton = document.getElementById('chat-button');
 const historyButton = document.getElementById('history-button');
 const settingsButton = document.getElementById('settings-button');
@@ -26,7 +27,7 @@ const historyList = document.getElementById('history-list');
 const pageChat = document.getElementById('page-chat');
 const pageSettings = document.getElementById('page-settings');
 
-// *** 新增：設定頁面元素 ***
+// 設定頁面元素
 const dataPathDisplay = document.getElementById('data-path-display');
 const clearHistoryButton = document.getElementById('clear-history-button');
 const themeToggle = document.getElementById('theme-toggle-input');
@@ -37,6 +38,9 @@ const themeToggle = document.getElementById('theme-toggle-input');
  * ====================================================================
  */
 let currentSession = null;
+
+// **關鍵新增：用來追蹤 "思考中" 氣泡的變數**
+let thinkingBubbleElement = null;
 
 /*
  * ====================================================================
@@ -79,7 +83,6 @@ historyButton.addEventListener('click', () => {
 chatButton.addEventListener('click', () => setActivePage('page-chat'));
 settingsButton.addEventListener('click', () => setActivePage('page-settings'));
 
-// *** 新增：為清除按鈕綁定事件 ***
 if (clearHistoryButton) {
   clearHistoryButton.addEventListener('click', () => {
     clearAllHistory().catch((error) => {
@@ -90,7 +93,6 @@ if (clearHistoryButton) {
 
 if (themeToggle) {
   themeToggle.checked = document.documentElement.classList.contains('dark-mode');
-
   themeToggle.addEventListener('change', () => {
     if (themeToggle.checked) {
       document.documentElement.classList.add('dark-mode');
@@ -137,46 +139,22 @@ function createHistoryItem(session) {
   return item;
 }
 
-/**
- * 應用程式啟動時呼叫：初始化歷史紀錄列表。
- * * 修改：同時載入設定頁面資訊
- */
 async function bootstrapHistory() {
   const sessions = await refreshSessionList();
-  const sessionToReuse = selectBootstrapSession(sessions);
-  if (sessionToReuse) {
-    await setActiveSession(sessionToReuse);
+  
+  if (sessions.length > 0) {
+    await setActiveSession(sessions[0]);
   } else {
-    try {
-      await createLaunchSession();
-    } catch (error) {
-      console.error('Unable to create a session on launch', error);
-      currentSession = null;
-      chatDisplay.innerHTML = '';
-    }
+    // 新使用者迎賓邏輯
+    currentSession = null;
+    chatDisplay.innerHTML = '';
+    const greeting = "您好，我是您的開發助理。請問今天有什麼可以協助您的嗎？";
+    appendMessage(greeting, 'ai', 'text');
   }
+  
   updateCharCount();
   autoResizeTextarea();
-  // *** 新增：載入設定頁面的內容 ***
   loadSettingsInfo();
-}
-
-function selectBootstrapSession(sessions) {
-  if (!Array.isArray(sessions) || sessions.length === 0) {
-    return null;
-  }
-  const latestSession = sessions[0];
-  const messageCount = Number(latestSession?.message_count ?? latestSession?.messageCount ?? 0);
-  if (messageCount === 0) {
-    return latestSession;
-  }
-  return null;
-}
-
-async function createLaunchSession() {
-  const session = await ipcRenderer.invoke('history:create-session');
-  await setActiveSession(session);
-  return session;
 }
 
 async function refreshSessionList(activeSessionId) {
@@ -233,7 +211,8 @@ async function loadMessages(sessionId) {
       if (!text) {
         return;
       }
-      appendMessage(text, message.role);
+      // 假設歷史紀錄目前都是 text，未來可以擴充儲存 type
+      appendMessage(text, message.role, 'text');
     });
   } catch (error) {
     console.error('Unable to load messages', error);
@@ -253,17 +232,28 @@ async function sendMessage() {
   }
 
   const session = await ensureSession();
-  appendMessage(messageText, 'user');
+  
+  // 1. 顯示使用者訊息
+  appendMessage(messageText, 'user', 'text');
+  
   textInput.value = '';
   autoResizeTextarea();
   updateCharCount();
 
   persistMessage(session.id, 'user', messageText);
+  
+  // **關鍵修改：顯示 "思考中..." 氣泡並存起來**
+  if (thinkingBubbleElement) {
+    thinkingBubbleElement.remove(); // 防呆
+  }
+  thinkingBubbleElement = appendMessage('', 'ai', 'thinking');
+
   ipcRenderer.send('message-to-agent', {
     type: 'text',
     content: messageText,
     session: getSessionEnvelope(session)
   });
+  
   setActivePage('page-chat');
 }
 
@@ -276,9 +266,16 @@ async function handleFileUpload(event) {
   const file = files[0];
   const notice = `Selected file: ${file.name}`;
   const session = await ensureSession();
-  appendMessage(notice, 'user');
+  appendMessage(notice, 'user', 'text');
 
   persistMessage(session.id, 'user', notice);
+  
+  // 檔案上傳也顯示思考中
+  if (thinkingBubbleElement) {
+    thinkingBubbleElement.remove();
+  }
+  thinkingBubbleElement = appendMessage('', 'ai', 'thinking');
+
   ipcRenderer.send('message-to-agent', {
     type: 'file',
     path: file.path,
@@ -288,7 +285,14 @@ async function handleFileUpload(event) {
   setActivePage('page-chat');
 }
 
-function appendMessage(text, sender) {
+/**
+ * 在聊天視窗中追加一條訊息。
+ * @param {string} text - 訊息內容
+ * @param {string} sender - 'user' 或 'ai'
+ * @param {string} messageType - 'text', 'code', 'thinking'
+ * @returns {HTMLElement} - 回傳建立的 messageGroup 元素 (這很重要!)
+ */
+function appendMessage(text, sender, messageType = 'text') {
   const messageGroup = document.createElement('div');
   messageGroup.classList.add('message-group', `message-group--${sender}`);
 
@@ -301,8 +305,9 @@ function appendMessage(text, sender) {
 
   const messageBubble = document.createElement('div');
   messageBubble.classList.add('message-bubble');
-  messageBubble.textContent = text;
 
+  // 建立 Actions 區塊 (包含 Copy 按鈕)
+  // 關鍵：確保在 if/else 之前定義
   const messageActions = document.createElement('div');
   messageActions.classList.add('message-actions');
 
@@ -310,7 +315,8 @@ function appendMessage(text, sender) {
   copyButton.classList.add('action-button');
   copyButton.textContent = 'Copy';
   copyButton.addEventListener('click', () => {
-    navigator.clipboard.writeText(text).then(() => {
+    const textToCopy = messageType === 'thinking' ? '' : text;
+    navigator.clipboard.writeText(textToCopy).then(() => {
       copyButton.textContent = 'Copied';
       setTimeout(() => {
         copyButton.textContent = 'Copy';
@@ -318,13 +324,38 @@ function appendMessage(text, sender) {
     });
   });
 
-  messageActions.appendChild(copyButton);
-  messageContent.appendChild(messageBubble);
-  messageContent.appendChild(messageActions);
+  // 根據類型處理 UI
+  if (messageType === 'thinking') {
+    // 思考中：顯示跳動的點，不顯示 Copy 按鈕
+    messageBubble.classList.add('message-bubble--thinking');
+    messageBubble.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
+    messageContent.appendChild(messageBubble);
+    
+  } else if (messageType === 'code') {
+    // 程式碼：透明凹陷背景 + 內嵌 Copy 按鈕
+    messageBubble.classList.add('message-bubble--code');
+    messageBubble.textContent = text;
+    
+    messageActions.appendChild(copyButton);
+    messageBubble.appendChild(messageActions); // 放在氣泡內部
+    messageContent.appendChild(messageBubble);
+    
+  } else {
+    // 一般文字
+    messageBubble.textContent = text;
+    
+    messageActions.appendChild(copyButton);
+    messageContent.appendChild(messageBubble);
+    messageContent.appendChild(messageActions); // 放在氣泡外部
+  }
+
   messageGroup.appendChild(messageAvatar);
   messageGroup.appendChild(messageContent);
   chatDisplay.appendChild(messageGroup);
   chatDisplay.scrollTop = chatDisplay.scrollHeight;
+
+  // **關鍵：回傳元素，以便稍後刪除**
+  return messageGroup;
 }
 
 /*
@@ -334,43 +365,46 @@ function appendMessage(text, sender) {
  */
 
 ipcRenderer.on('message-from-agent', (_event, response) => {
-  const text =
-    typeof response === 'string'
-      ? response
-      : response?.type === 'text'
-      ? response.content
-      : response?.type === 'error'
-      ? `Error: ${response.content}`
-      : '';
+  // **關鍵修改：收到回應時，先移除 "思考中" 氣泡**
+  if (thinkingBubbleElement) {
+    thinkingBubbleElement.remove();
+    thinkingBubbleElement = null;
+  }
 
-  if (!text) {
+  const type = response?.type || 'text';
+  const content = typeof response === 'string' ? response : response?.content || '';
+  
+  if (response?.type === 'error') {
+    appendMessage(`Error: ${content}`, 'ai', 'text');
     return;
   }
 
-  appendMessage(text, 'ai');
+  if (!content && type !== 'thinking') {
+    return;
+  }
+
+  // 顯示真正的回應
+  appendMessage(content, 'ai', type === 'text' ? 'text' : type);
 
   if (!currentSession) {
     console.warn('AI response received without an active session; skipping persistence.');
     return;
   }
 
-  persistMessage(currentSession.id, 'ai', text);
+  persistMessage(currentSession.id, 'ai', content);
 });
 
 /*
  * ====================================================================
- * 8. 新增：設定頁面功能
+ * 8. 設定頁面功能
  * ====================================================================
  */
 
-/**
- * 載入設定頁面的動態資訊 (例如資料路徑)
- */
 function loadSettingsInfo() {
   if (dataPathDisplay) {
     ipcRenderer.invoke('settings:get-app-data-path')
       .then((path) => {
-        dataPathDisplay.value = path; // 將路徑填入 input
+        dataPathDisplay.value = path;
       })
       .catch((error) => {
         console.error('Failed to get data path', error);
@@ -379,27 +413,18 @@ function loadSettingsInfo() {
   }
 }
 
-/**
- * 呼叫主進程來清除所有歷史紀錄
- */
 async function clearAllHistory() {
   try {
-    // 呼叫主進程的 API (這會彈出確認框)
     const result = await ipcRenderer.invoke('history:clear-all');
 
     if (result.ok) {
-      // 如果成功刪除
       console.log('History cleared successfully.');
-      // 關鍵：立即刷新整個 UI
       await bootstrapHistory(); 
-      // 切換回聊天頁面
       setActivePage('page-chat');
       
     } else if (result.cancelled) {
-      // 如果使用者在確認框中按了 "取消"
       console.log('History clear operation was cancelled.');
     } else {
-      // 如果發生了其他錯誤
       console.error('Failed to clear history:', result.error);
     }
   } catch (error) {
@@ -407,10 +432,9 @@ async function clearAllHistory() {
   }
 }
 
-
 /*
  * ====================================================================
- * 9. UI 輔助函式 (Utility Functions)
+ * 9. UI 輔助函式
  * ====================================================================
  */
 
