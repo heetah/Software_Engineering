@@ -134,14 +134,40 @@ export async function runWithInstructionService(userInput, agents) {
     }
 
     // 如果需要，使用 Coder Coordinator 生成代碼
-    if (plan.output?.coder_instructions) {
+    // 嘗試從 output 中提取 coder_instructions（可能直接存在，或包裹在 markdown 中）
+    let coderInstructions = plan.output?.coder_instructions;
+    
+    // 如果 coder_instructions 不存在，嘗試從 markdown 中提取
+    if (!coderInstructions && plan.output?.markdown) {
+      try {
+        // 嘗試從 markdown 中解析 JSON
+        const markdownContent = plan.output.markdown;
+        const jsonMatch = markdownContent.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/) || 
+                         markdownContent.match(/\{[\s\S]*\}/);
+        
+        if (jsonMatch) {
+          let jsonStr = jsonMatch[1] || jsonMatch[0];
+          jsonStr = jsonStr.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '');
+          const parsed = JSON.parse(jsonStr);
+          
+          if (parsed.coder_instructions) {
+            coderInstructions = parsed.coder_instructions;
+            console.log("  ✓ Extracted coder_instructions from markdown");
+          }
+        }
+      } catch (e) {
+        console.warn("  ⚠ Failed to extract coder_instructions from markdown:", e.message);
+      }
+    }
+    
+    if (coderInstructions) {
       const coderCoordinator = getCoderCoordinator({ useMockApi: false });
       const requestId = `coordinator-${plan.id}`;
       
       // 構建 Coordinator 需要的 payload 格式
       const coordinatorPayload = {
         output: {
-          coder_instructions: plan.output.coder_instructions
+          coder_instructions: coderInstructions
         }
       };
       

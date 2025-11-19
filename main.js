@@ -385,11 +385,29 @@ function createWindow() {
       // 安全性警告：這些設定不安全，但符合你目前的程式碼 (renderer.js 使用 'require')
       nodeIntegration: true,
       contextIsolation: false,
+      // 禁用一些可能導致警告的功能
+      spellcheck: false,
+      enableWebSQL: false,
     },
   });
 
   mainWindow.loadFile(path.join(__dirname, 'dev_page', 'main-window.html'));
-  mainWindow.webContents.openDevTools();
+  
+  // 根據環境變數決定是否打開 DevTools
+  // 設置 ELECTRON_OPEN_DEVTOOLS=false 可以關閉 DevTools（減少 Autofill 錯誤）
+  const shouldOpenDevTools = process.env.ELECTRON_OPEN_DEVTOOLS !== 'false';
+  
+  if (shouldOpenDevTools) {
+    // 打開 DevTools
+    // 注意：DevTools 中的 Autofill 錯誤是無害的警告，來自 DevTools 內部協議
+    // 這些錯誤不會影響應用程式功能，可以安全地忽略
+    // 錯誤訊息：'Autofill.enable' wasn't found 和 'Autofill.setAddresses' wasn't found
+    // 這些是 DevTools 嘗試調用不存在的協議方法時產生的，屬於正常現象
+    mainWindow.webContents.openDevTools();
+    
+    console.log('ℹ️  DevTools has been opened. If you see Autofill related errors, you can safely ignore them.');
+    console.log('    To close DevTools, please set the environment variable: ELECTRON_OPEN_DEVTOOLS=false');
+  }
 }
 
 /**
