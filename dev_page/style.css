@@ -1,0 +1,705 @@
+@charset "UTF-8";
+/* dev_page/scss/style.scss (重構版 - 支援深色模式) */
+
+/*
+ * ====================================================================
+ * 1. 主題變數 (Theme Variables)
+ * ====================================================================
+ */
+
+html {
+  /* ================== 淺色 (Light) 主題 (預設) ================== */
+
+  /* 基底顏色 */
+  --color-bg: #e4e9f2;
+  --color-text: #3d4a5f;
+  --color-text-light: #99a3b5;
+
+  /* 陰影顏色 (淺色模式的陰影是 *深* 和 *亮*) */
+  --color-shadow-dark: #c8d0e0;
+  --color-shadow-light: #f7fbff;
+
+  /* 輔助/強調色 (藍紫色) */
+  --color-accent-1: #8692fd;
+  --color-accent-2: #6272f4;
+  --color-accent-text: #ffffff;
+  --color-accent-shadow: #c8d0e0;
+
+  /* 危險/紅色 */
+  --color-danger-1: #f87a7a;
+  --color-danger-2: #f46262;
+  --color-danger-text: #ffffff;
+  --color-danger-shadow-inset-dark: #c14b4b;
+  --color-danger-shadow-inset-light: #ff9e9e;
+
+  /* ================== 通用樣式 ================== */
+
+  /* Neumorphism "凸起" 樣式 */
+  --shadow-convex: 6px 6px 12px var(--color-shadow-dark), -6px -6px 12px var(--color-shadow-light);
+  /* Neumorphism "凹陷" 樣式 */
+  --shadow-concave: inset 4px 4px 8px var(--color-shadow-dark), inset -4px -4px 8px var(--color-shadow-light);
+
+  /* 強調色 (漸層) */
+  --gradient-accent: linear-gradient(135deg, var(--color-accent-1), var(--color-accent-2));
+  --shadow-accent: 4px 4px 10px var(--color-accent-shadow);
+
+  /* 危險色 (漸層) */
+  --gradient-danger: linear-gradient(135deg, var(--color-danger-1), var(--color-danger-2));
+  --shadow-danger: 4px 4px 10px var(--color-shadow-dark);
+  --shadow-danger-inset: inset 4px 4px 8px var(--color-danger-shadow-inset-dark), inset -4px -4px 8px var(--color-danger-shadow-inset-light);
+}
+
+html.dark-mode {
+  /* ================== 深色 (Dark) 主題 (黑+金) ================== */
+
+  /* 基底顏色 (使用 #2c2c2c, 純黑 #000 無法產生陰影) */
+  --color-bg: #2c2c2c;
+  --color-text: #cccccc;
+  --color-text-light: #888888;
+
+  /* 陰影顏色 (深色模式的陰影是 *更深* 和 *稍亮*) */
+  --color-shadow-dark: #202020;
+  --color-shadow-light: #383838;
+
+  /* 輔助/強調色 (金色) */
+  --color-accent-1: #f0c54d;
+  --color-accent-2: #d4a03a;
+  --color-accent-text: #2c2c2c; /* 金色背景上用深色文字 */
+  --color-accent-shadow: #202020;
+
+  /* 危險/紅色 (保持不變, 安全性優先) */
+  --color-danger-1: #f87a7a;
+  --color-danger-2: #f46262;
+  --color-danger-text: #ffffff;
+  --color-danger-shadow-inset-dark: #c14b4b;
+  --color-danger-shadow-inset-light: #ff9e9e;
+}
+
+
+/*
+ * ====================================================================
+ * 2. 全域重設 & 基礎
+ * ====================================================================
+ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  height: 100vh;
+  /* 使用 CSS 變數 */
+  background-color: var(--color-bg);
+  font-family: "Microsoft JhengHei UI", "Segoe UI", sans-serif;
+  color: var(--color-text);
+  overflow: hidden;
+  /* 加上過渡動畫，讓切換更流暢 */
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/*
+ * ====================================================================
+ * 3. 佈局
+ * ====================================================================
+ */
+
+.app-layout {
+  display: flex;
+  height: 100vh;
+  padding: 20px;
+  gap: 20px;
+}
+
+.sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex); /* 變數 */
+  transition: all 0.2s ease-in-out;
+}
+
+.content-area {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 40px;
+  border-radius: 20px;
+  background: var(--color-bg); /* 深色模式下，背景和凸起物同色 */
+  box-shadow: var(--shadow-concave); /* 變數 */
+  transition: all 0.2s ease-in-out;
+}
+
+.chat-display {
+  flex-grow: 1;
+  overflow-y: auto;
+  padding-right: 12px;
+  scrollbar-width: thin;
+  display: flex;
+  flex-direction: column;
+}
+.chat-display::-webkit-scrollbar {
+  width: 8px;
+}
+.chat-display::-webkit-scrollbar-thumb {
+  background: rgba(153, 163, 181, 0.25); /* 暫時保留，或改為 var(--color-text-light) */
+  border-radius: 4px;
+}
+
+/*
+ * ====================================================================
+ * 4. 側邊欄元件
+ * ====================================================================
+ */
+
+.sidebar__menu {
+  margin-top: 40px;
+}
+
+.menu-button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 15px 20px;
+  margin-bottom: 15px;
+  border: none;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-light); /* 變數 */
+  cursor: pointer;
+  position: relative;
+  border-radius: 15px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex); /* 變數 */
+  transition: all 0.2s ease-in-out;
+}
+.menu-button span:first-child {
+  margin-right: 15px;
+}
+.menu-button.is-active {
+  background: var(--gradient-accent); /* 變數 */
+  color: var(--color-accent-text); /* 變數 */
+  box-shadow: var(--shadow-accent); /* 變數 */
+}
+.menu-button:not(.is-active):hover {
+  color: var(--color-text); /* 變數 */
+}
+.menu-button:active {
+  border-radius: 13px;
+  box-shadow: var(--shadow-concave); /* 變數 */
+  transition: all 0.2s ease-in-out;
+}
+.menu-button .dropdown-arrow {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%) rotate(0deg);
+  font-size: 10px;
+  transition: transform 0.3s ease;
+}
+.menu-button.is-open .dropdown-arrow {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.history-list {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.15s ease-out;
+  margin: -10px 0 10px 0;
+}
+.history-list.is-open {
+  max-height: 300px;
+  overflow-y: auto;
+}
+.history-list .history-item {
+  display: block;
+  padding: 10px 20px 10px 40px;
+  font-size: 14px;
+  color: var(--color-text-light); /* 變數 */
+  text-decoration: none;
+  border-radius: 15px;
+  transition: all 0.2s ease;
+}
+.history-list .history-item.is-active {
+  /* 淺色/深色模式下的 "選中" 顏色 */
+  background-color: var(--color-shadow-light); 
+  color: var(--color-text);
+  font-weight: 600;
+}
+.history-list .history-item:hover {
+  background-color: var(--color-shadow-light);
+  color: var(--color-text);
+}
+
+/*
+ * ====================================================================
+ * 5. 訊息元件
+ * ====================================================================
+ */
+
+.message-group {
+  display: flex;
+  margin-bottom: 25px;
+  animation: fadeInUp 0.3s ease-out;
+  /* 方案 B: 移除 width: 100% */
+}
+.message-group--ai .message-avatar {
+  color: var(--color-text-light); /* 變數 */
+  font-weight: bold;
+}
+
+.message-group--user {
+  align-self: flex-end; /* 方案 B */
+  flex-direction: row-reverse;
+}
+
+.message-group--user .message-avatar {
+  margin-left: 15px;
+  margin-right: 0;
+  border-radius: 50%;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex); /* 變數 */
+  transition: all 0.2s ease-in-out;
+}
+.message-group--user .message-bubble {
+  border-radius: 20px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex); /* 變數 */
+  transition: all 0.2s ease-in-out;
+}
+
+.message-avatar {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  margin-right: 15px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 50%;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex); /* 變數 */
+  transition: all 0.2s ease-in-out;
+}
+
+.message-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.message-bubble {
+  padding: 15px 20px;
+  border-radius: 20px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex); /* 變數 */
+  transition: all 0.2s ease-in-out;
+}
+
+.message-actions {
+  margin-top: 10px;
+  padding-left: 5px;
+}
+.message-actions .action-button {
+  border: none;
+  background: none;
+  color: var(--color-text-light); /* 變數 */
+  cursor: pointer;
+  font-size: 14px;
+}
+.message-actions .action-button:hover {
+  color: var(--color-text); /* 變數 */
+}
+
+/*
+ * ====================================================================
+ * 6. 輸入區域
+ * ====================================================================
+ */
+
+.input-area {
+  flex-shrink: 0;
+  margin-top: 20px;
+  padding: 8px;
+  display: flex;
+  align-items: flex-end;
+  border-radius: 20px;
+  background: var(--color-bg); /* 背景同色 */
+  box-shadow: var(--shadow-concave); /* 變數 */
+  transition: all 0.2s ease-in-out;
+}
+
+.input-field {
+  flex-grow: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 12px;
+  font-size: 16px;
+  color: var(--color-text); /* 變數 */
+  resize: none;
+}
+.input-field::placeholder {
+  color: var(--color-text-light); /* 變數 */
+}
+
+.input-actions {
+  display: flex;
+  align-items: center;
+  padding: 0 5px 5px 10px;
+}
+
+.char-counter {
+  font-size: 12px;
+  color: var(--color-text-light); /* 變數 */
+  margin-right: 15px;
+}
+
+.action-button--icon {
+  width: 36px;
+  height: 36px;
+  border: none;
+  color: var(--color-text-light); /* 變數 */
+  cursor: pointer;
+  margin: 0 5px;
+  border-radius: 50%;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex); /* 變數 */
+  transition: all 0.2s ease-in-out;
+}
+.action-button--icon:hover {
+  color: var(--color-text); /* 變數 */
+}
+.action-button--icon:active {
+  border-radius: 50%;
+  box-shadow: var(--shadow-concave); /* 變數 */
+  transition: all 0.2s ease-in-out;
+}
+
+.action-button--send {
+  width: 48px;
+  height: 36px;
+  border: none;
+  color: var(--color-accent-text); /* 變數 */
+  cursor: pointer;
+  margin-left: 5px;
+  font-size: 20px;
+  background: var(--gradient-accent); /* 變數 */
+  border-radius: 15px;
+  box-shadow: var(--shadow-accent); /* 變數 */
+  transition: all 0.2s ease-in-out;
+}
+.action-button--send:active {
+  border-radius: 15px;
+  box-shadow: var(--shadow-concave); /* 變數 */
+  transition: all 0.2s ease-in-out;
+}
+
+/*
+ * ====================================================================
+ * 7. 頁面切換
+ * ====================================================================
+ */
+
+.page {
+  width: 100%;
+  height: 100%;
+  display: none;
+}
+.page#page-chat {
+  flex-direction: column;
+}
+.page.is-active {
+  display: flex;
+  animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/*
+ * ====================================================================
+ * 8. 設定頁面
+ * ====================================================================
+ */
+
+.page-content-wrapper {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  padding-right: 12px;
+  scrollbar-width: thin;
+}
+.page-content-wrapper::-webkit-scrollbar {
+  width: 8px;
+}
+.page-content-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(153, 163, 181, 0.25);
+  border-radius: 4px;
+}
+
+.page-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--color-text); /* 變數 */
+  margin-bottom: 30px;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 25px;
+}
+
+.settings-card {
+  padding: 25px;
+  border-radius: 20px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex); /* 變數 */
+  transition: all 0.2s ease-in-out;
+}
+
+.settings-card__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text); /* 變數 */
+  margin: 0 0 5px 0;
+}
+
+.settings-card__description {
+  font-size: 14px;
+  color: var(--color-text-light); /* 變數 */
+  margin: 0 0 25px 0;
+  border-bottom: 1px solid var(--color-text-light); /* 變數 */
+  opacity: 0.5;
+  padding-bottom: 20px;
+}
+
+.settings-action-group {
+  margin-bottom: 25px;
+}
+.settings-action-group:last-child {
+  margin-bottom: 0;
+}
+
+.settings-label {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text); /* 變數 */
+  margin-bottom: 5px;
+}
+
+.settings-label-description {
+  font-size: 13px;
+  color: var(--color-text-light); /* 變數 */
+  margin: 0 0 12px 0;
+}
+
+.input-area.is-readonly {
+  background: var(--color-bg);
+  padding: 4px;
+}
+.input-area.is-readonly .input-field {
+  padding: 8px 12px;
+  font-size: 14px;
+  color: var(--color-text); /* 變數 */
+  opacity: 0.8;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 20px;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 15px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex); /* 變數 */
+  transition: all 0.2s ease-in-out;
+  color: var(--color-text); /* 變數 */
+}
+.action-button:active {
+  border-radius: 13px;
+  box-shadow: var(--shadow-concave); /* 變數 */
+  transition: all 0.2s ease-in-out;
+}
+
+.action-button--danger {
+  background: var(--gradient-danger); /* 變數 */
+  color: var(--color-danger-text); /* 變數 */
+  box-shadow: var(--shadow-danger); /* 變數 */
+}
+
+.action-button--danger:hover {
+  /* * 我們使用一個稍微亮一點的漸層。
+   * 淺色模式下，我們也可以加深陰影，
+   * 但深色模式下，改變背景色是更可靠的反饋。
+   */
+  background: linear-gradient(135deg, #ff8a8a, #f87474);
+  /* * 讓陰影也稍微加深一點，增加 "浮起" 感
+   * (注意：這在淺色模式下效果較好)
+   */
+  box-shadow: 6px 6px 16px var(--color-shadow-dark), -6px -6px 16px var(--color-shadow-light);
+}
+.action-button--danger:active {
+  background: var(--gradient-danger); /* 變數 */
+  box-shadow: var(--shadow-danger-inset); /* 變數 */
+}
+
+/* ====================================================================
+ * 9. 新增：Soft UI 切換開關 (Toggle Switch)
+ * [最終修正版]
+ * ====================================================================
+ */
+
+ .toggle-switch {
+  display: inline-block;
+  width: 60px;
+  height: 34px;
+  position: relative;
+  cursor: pointer;
+}
+
+/* 隱藏預設的 checkbox */
+.toggle-switch__input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+/* 開關的 "軌道" (凹陷) */
+.toggle-switch__slider {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 34px;
+  background-color: var(--color-bg);
+  box-shadow: var(--shadow-concave); /* 軌道永遠是凹陷的 */
+  transition: all 0.3s ease;
+}
+
+/* * 開關的 "滑塊" (凸起) 
+ * * **這就是我們的修正！**
+ * 我們讓滑塊的 "預設" (關閉) 狀態就使用強調色。
+ */
+.toggle-switch__slider::before {
+  content: "";
+  position: absolute;
+  height: 26px;
+  width: 26px;
+  left: 4px;
+  bottom: 4px;
+  border-radius: 50%;
+  
+  /* * **修正：**
+   * 預設狀態 (淺色模式, 關閉) 
+   * var(--gradient-accent) 會解析為 "紫色"。
+   */
+  background: var(--gradient-accent); 
+  box-shadow: var(--shadow-accent);
+  
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* "選中" 狀態下，滑塊的變化 */
+.toggle-switch__input:checked + .toggle-switch__slider::before {
+  /* 1. 滑塊移動到右側 */
+  transform: translateX(26px);
+  
+  /* * 2. 滑塊的背景 "依然" 是 var(--gradient-accent),
+   * 但因為 .dark-mode class 被加上了,
+   * 這個變數現在會自動解析為 "金色"！
+   */
+  background: var(--gradient-accent);
+  box-shadow: var(--shadow-accent);
+}
+
+/*
+ * ====================================================================
+ * 10. Agent 回應樣式 (新增)
+ * ====================================================================
+ */
+
+/* (Item 4) "..." 動態跳動效果 */
+.message-bubble--thinking {
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+.message-bubble--thinking .dot {
+  width: 8px;
+  height: 8px;
+  margin: 0 4px;
+  background-color: var(--color-text-light);
+  border-radius: 50%;
+  display: inline-block;
+  animation: bounce-wave 1.4s infinite ease-in-out both;
+}
+.message-bubble--thinking .dot:nth-child(1) { animation-delay: -0.32s; }
+.message-bubble--thinking .dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce-wave {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1.0); }
+}
+
+/* (Item 3) 程式碼文字框 (透明/凹陷 + 內嵌 Copy) */
+.message-bubble--code {
+  /* "透明色" 在 Neumorphism 中就是 "凹陷" */
+  background: var(--color-bg);
+  box-shadow: var(--shadow-concave);
+  padding: 20px;
+  position: relative; /* 為了讓 'Copy' 按鈕定位 */
+  
+  /* 程式碼排版 */
+  white-space: pre-wrap;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 14px;
+  color: var(--color-text);
+  
+  /* 讓 Copy 按鈕的空間空出來 */
+  padding-top: 45px; 
+}
+
+/* (Item 3) 內嵌的 "Copy" 按鈕定位 */
+.message-bubble--code .message-actions {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  margin: 0;
+  padding: 0;
+}
+
+/* 針對 Code 區塊內的按鈕做微調 */
+.message-bubble--code .action-button {
+  /* 讓 "Copy" 按鈕在凹陷背景中"凸起" */
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex);
+  color: var(--color-text-light);
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+}
+.message-bubble--code .action-button:hover {
+  color: var(--color-text);
+}
+.message-bubble--code .action-button:active {
+  box-shadow: var(--shadow-concave);
+}
