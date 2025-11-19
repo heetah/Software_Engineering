@@ -635,28 +635,38 @@ body {
 
 /* (Item 4) "..." 動態跳動效果 */
 .message-bubble--thinking {
+  /* 使用變數確保深淺模式都支援 */
   background: var(--color-bg);
   box-shadow: var(--shadow-convex);
   display: flex;
   justify-content: center;
   align-items: center;
   padding: 20px;
+  
+  /* 讓氣泡有個最小寬度，才不會太扁 */
+  min-width: 60px;
+  border-radius: 20px;
 }
+
 .message-bubble--thinking .dot {
   width: 8px;
   height: 8px;
   margin: 0 4px;
+  /* 點的顏色 */
   background-color: var(--color-text-light);
   border-radius: 50%;
   display: inline-block;
+  /* 套用動畫 */
   animation: bounce-wave 1.4s infinite ease-in-out both;
 }
+
+/* 讓三個點依序跳動 */
 .message-bubble--thinking .dot:nth-child(1) { animation-delay: -0.32s; }
 .message-bubble--thinking .dot:nth-child(2) { animation-delay: -0.16s; }
 
 @keyframes bounce-wave {
-  0%, 80%, 100% { transform: scale(0); }
-  40% { transform: scale(1.0); }
+  0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
+  40% { transform: scale(1.0); opacity: 1; }
 }
 
 /* (Item 3) 程式碼文字框 (透明/凹陷 + 內嵌 Copy) */

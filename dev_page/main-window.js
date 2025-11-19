@@ -1,6 +1,6 @@
 /**
  * @file 渲染器進程核心腳本 (main-window.js)
- * (已修復 ReferenceError 並整合 Agent 優化功能)
+ * (最終整合版：含迎賓、Thinking 動畫、代碼框優化)
  */
 
 /*
@@ -38,6 +38,9 @@ const themeToggle = document.getElementById('theme-toggle-input');
  * ====================================================================
  */
 let currentSession = null;
+
+// **關鍵新增：用來追蹤 "思考中" 氣泡的變數**
+let thinkingBubbleElement = null;
 
 /*
  * ====================================================================
@@ -142,11 +145,9 @@ async function bootstrapHistory() {
   if (sessions.length > 0) {
     await setActiveSession(sessions[0]);
   } else {
-    // **(Item 2) 新使用者迎賓邏輯**
+    // 新使用者迎賓邏輯
     currentSession = null;
     chatDisplay.innerHTML = '';
-    
-    // 主動顯示歡迎訊息 (但不持久化，直到使用者開始對話)
     const greeting = "您好，我是您的開發助理。請問今天有什麼可以協助您的嗎？";
     appendMessage(greeting, 'ai', 'text');
   }
@@ -210,7 +211,7 @@ async function loadMessages(sessionId) {
       if (!text) {
         return;
       }
-      // 這裡假設歷史紀錄目前都是 text，未來可以擴充儲存 type
+      // 假設歷史紀錄目前都是 text
       appendMessage(text, message.role, 'text');
     });
   } catch (error) {
@@ -232,7 +233,7 @@ async function sendMessage() {
 
   const session = await ensureSession();
   
-  // 顯示使用者訊息
+  // 1. 顯示使用者訊息
   appendMessage(messageText, 'user', 'text');
   
   textInput.value = '';
@@ -241,9 +242,11 @@ async function sendMessage() {
 
   persistMessage(session.id, 'user', messageText);
   
-  // 顯示 Agent "思考中" 狀態 (Item 4 預備)
-  // 注意：這裡我們只是模擬 UI，實際應該由後端事件觸發
-  // appendMessage('', 'ai', 'thinking'); 
+  // **關鍵修改：顯示 "思考中..." 氣泡並存起來**
+  if (thinkingBubbleElement) {
+    thinkingBubbleElement.remove(); // 防呆
+  }
+  thinkingBubbleElement = appendMessage('', 'ai', 'thinking');
 
   ipcRenderer.send('message-to-agent', {
     type: 'text',
@@ -266,6 +269,13 @@ async function handleFileUpload(event) {
   appendMessage(notice, 'user', 'text');
 
   persistMessage(session.id, 'user', notice);
+  
+  // 檔案上傳也顯示思考中
+  if (thinkingBubbleElement) {
+    thinkingBubbleElement.remove();
+  }
+  thinkingBubbleElement = appendMessage('', 'ai', 'thinking');
+
   ipcRenderer.send('message-to-agent', {
     type: 'file',
     path: file.path,
@@ -277,13 +287,12 @@ async function handleFileUpload(event) {
 
 /**
  * 在聊天視窗中追加一條訊息。
- * (已重構：修復 ReferenceError 並支援多種訊息類型)
  * @param {string} text - 訊息內容
  * @param {string} sender - 'user' 或 'ai'
  * @param {string} messageType - 'text', 'code', 'thinking'
+ * @returns {HTMLElement} - 回傳建立的 messageGroup 元素 (這很重要!)
  */
 function appendMessage(text, sender, messageType = 'text') {
-  // 1. 建立所有基礎 DOM 元素
   const messageGroup = document.createElement('div');
   messageGroup.classList.add('message-group', `message-group--${sender}`);
 
@@ -297,7 +306,7 @@ function appendMessage(text, sender, messageType = 'text') {
   const messageBubble = document.createElement('div');
   messageBubble.classList.add('message-bubble');
 
-  // **關鍵修正**：在這裡定義 messageActions，確保它對下面的所有 if/else 都可用
+  // 建立 Actions 區塊 (包含 Copy 按鈕)
   const messageActions = document.createElement('div');
   messageActions.classList.add('message-actions');
 
@@ -305,7 +314,6 @@ function appendMessage(text, sender, messageType = 'text') {
   copyButton.classList.add('action-button');
   copyButton.textContent = 'Copy';
   copyButton.addEventListener('click', () => {
-    // 如果是 thinking 狀態，沒有文字可複製
     const textToCopy = messageType === 'thinking' ? '' : text;
     navigator.clipboard.writeText(textToCopy).then(() => {
       copyButton.textContent = 'Copied';
@@ -315,44 +323,38 @@ function appendMessage(text, sender, messageType = 'text') {
     });
   });
 
-  // 2. 根據 messageType 處理不同的 UI 邏輯
+  // 根據類型處理 UI
   if (messageType === 'thinking') {
-    // (Item 4) 思考中：顯示動態跳動的點
+    // 思考中：顯示跳動的點，不顯示 Copy 按鈕
     messageBubble.classList.add('message-bubble--thinking');
     messageBubble.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
-    
-    // 思考中不需要顯示 Copy 按鈕
     messageContent.appendChild(messageBubble);
     
   } else if (messageType === 'code') {
-    // (Item 3) 程式碼：透明背景 + 內嵌 Copy 按鈕
+    // 程式碼：透明凹陷背景 + 內嵌 Copy 按鈕
     messageBubble.classList.add('message-bubble--code');
-    messageBubble.textContent = text; // 設置程式碼文字
+    messageBubble.textContent = text;
     
-    // 將 Copy 按鈕加入 Actions
     messageActions.appendChild(copyButton);
-    
-    // **關鍵**：將 Actions 放入 Bubble 內部 (因為是 absolute positioning)
-    messageBubble.appendChild(messageActions);
+    messageBubble.appendChild(messageActions); // 放在氣泡內部
     messageContent.appendChild(messageBubble);
     
   } else {
-    // 一般文字 (預設)
+    // 一般文字
     messageBubble.textContent = text;
     
-    // 將 Copy 按鈕加入 Actions
     messageActions.appendChild(copyButton);
-    
-    // 一般模式下，Actions 在 Bubble 外部 (下方)
     messageContent.appendChild(messageBubble);
-    messageContent.appendChild(messageActions);
+    messageContent.appendChild(messageActions); // 放在氣泡外部
   }
 
-  // 3. 組合 DOM
   messageGroup.appendChild(messageAvatar);
   messageGroup.appendChild(messageContent);
   chatDisplay.appendChild(messageGroup);
   chatDisplay.scrollTop = chatDisplay.scrollHeight;
+
+  // **關鍵：回傳元素，以便稍後刪除**
+  return messageGroup;
 }
 
 /*
@@ -362,11 +364,15 @@ function appendMessage(text, sender, messageType = 'text') {
  */
 
 ipcRenderer.on('message-from-agent', (_event, response) => {
-  // 解析回應
+  // **關鍵修改：收到回應時，先移除 "思考中" 氣泡**
+  if (thinkingBubbleElement) {
+    thinkingBubbleElement.remove();
+    thinkingBubbleElement = null;
+  }
+
   const type = response?.type || 'text';
   const content = typeof response === 'string' ? response : response?.content || '';
   
-  // 錯誤處理
   if (response?.type === 'error') {
     appendMessage(`Error: ${content}`, 'ai', 'text');
     return;
@@ -376,8 +382,7 @@ ipcRenderer.on('message-from-agent', (_event, response) => {
     return;
   }
 
-  // 呼叫 appendMessage，傳入類型 (text, code, thinking)
-  // 假設後端目前還不會傳 'code' type，這裡你可以手動測試把 'text' 改成 'code'
+  // 顯示真正的回應
   appendMessage(content, 'ai', type === 'text' ? 'text' : type);
 
   if (!currentSession) {
@@ -385,7 +390,6 @@ ipcRenderer.on('message-from-agent', (_event, response) => {
     return;
   }
 
-  // 持久化 (目前只存文字)
   persistMessage(currentSession.id, 'ai', content);
 });
 
