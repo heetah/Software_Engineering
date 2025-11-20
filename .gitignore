@@ -1,5 +1,6 @@
 .env
 /generated_project
 /outputs
+/output
 /node_modules
 /data
