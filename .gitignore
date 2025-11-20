@@ -1,5 +1,6 @@
 .env
 /outputs
+/output
 /node_modules
 /data
 /output
