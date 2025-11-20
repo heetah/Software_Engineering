@@ -1,19 +1,34 @@
+/**
+ * Coordinator 主程式
+ * 負責初始化所有 agent、管理 agent 生命週期、處理使用者輸入等功能
+ */
+
 // dotenv 配置環境變數
 import dotenv from "dotenv";
 dotenv.config();
 
-import RequirementAgent from "./agents/requirement-agent.js";
 import ArchitectAgent from "./agents/architect-agent.js";
-import CoderAgent from "./agents/coder-agent.js";
+import VerifierAgent from "./agents/verifier-agent.js";
 import TesterAgent from "./agents/tester-agent.js";
 // 將 Coder 產出的 Markdown 生成專案
 import { writeProjectFromMarkdown } from "./agents/project-writer.js";
 // InstructionService 用於會話管理和結構化計劃生成
-import InstructionService from "./agents/instructionService.js";
+import InstructionService from "./agents/instruction-service.js";
+// Coder Agent Coordinator（CommonJS 模組）
+import { createRequire } from "module";
+import { fileURLToPath } from "url";
+import path from "path";
+import fs from "fs";
 // 錯誤處理和工具
 import { CoordinatorError } from "./utils/errors.js";
 import { withErrorHandling, errorLogger } from "./utils/error-handler.js";
 import { tokenTracker } from "./utils/token-tracker.js";
+
+// 載入 CommonJS 模組
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const require = createRequire(import.meta.url);
+const CoderCoordinator = require("./agents/coder-agent/coordinator.cjs");
 
 // Agent 生命週期管理 - 單例模式
 let agentCache = null;
@@ -29,25 +44,40 @@ export function initializeAgents(force = false) {
   }
   
   agentCache = {
-    requirement: new RequirementAgent(),
     architect: new ArchitectAgent(),
-    coder: new CoderAgent(),
-    tester: new TesterAgent()
+    verifier: new VerifierAgent(),
+    tester: new TesterAgent(),
+    // Coder 功能由 agents/coder-agent/coordinator.js 負責
+    // 使用時動態創建 Coordinator 實例
+    coderCoordinator: null
   };
   
   return agentCache;
 }
 
+/**
+ * 獲取或創建 Coder Coordinator 實例
+ */
+export function getCoderCoordinator(config = {}) {
+  if (!agentCache || !agentCache.coderCoordinator) {
+    agentCache = agentCache || initializeAgents(true);
+    agentCache.coderCoordinator = new CoderCoordinator({
+      useMockApi: config.useMockApi || false
+    });
+  }
+  return agentCache.coderCoordinator;
+}
+
 async function main() {
   console.log(" Multi-Agent Coordinator Started");
 
-  // 獲取用戶輸入和模式選擇
+  // Get user input and mode selection
   const args = process.argv.slice(2);
   const userInput = args.filter(arg => !arg.startsWith("--") && !arg.startsWith("-")).join(" ");
 
   if (!userInput) {
-    console.log("使用方法:");
-    console.log("  node Coordinator.js <用戶需求>");
+    console.log("Usage:");
+    console.log("  node Coordinator.js <user requirement>");
     process.exit(1);
   }
 
@@ -61,86 +91,133 @@ async function main() {
  * 可被外部調用來處理使用者輸入
  */
 export async function runWithInstructionService(userInput, agents) {
-  const { requirement, architect, coder, tester } = agents;
+  const { architect, verifier, tester } = agents;
 
   try {
-    // 初始化 InstructionService
+    // 初始化 InstructionService（Architect Agent 會直接處理用戶需求）
     const instructionService = await withErrorHandling(
       'InstructionService',
       () => Promise.resolve(new InstructionService()),
       { userInput }
     );
 
-    // Requirement Agent - 分析需求
-    const requirementOutput = await withErrorHandling(
-      'RequirementAgent',
-      async () => {
-        const reqPrompt = requirement.prompt(userInput);
-        return await requirement.run(reqPrompt);
-      },
-      { userInput }
-    );
-
-    // 使用 InstructionService 創建計劃
+    // Architect Agent 直接處理用戶需求並生成計劃
+    // （不再需要 Requirement Agent，Architect Agent 會同時處理需求分析和架構設計）
     const plan = await withErrorHandling(
       'InstructionService.createPlan',
       () => instructionService.createPlan({
         prompt: userInput,
         context: {
-          requirementOutput,
           timestamp: new Date().toISOString()
         }
       }),
-      { userInput, requirementOutput }
+      { userInput }
     );
 
-    console.log(`\n計劃已創建，會話 ID: ${plan.id}`);
-    console.log(`工作區目錄: ${plan.workspaceDir || 'N/A'}`);
-    console.log(`檔案操作: 創建=${plan.fileOps.created.length}, 跳過=${plan.fileOps.skipped.length}, 錯誤=${plan.fileOps.errors.length}`);
+    console.log(`\nPlan created, Session ID: ${plan.id}`);
+    console.log(`Workspace directory: ${plan.workspaceDir || 'N/A'}`);
+    console.log(`File operations: Created=${plan.fileOps.created.length}, Skipped=${plan.fileOps.skipped.length}, Errors=${plan.fileOps.errors.length}`);
 
-    // 顯示 Token 使用統計
+    // Display Token usage statistics
     const tokenStats = tokenTracker.getStats();
-    console.log(`\n📊 Token 使用統計: ${tokenStats.total} (剩餘: ${tokenStats.remaining}, ${tokenStats.percentage})`);
+    console.log(`\n📊 Token usage: ${tokenStats.total} (Remaining: ${tokenStats.remaining}, ${tokenStats.percentage})`);
 
-    // 顯示計劃摘要
+    // Display plan summary
     if (plan.output?.plan) {
-      console.log(`\n計劃標題: ${plan.output.plan.title}`);
-      console.log(`計劃摘要: ${plan.output.plan.summary}`);
-      console.log(`步驟數: ${plan.output.plan.steps?.length || 0}`);
+      console.log(`\nPlan title: ${plan.output.plan.title}`);
+      console.log(`Plan summary: ${plan.output.plan.summary}`);
+      console.log(`Steps: ${plan.output.plan.steps?.length || 0}`);
     }
 
-    // 如果有 coder_instructions，可以選擇執行
+    // If there are coder_instructions, optionally execute
     if (plan.output?.coder_instructions?.markdown) {
-      console.log("\n--- Coder 指令 ---");
+      console.log("\n--- Coder Instructions ---");
       console.log(plan.output.coder_instructions.markdown);
     }
 
-    // 如果需要，可以繼續使用 Coder Agent 生成代碼
-    if (plan.output?.coder_instructions) {
-      const coderOutput = await withErrorHandling(
-        'CoderAgent.generateProject',
-        () => coder.generateProject(
-          plan.output.coder_instructions.markdown || JSON.stringify(plan.output, null, 2)
-        ),
+    // 如果需要，使用 Coder Coordinator 生成代碼
+    // 嘗試從 output 中提取 coder_instructions（可能直接存在，或包裹在 markdown 中）
+    let coderInstructions = plan.output?.coder_instructions;
+    
+    // 如果 coder_instructions 不存在，嘗試從 markdown 中提取
+    if (!coderInstructions && plan.output?.markdown) {
+      try {
+        // 嘗試從 markdown 中解析 JSON
+        const markdownContent = plan.output.markdown;
+        const jsonMatch = markdownContent.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/) || 
+                         markdownContent.match(/\{[\s\S]*\}/);
+        
+        if (jsonMatch) {
+          let jsonStr = jsonMatch[1] || jsonMatch[0];
+          jsonStr = jsonStr.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '');
+          const parsed = JSON.parse(jsonStr);
+          
+          if (parsed.coder_instructions) {
+            coderInstructions = parsed.coder_instructions;
+            console.log("  ✓ Extracted coder_instructions from markdown");
+          }
+        }
+      } catch (e) {
+        console.warn("  ⚠ Failed to extract coder_instructions from markdown:", e.message);
+      }
+    }
+    
+    if (coderInstructions) {
+      const coderCoordinator = getCoderCoordinator({ useMockApi: false });
+      const requestId = `coordinator-${plan.id}`;
+      
+      // 構建 Coordinator 需要的 payload 格式
+      const coordinatorPayload = {
+        output: {
+          coder_instructions: coderInstructions
+        }
+      };
+      
+      const coderResult = await withErrorHandling(
+        'CoderCoordinator.generateFromArchitectPayload',
+        () => coderCoordinator.generateFromArchitectPayload(coordinatorPayload, requestId),
         { planId: plan.id }
       );
       
+      // 直接寫入檔案系統（Cursor 常用方式）
       try {
         const result = await withErrorHandling(
-          'writeProjectFromMarkdown',
+          'writeProjectDirectly',
           () => Promise.resolve(
-            writeProjectFromMarkdown(coderOutput, plan.workspaceDir || "./generated_project")
+            writeProjectDirectly(coderResult, plan.workspaceDir || "./output/generated_project")
           ),
           { workspaceDir: plan.workspaceDir }
         );
-        console.log(`\n 已生成專案於 ${result.outDir}，檔案數：${result.files.length}`);
+        console.log(`\n✅ Project generated at ${result.outDir}`);
+        console.log(`📁 Total files: ${result.files.length}`);
+        console.log(`\nGenerated files:`);
+        result.files.forEach(file => {
+          console.log(`  ✓ ${file}`);
+        });
       } catch (e) {
-        errorLogger.warn("生成專案失敗", { error: e.message, workspaceDir: plan.workspaceDir });
+        errorLogger.warn("Failed to generate project", { error: e.message, workspaceDir: plan.workspaceDir });
+        // Fallback to Markdown method
+        try {
+          const markdown = formatCoderResultAsMarkdown(coderResult);
+          const fallbackResult = await withErrorHandling(
+            'writeProjectFromMarkdown (fallback)',
+            () => Promise.resolve(
+              writeProjectFromMarkdown(markdown, plan.workspaceDir || "./output/generated_project")
+            ),
+            { workspaceDir: plan.workspaceDir }
+          );
+          console.log(`\nProject generated (fallback) at ${fallbackResult.outDir}, files: ${fallbackResult.files.length}`);
+        } catch (fallbackError) {
+          errorLogger.error("Both direct write and Markdown fallback failed", { 
+            directError: e.message, 
+            fallbackError: fallbackError.message 
+          });
+        }
       }
     }
 
-    console.log("\n✅ InstructionService 流程完成！");
-    console.log(`\n提示: 使用以下命令查看會話詳情:`);
+    console.log("\n✅ InstructionService process completed!");
+    console.log(`\nTip: Use the following commands to view session details:`);
     console.log(`  const service = new InstructionService();`);
     console.log(`  const session = service.getSession('${plan.id}');`);
 
@@ -154,9 +231,9 @@ export async function runWithInstructionService(userInput, agents) {
       throw err;
     }
     
-    // 否則包裝為 CoordinatorError
+    // Otherwise wrap as CoordinatorError
     throw new CoordinatorError(
-      "流程執行失敗",
+      "Process execution failed",
       "Coordinator",
       err,
       { userInput }
@@ -165,39 +242,94 @@ export async function runWithInstructionService(userInput, agents) {
 }
 
 /**
- * 原有的傳統流程
+ * 直接寫入檔案系統（Cursor 常用方式）
+ * 不通過 Markdown 轉換，直接從 result.files 寫入
  */
-async function runTraditionalFlow(userInput, agents) {
-  const { requirement, architect, coder, tester } = agents;
-
-  // Requirement Agent
-  const reqPrompt = requirement.prompt(userInput);
-  const requirementOutput = await requirement.run(reqPrompt);
-
-  // Architecture Agent
-  const archPrompt = architect.prompt(requirementOutput);
-  const architectOutput = await architect.run(archPrompt);
-
-  // Coder Agent
-  console.log("\n開始分批生成專案檔案...");
-  const archSummary = architectOutput.length > 6000 
-    ? architectOutput.substring(0, 6000) + "\n... [內容已截斷]"
-    : architectOutput;
-  const coderOutput = await coder.generateProject(archSummary);
-
-  // 將 Coder 產出的 Markdown 生成專案
-  try {
-    const result = writeProjectFromMarkdown(coderOutput, "./generated_project");
-    console.log(`\n 已生成專案於 ${result.outDir}，檔案數：${result.files.length}`);
-  } catch (e) {
-    console.warn(" 生成專案失敗：", e.message);
+function writeProjectDirectly(result, outDir = "./output/generated_project") {
+  if (!result || !result.files || !Array.isArray(result.files)) {
+    throw new Error("Invalid coder result: missing files array");
   }
 
-  // Tester Agent
-  const testPrompt = tester.prompt(coderOutput);
-  const testerOutput = await tester.run(testPrompt);
+  // 確保輸出目錄存在
+  fs.mkdirSync(outDir, { recursive: true });
 
-  console.log("\n All tasks completed successfully!");
+  const writtenFiles = [];
+  const errors = [];
+
+  // 直接寫入每個檔案
+  result.files.forEach(file => {
+    try {
+      if (!file.path) {
+        errors.push({ file: file, error: "Missing file path" });
+        return;
+      }
+
+      const filePath = path.join(outDir, file.path);
+      const fileDir = path.dirname(filePath);
+
+      // 確保目錄存在
+      if (fileDir !== outDir) {
+        fs.mkdirSync(fileDir, { recursive: true });
+      }
+
+      // 獲取檔案內容
+      const content = file.template || file.content || "";
+      
+      if (!content || content.trim() === "") {
+        errors.push({ file: file.path, error: "Empty content" });
+        return;
+      }
+
+      // 寫入檔案
+      fs.writeFileSync(filePath, content, "utf8");
+      writtenFiles.push(filePath);
+
+    } catch (error) {
+      errors.push({ file: file.path || "unknown", error: error.message });
+    }
+  });
+
+  // 如果有錯誤，記錄但不中斷
+  if (errors.length > 0) {
+    console.warn(`\n⚠️  ${errors.length} file(s) failed to write:`);
+    errors.forEach(({ file, error }) => {
+      console.warn(`  - ${file}: ${error}`);
+    });
+  }
+
+  return {
+    outDir,
+    files: writtenFiles,
+    total: result.files.length,
+    successful: writtenFiles.length,
+    failed: errors.length
+  };
+}
+
+/**
+ * 將 Coder Coordinator 的結果格式化為 Markdown
+ */
+function formatCoderResultAsMarkdown(result) {
+  let markdown = "# 生成的專案檔案\n\n";
+  
+  if (result.notes && result.notes.length > 0) {
+    markdown += "## 說明\n\n";
+    result.notes.forEach(note => {
+      markdown += `- ${note}\n`;
+    });
+    markdown += "\n";
+  }
+  
+  if (result.files && result.files.length > 0) {
+    result.files.forEach(file => {
+      markdown += `<!-- file: ${file.path} -->\n`;
+      markdown += `\`\`\`${file.language || "text"}\n`;
+      markdown += file.template || file.content || "";
+      markdown += `\n\`\`\`\n\n`;
+    });
+  }
+  
+  return markdown;
 }
 
 // 只在直接執行此檔案時才運行 main()，而不是在被導入時

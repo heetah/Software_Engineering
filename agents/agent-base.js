@@ -1,11 +1,16 @@
+/**
+ * 提供 Agent 的Base Class，包含API調用、重試機制、Token追蹤、錯誤處理等功能
+ * 統一錯誤處理、輸出檔案儲存、Token追蹤
+ */
+
 import axios from "axios";
 import fs from "fs";
 import dotenv from "dotenv";
-import { logicalModelMap } from "./logical-modelMap.js";
 import { config } from "../utils/config.js";
 import { tokenTracker } from "../utils/token-tracker.js";
 import { handleAPIError, errorLogger } from "../utils/error-handler.js";
 import { AgentError } from "../utils/errors.js";
+import { apiProviderManager } from "../utils/api-provider-manager.js";
 dotenv.config();
 
 const BASE_URL = process.env.BASE_URL;
@@ -38,17 +43,80 @@ export default class BaseAgent {
   }
 
   /**
-   * 執行 API 調用（帶重試機制）
+   * 執行 API 調用（使用多 API 提供者管理器，自動處理故障轉移）
+   * @param {Object} payload - 請求負載
+   * @param {number} retries - 剩餘重試次數（用於單個提供者的重試）
+   * @returns {Promise<Object>} API 響應
+   */
+  async _executeAPI(payload, retries = this.maxRetries) {
+    // 如果配置了多 API 提供者，使用管理器（自動處理故障轉移）
+    if (apiProviderManager.providers.length > 0) {
+      try {
+        const res = await apiProviderManager.executeAPI(payload, {
+          temperature: payload.temperature || this.temperature,
+          maxTokens: payload.max_tokens || this.maxTokens
+        });
+        return res;
+      } catch (err) {
+        // 如果所有提供者都失敗，檢查是否可以安全地使用 fallback
+        if (this.baseUrl && this.apiKey) {
+          // 檢查 fallback API 是否與已失敗的提供者相同
+          const matchingProvider = apiProviderManager.providers.find(p => {
+            // 比較 baseUrl（去除尾部的 /v1 等路徑）
+            const providerBase = p.baseUrl.replace(/\/v1.*$/, '');
+            const fallbackBase = this.baseUrl.replace(/\/v1.*$/, '');
+            return providerBase === fallbackBase;
+          });
+          
+          // 如果找到匹配的提供者且它被標記為 rate limited，不要重試
+          if (matchingProvider && !matchingProvider.isReady()) {
+            const timeSince429 = matchingProvider.last429Time 
+              ? Date.now() - matchingProvider.last429Time 
+              : 0;
+            const waitTime = Math.ceil((60000 - timeSince429) / 1000);
+            
+            throw new Error(
+              `All API providers are unavailable. ` +
+              `${matchingProvider.name} is rate limited. ` +
+              (waitTime > 0 ? `Please wait ${waitTime} seconds and try again.` : 'Please try again later.')
+            );
+          }
+          
+          console.warn(`  ${this.role} All multi-API providers failed, trying fallback API...`);
+          return await this._executeAPIFallback(payload, retries);
+        }
+        throw err;
+      }
+    }
+    
+    // 如果沒有配置多 API 提供者，使用傳統方法
+    return await this._executeAPIFallback(payload, retries);
+  }
+
+  /**
+   * 傳統的 API 調用方法（單一 API 提供者，帶重試機制）
    * @param {Object} payload - 請求負載
    * @param {number} retries - 剩餘重試次數
    * @returns {Promise<Object>} API 響應
    */
-  async _executeAPI(payload, retries = this.maxRetries) {
+  async _executeAPIFallback(payload, retries = this.maxRetries) {
+    // 確保 payload 包含 model 參數（OpenAI API 必需）
+    const model = payload.model || process.env.OPENAI_MODEL || process.env.MODEL || 'gpt-4o-mini';
+    
+    // 構建完整的請求負載
+    const requestPayload = {
+      model: model,
+      temperature: payload.temperature !== undefined ? payload.temperature : this.temperature,
+      messages: payload.messages || [],
+      ...(payload.max_tokens ? { max_tokens: payload.max_tokens } : {}),
+      ...(this.maxTokens ? { max_tokens: this.maxTokens } : {})
+    };
+    
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const res = await axios.post(
           `${this.baseUrl}/chat/completions`,
-          payload,
+          requestPayload,
           {
             headers: {
               "Authorization": `Bearer ${this.apiKey}`,
@@ -60,14 +128,41 @@ export default class BaseAgent {
 
         return res;
       } catch (err) {
+        const statusCode = err?.response?.status;
+        const responseHeaders = err?.response?.headers || {};
+        
         // 如果是最後一次嘗試，拋出錯誤
         if (attempt === retries) {
           throw handleAPIError(err, this.role);
         }
 
+        // 針對 429 錯誤（速率限制）的特殊處理
+        if (statusCode === 429) {
+          // 檢查是否有 Retry-After 頭（秒數）
+          const retryAfter = responseHeaders['retry-after'] || responseHeaders['Retry-After'];
+          let delay;
+          
+          if (retryAfter) {
+            // 使用 API 建議的等待時間（轉換為毫秒）
+            // 對於 429 錯誤，至少等待 60 秒
+            const retryAfterSeconds = parseInt(retryAfter, 10);
+            delay = Math.max(retryAfterSeconds * 1000, 60000);
+            console.warn(`  ${this.role} Rate limited (429), API suggests waiting ${retryAfterSeconds} seconds (minimum 60s) before retry (${attempt + 1}/${retries})...`);
+          } else {
+            // 沒有 Retry-After 頭時，使用更長的延遲時間
+            // 對於 429 錯誤，建議等待至少 60 秒，並使用更激進的指數退避
+            delay = Math.max(60000, this.retryDelay * Math.pow(2, attempt + 2));
+            console.warn(`  ${this.role} Rate limited (429), waiting ${Math.ceil(delay/1000)} seconds before retry (${attempt + 1}/${retries})...`);
+          }
+          
+          await this._wait(delay);
+          continue;
+        }
+
+        // 對於其他錯誤，使用標準的指數退避
         // 指數退避：等待時間 = 基礎延遲 * 2^嘗試次數
         const delay = this.retryDelay * Math.pow(2, attempt);
-        console.warn(`  ${this.role} API 調用失敗，${delay}ms 後重試 (${attempt + 1}/${retries})...`);
+        console.warn(`  ${this.role} API call failed (${statusCode || 'unknown error'}), retrying after ${delay}ms (${attempt + 1}/${retries})...`);
         await this._wait(delay);
       }
     }
@@ -80,14 +175,11 @@ export default class BaseAgent {
    * @returns {Promise<string>} 輸出
    */
   async run(input, retries = this.maxRetries) {
-    // 獲取邏輯模型
-    const logicalModel = logicalModelMap[this.logicalName];
     // 打印正在執行的角色
     console.log(`\n Running ${this.role}...`);
 
     const payload = {
-      // 模型
-      model: logicalModel,
+      // 不指定 model，讓 API Provider Manager 使用默認模型
       // 控制參數
       temperature: this.temperature,
       // 可用的最大 tokens
@@ -107,7 +199,7 @@ export default class BaseAgent {
       const usage = res?.data?.usage;
       if (usage) {
         tokenTracker.record(this.role, usage);
-        console.log(`  Token 使用: 輸入=${usage.prompt_tokens}, 輸出=${usage.completion_tokens}, 總計=${usage.total_tokens}`);
+        console.log(`  Token usage: Input=${usage.prompt_tokens}, Output=${usage.completion_tokens}, Total=${usage.total_tokens}`);
       }
 
       // 獲取選擇，但內容還要再過濾

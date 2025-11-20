@@ -66,7 +66,7 @@ export function writeProjectFromMarkdown(markdown, outDir = "./generated_project
       
       // 如果內容看起來不完整，記錄警告但不阻止寫入
       if (['{', '[', '(', '"', "'", '`'].includes(lastChar) && !['}', ']', ')', '"', "'", '`'].includes(secondLastChar)) {
-        console.warn(`  警告: 檔案 ${filePath} 可能不完整（未閉合的 ${lastChar}）`);
+        console.warn(`  Warning: File ${filePath} may be incomplete (unclosed ${lastChar})`);
       }
     }
     
