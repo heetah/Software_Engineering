@@ -59,33 +59,33 @@ error-report.json
 
 ```
 Software_Engineering/
-├── agents/                    # 代理模組
-│   ├── architect-agent.js     # 架構代理
-│   ├── verifier-agent.js      # 驗證代理
-│   ├── tester-agent.js        # 測試代理
-│   ├── instruction-service.js  # 會話管理服務
-│   ├── project-writer.js      # 專案檔案寫入
-│   └── templates.js           # 模板中心
-├── utils/                     # 工具模組
-│   ├── api-provider-manager.js # API 提供者管理
-│   ├── config.js              # 配置管理
-│   ├── error-handler.js       # 錯誤處理
-│   └── token-tracker.js       # Token 追蹤
+├── agents/                     
+│   ├── architect-agent.js        # Architecture
+│   ├── verifier-agent.js         # Verifier
+│   ├── tester-agent.js           # Tester
+│   ├── instruction-service.js    # session管理服務
+│   ├── project-writer.js         # 專案檔案寫入
+│   └── templates.js              # 模板中心
+├── utils/                      
+│   ├── api-provider-manager.js   # API 提供者管理
+│   ├── config.js                 # 配置管理
+│   ├── error-handler.js          # 錯誤處理
+│   └── token-tracker.js          # Token 追蹤
 ├── data/
-│   └── sessions/              # 會話資料
+│   └── sessions/                 # 會話資料
 │       └── <sessionId>/
-│           ├── architecture.json
-│           ├── test-plan.json
-│           ├── generated-tests/
+│           ├── architecture.json # 專案架構與規劃
+│           ├── test-plan.json    # 測試計畫(基於LLM回應)
+│           ├── generated-tests/  # 測試檔案
 │           │   └── *.test.js
-│           ├── jest-report.json
-│           ├── test-report.json
-│           └── error-report.json
-├── output/                    # 生成的專案輸出
+│           ├── jest-report.json  # Jest測試報告
+│           ├── test-report.json  # 測試結果報告
+│           └── error-report.json # 錯誤結果報告
+├── output/                       # 生成的專案輸出
 │   └── <sessionId>/
 │       └── [專案檔案]
-├── Coordinator.js             # 主協調器
-└── main.js                    # Electron 主程式
+├── Coordinator.js                # 主協調器
+└── main.js                       # Electron 主程式
 ```
 
 ## 模板系統
