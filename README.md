@@ -59,6 +59,12 @@ error-report.json
 
 ```
 Software_Engineering/
+├── dev_page/
+│   └── scss/
+│       ├── style.scss            # CSS預處理器
+│   ├── main-window.html          # 主視窗
+│   ├── main-window.js            # 函式呼叫
+│   ├── style.css                 # 前端排版設計
 ├── agents/          
 │   ├── base-agent.js             # 所有agents的基底           
 │   ├── architect-agent.js        # Architecture
