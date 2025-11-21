@@ -1,0 +1,21 @@
+{
+  "name": "circle-screenshot",
+  "version": "1.0.0",
+  "description": "Screenshot Tool - Supporting Free-form Selection",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --debug",
+    "build": "electron-builder"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^27.0.0",
+    "electron-builder": "^24.6.4"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "node-fetch": "^2.7.0"
+  }
+}
