@@ -59,7 +59,8 @@ error-report.json
 
 ```
 Software_Engineering/
-├── agents/                     
+├── agents/          
+│   ├── base-agent.js             # 所有agents的基底           
 │   ├── architect-agent.js        # Architecture
 │   ├── verifier-agent.js         # Verifier
 │   ├── tester-agent.js           # Tester
