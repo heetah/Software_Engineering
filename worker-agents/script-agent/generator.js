@@ -88,6 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
   buildPrompt({ skeleton, fileSpec, context }) {
     const { path: filePath, description, requirements = [] } = fileSpec;
     const completedFiles = context.completedFiles || [];
+    const allFiles = context.allFiles || [];
     const contracts = context.contracts || null;
     
     let prompt = `Generate JavaScript for: ${filePath}\n\n`;
@@ -96,8 +97,74 @@ document.addEventListener('DOMContentLoaded', () => {
       prompt += `Description: ${description}\n\n`;
     }
     
+    // ========== 自動檢測：window.APP_CONFIG 使用規範 ==========
+    const hasConfigJs = allFiles.some(f => f.path === 'config.js' || f.path.endsWith('/config.js'));
+    
+    if (hasConfigJs) {
+      prompt += `🔴 MANDATORY: API CONFIGURATION PATTERN\n`;
+      prompt += `You MUST read API base URL from window.APP_CONFIG:\n\n`;
+      prompt += `const API_ROOT = (window.APP_CONFIG && window.APP_CONFIG.API_BASE_URL) \n`;
+      prompt += `  ? window.APP_CONFIG.API_BASE_URL \n`;
+      prompt += `  : '/api';  // Fallback if config not loaded\n\n`;
+      prompt += `Then construct specific endpoints:\n`;
+      prompt += `const API_BASE_URL = API_ROOT.replace(/\\/$/, '') + '/specific-resource';\n`;
+      prompt += `// Example: '/api/expenses', '/api/users', etc.\n\n`;
+      prompt += `❌ FORBIDDEN: Do NOT hardcode URLs like 'http://localhost:3000'\n`;
+      prompt += `❌ FORBIDDEN: Do NOT use fetch('http://...') with absolute URLs\n`;
+      prompt += `✅ CORRECT: Use relative paths or API_BASE_URL variable\n\n`;
+    }
+    
+    // ========== 自動檢測：過濾器處理規範 ==========
+    const hasFilterDropdown = skeleton && skeleton.includes('option value="all"');
+    const isFilterRelated = description && description.toLowerCase().includes('filter');
+    
+    if (hasFilterDropdown || isFilterRelated) {
+      prompt += `🔴 FILTER HANDLING STANDARD:\n`;
+      prompt += `When building filter query parameters:\n`;
+      prompt += `1. Check if value is meaningful before adding to query\n`;
+      prompt += `2. Skip empty strings, null, undefined\n`;
+      prompt += `3. Skip sentinel values like "all", "none", "any"\n\n`;
+      prompt += `Example:\n`;
+      prompt += `const filters = {};\n`;
+      prompt += `if (categoryFilter.value && categoryFilter.value !== 'all') {\n`;
+      prompt += `  filters.category = categoryFilter.value;\n`;
+      prompt += `}\n`;
+      prompt += `if (startDateFilter.value) {  // Skip empty strings\n`;
+      prompt += `  filters.startDate = startDateFilter.value;\n`;
+      prompt += `}\n`;
+      prompt += `// Then pass to API: fetchData(filters)\n\n`;
+    }
+    
+    // ========== DOM 查詢防禦性編程（總是應用）==========
+    prompt += `🔴 DOM ELEMENT ACCESS STANDARD:\n`;
+    prompt += `ALWAYS add null checks after querySelector/getElementById:\n\n`;
+    prompt += `const element = document.getElementById('some-id');\n`;
+    prompt += `if (!element) {\n`;
+    prompt += `  console.error('Required element #some-id not found');\n`;
+    prompt += `  return;  // or handle gracefully\n`;
+    prompt += `}\n`;
+    prompt += `// Now safe to use element\n\n`;
+    
+    // ========== 自動檢測：Modal 顯示規範 ==========
+    const hasModal = skeleton && skeleton.toLowerCase().includes('modal');
+    const isModalRelated = description && description.toLowerCase().includes('modal');
+    
+    if (hasModal || isModalRelated) {
+      prompt += `🔴 MODAL DISPLAY STANDARD:\n`;
+      prompt += `Use consistent class and attribute toggling:\n\n`;
+      prompt += `function openModal(modalElement) {\n`;
+      prompt += `  modalElement.classList.add('is-active');\n`;
+      prompt += `  modalElement.removeAttribute('hidden');\n`;
+      prompt += `}\n\n`;
+      prompt += `function closeModal(modalElement) {\n`;
+      prompt += `  modalElement.classList.remove('is-active');\n`;
+      prompt += `  modalElement.setAttribute('hidden', '');\n`;
+      prompt += `}\n\n`;
+      prompt += `The CSS must use: #modal-id.is-active { display: flex; }\n\n`;
+    }
+    
     if (requirements.length > 0) {
-      prompt += `Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
+      prompt += `Additional Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
     }
     
     // ← 新增：如果有 contracts，優先顯示
@@ -106,17 +173,25 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // ✨ DOM contracts - JavaScript 必須遵守的 DOM 查詢規則
       if (contracts.dom && contracts.dom.length > 0) {
-        const relevantDom = contracts.dom.filter(dom => 
-          dom.consumers.includes(filePath)
-        );
+        const relevantDom = contracts.dom.filter(dom => {
+          const consumers = dom.consumers || dom.accessedBy || [];
+          return consumers.includes(filePath);
+        });
         
         if (relevantDom.length > 0) {
           prompt += `\n⚠️ CRITICAL: DOM ELEMENTS GUARANTEED BY HTML ⚠️\n`;
           prompt += `These elements are GUARANTEED to exist in the HTML:\n\n`;
           
           relevantDom.forEach((dom, idx) => {
-            prompt += `DOM Contract #${idx + 1}: ${dom.description}\n`;
+            prompt += `DOM Contract #${idx + 1}: ${dom.description || dom.purpose || `Element: ${dom.id}`}\n`;
             
+            // Support simple format: { id, type, purpose, accessedBy }
+            if (dom.id) {
+              prompt += `  Element ID: #${dom.id}\n`;
+              prompt += `  Element Type: <${dom.type}>\n`;
+            }
+            
+            // Support complex format: { templateId, containerId, requiredElements }
             if (dom.templateId) {
               prompt += `  Template: #${dom.templateId}\n`;
             }
@@ -124,13 +199,15 @@ document.addEventListener('DOMContentLoaded', () => {
               prompt += `  Container: #${dom.containerId}\n`;
             }
             
-            prompt += `  Available Elements:\n`;
-            dom.requiredElements.forEach(elem => {
-              prompt += `    • ${elem.selector} <${elem.element}> - ${elem.purpose}\n`;
-              if (elem.attributes) {
-                prompt += `      Has attributes: ${JSON.stringify(elem.attributes)}\n`;
-              }
-            });
+            if (dom.requiredElements && dom.requiredElements.length > 0) {
+              prompt += `  Available Elements:\n`;
+              dom.requiredElements.forEach(elem => {
+                prompt += `    • ${elem.selector} <${elem.element}> - ${elem.purpose}\n`;
+                if (elem.attributes) {
+                  prompt += `      Has attributes: ${JSON.stringify(elem.attributes)}\n`;
+                }
+              });
+            }
             prompt += `\n`;
           });
           

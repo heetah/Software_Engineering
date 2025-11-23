@@ -109,8 +109,31 @@ class MarkupGenerator {
       prompt += `Description: ${description}\n\n`;
     }
     
+    // ========== 自動檢測：config.js 和腳本載入順序 ==========
+    const hasConfigJs = allFiles.some(f => f.path === 'config.js' || f.path.endsWith('/config.js'));
+    const hasAppJs = allFiles.some(f => f.path.endsWith('app.js') || f.path.includes('.js'));
+    
+    if (hasConfigJs && hasAppJs) {
+      prompt += `🔴 CRITICAL REQUIREMENT - SCRIPT LOADING ORDER:\n`;
+      prompt += `The HTML MUST load scripts in this EXACT order in <head>:\n`;
+      prompt += `1. <script src="config.js"></script>  <!-- FIRST: Configuration -->\n`;
+      prompt += `2. <script src="app.js" defer></script>  <!-- SECOND: Application logic -->\n`;
+      prompt += `This order is MANDATORY because app.js depends on window.APP_CONFIG from config.js.\n`;
+      prompt += `If you violate this order, the application WILL FAIL.\n\n`;
+    }
+    
+    // ========== DOM 元素命名規範 ==========
+    prompt += `🔴 DOM ELEMENT NAMING STANDARDS:\n`;
+    prompt += `1. Form IDs: Use full descriptive names (e.g., 'add-expense-form', NOT 'form')\n`;
+    prompt += `2. Input IDs: Prefix with context (e.g., 'expense-amount', 'edit-expense-amount')\n`;
+    prompt += `3. Modal IDs: Use pattern '<feature>-modal' (e.g., 'edit-expense-modal')\n`;
+    prompt += `4. Modal form fields: Prefix with modal context (e.g., 'edit-expense-description')\n`;
+    prompt += `5. Filter dropdowns: If value 'all' means no filter, include it as default <option>\n`;
+    prompt += `6. Container IDs: Use '-body' or '-container' suffix (e.g., 'expense-table-body')\n`;
+    prompt += `7. Display elements: Use descriptive IDs (e.g., 'total-spending', NOT 'total')\n\n`;
+    
     if (requirements.length > 0) {
-      prompt += `Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
+      prompt += `Additional Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
     }
     
     // ← 新增：如果有 contracts，顯示相關資訊
@@ -119,9 +142,9 @@ class MarkupGenerator {
       
       // ✨ DOM contracts - 最重要！定義必須存在的 HTML 元素
       if (contracts.dom && contracts.dom.length > 0) {
-        const relevantDom = contracts.dom.filter(dom => 
-          dom.producers.includes(filePath)
-        );
+        // For HTML files, show ALL DOM elements (HTML produces them, JavaScript consumes them)
+        // The accessedBy field indicates which JS files consume these elements
+        const relevantDom = contracts.dom;
         
         if (relevantDom.length > 0) {
           prompt += `\n⚠️ CRITICAL: DOM STRUCTURE REQUIREMENTS ⚠️\n`;
@@ -129,8 +152,18 @@ class MarkupGenerator {
           prompt += `Missing ANY of these will cause JavaScript errors!\n\n`;
           
           relevantDom.forEach((dom, idx) => {
-            prompt += `DOM Contract #${idx + 1}: ${dom.description}\n`;
+            prompt += `DOM Contract #${idx + 1}: ${dom.description || dom.purpose}\n`;
             
+            // Support simple format: { id, type, purpose, accessedBy }
+            if (dom.id) {
+              prompt += `  Element ID: #${dom.id}\n`;
+              prompt += `  Element Type: <${dom.type}>\n`;
+              if (dom.accessedBy) {
+                prompt += `  Accessed by: ${dom.accessedBy.join(', ')}\n`;
+              }
+            }
+            
+            // Support complex format: { templateId, containerId, requiredElements }
             if (dom.templateId) {
               prompt += `  Template ID: #${dom.templateId}\n`;
             }
@@ -138,15 +171,19 @@ class MarkupGenerator {
               prompt += `  Container ID: #${dom.containerId}\n`;
             }
             
-            prompt += `  Required Elements:\n`;
-            dom.requiredElements.forEach(elem => {
-              prompt += `    • ${elem.selector} <${elem.element}>\n`;
-              prompt += `      Purpose: ${elem.purpose}\n`;
-              if (elem.attributes) {
-                prompt += `      Attributes: ${JSON.stringify(elem.attributes)}\n`;
-              }
-              prompt += `      Used by: ${elem.consumers.join(', ')}\n`;
-            });
+            if (dom.requiredElements && dom.requiredElements.length > 0) {
+              prompt += `  Required Elements:\n`;
+              dom.requiredElements.forEach(elem => {
+                prompt += `    • ${elem.selector} <${elem.element}>\n`;
+                prompt += `      Purpose: ${elem.purpose}\n`;
+                if (elem.attributes) {
+                  prompt += `      Attributes: ${JSON.stringify(elem.attributes)}\n`;
+                }
+                if (elem.consumers) {
+                  prompt += `      Used by: ${elem.consumers.join(', ')}\n`;
+                }
+              });
+            }
             prompt += `\n`;
           });
           

@@ -95,7 +95,9 @@ if __name__ == "__main__":
   buildPrompt({ skeleton, fileSpec, context }) {
     const { path: filePath, description, requirements = [] } = fileSpec;
     const completedFiles = context.completedFiles || [];
+    const allFiles = context.allFiles || [];
     const contracts = context.contracts || null;
+    const projectConfig = context.projectConfig || null;
     
     let prompt = `Generate Python code for: ${filePath}\n\n`;
     
@@ -103,8 +105,70 @@ if __name__ == "__main__":
       prompt += `Description: ${description}\n\n`;
     }
     
+    // ========== 項目配置（端口等） ==========
+    if (projectConfig) {
+      prompt += `🔴 CRITICAL: PROJECT CONFIGURATION\n`;
+      
+      if (projectConfig.backend && projectConfig.backend.port) {
+        prompt += `Backend Port: ${projectConfig.backend.port}\n`;
+        prompt += `⚠️  You MUST use port ${projectConfig.backend.port} (NOT 3000 or any other port)\n`;
+        prompt += `Set: PORT = int(os.environ.get("PORT", "${projectConfig.backend.port}"))\n\n`;
+      }
+      
+      if (projectConfig.externalAPIs) {
+        prompt += `External APIs:\n`;
+        for (const [name, config] of Object.entries(projectConfig.externalAPIs)) {
+          prompt += `  - ${name}: ${config.baseUrl}`;
+          if (config.requiresKey) {
+            prompt += ` (requires API key)`;
+          }
+          prompt += `\n`;
+        }
+        prompt += `\n`;
+      }
+    }
+    
+    // ========== 自動檢測：Flask 靜態文件服務配置 ==========
+    const isFlaskProject = description && description.toLowerCase().includes('flask');
+    const hasFrontendFiles = allFiles.some(f => 
+      f.path.endsWith('.html') || f.path.endsWith('.js') || f.path.endsWith('.css')
+    );
+    
+    if (isFlaskProject && hasFrontendFiles) {
+      prompt += `🔴 MANDATORY: FLASK STATIC FILE SERVING CONFIGURATION\n`;
+      prompt += `This Flask app must serve frontend files. You MUST:\n\n`;
+      
+      prompt += `1. Initialize Flask with static folder configuration:\n`;
+      prompt += `   from flask import Flask, send_from_directory\n`;
+      prompt += `   app = Flask(__name__, static_folder='.', static_url_path='')\n\n`;
+      
+      prompt += `2. Add root route to serve index.html:\n`;
+      prompt += `   @app.route('/')\n`;
+      prompt += `   def index():\n`;
+      prompt += `       return send_from_directory('.', 'index.html')\n\n`;
+      
+      prompt += `3. Use PORT environment variable:\n`;
+      prompt += `   import os\n`;
+      prompt += `   if __name__ == '__main__':\n`;
+      prompt += `       port = int(os.environ.get('PORT', '3000'))\n`;
+      prompt += `       app.run(host='0.0.0.0', port=port, debug=True)\n\n`;
+      
+      prompt += `4. API routes MUST use /api prefix:\n`;
+      prompt += `   @app.route('/api/resource', methods=['GET'])\n`;
+      prompt += `   def get_resource():\n`;
+      prompt += `       # Implementation\n\n`;
+      
+      prompt += `❌ FORBIDDEN:\n`;
+      prompt += `  - Do NOT hardcode port 5000 or 5001\n`;
+      prompt += `  - Do NOT omit static_folder configuration\n`;
+      prompt += `  - Do NOT forget root route for index.html\n`;
+      prompt += `  - Do NOT use API routes without /api prefix\n\n`;
+      
+      prompt += `✅ This ensures frontend and backend run on same port with proper routing\n\n`;
+    }
+    
     if (requirements.length > 0) {
-      prompt += `Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
+      prompt += `Additional Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
     }
     
     // ← 新增：如果有 contracts，優先顯示

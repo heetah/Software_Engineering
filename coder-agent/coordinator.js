@@ -11,6 +11,7 @@ const logger = require('../shared/logger');
 const path = require('path');
 const DependencyAnalyzer = require('./dependency-analyzer');
 const ConfigGenerator = require('./config-generator');
+const ContractsAgent = require('./contracts-agent');
 
 // Polyfill for fetch (Node.js < 18)
 const fetch = global.fetch || (async function(...args) {
@@ -59,7 +60,7 @@ class Coordinator {
     this.workers = {
       'markup': { 
         endpoint: config.markupEndpoint || 'http://localhost:3801/generate', 
-        exts: ['.html', '.xml', '.md', '.htm'] 
+        exts: ['.html', '.xml', '.md', '.htm', '.txt', '.gitignore', '.env', '.ps1', '.sh', '.bat'] 
       },
       'style': { 
         endpoint: config.styleEndpoint || 'http://localhost:3802/generate', 
@@ -99,18 +100,36 @@ class Coordinator {
    * 主入口：從 architect payload 生成所有檔案
    */
   async generateFromArchitectPayload(payload, requestId = null) {
-    const coderInstructions = payload.output.coder_instructions;
-    const files = coderInstructions.files;
-    const contracts = coderInstructions.contracts || null; // 可選的 contracts
-    
-    logger.info('Coordinator starting', requestId, { 
-      totalFiles: files.length,
-      hasContracts: !!contracts,
-      hasProjectConfig: !!coderInstructions.projectConfig,
-      useMockApi: this.USE_MOCK_API 
-    });
+    logger.info('Coordinator starting - preprocessing payload', requestId);
 
     try {
+      // Phase -1: Contracts Agent 預處理 payload
+      logger.info('Phase -1: Running Contracts Agent preprocessing', requestId);
+      const contractsAgent = new ContractsAgent();
+      const enhancedPayload = await contractsAgent.processPayload(payload);
+      
+      // 記錄預處理結果
+      if (enhancedPayload._preprocessed) {
+        logger.info('Payload preprocessing completed', requestId, {
+          issuesFound: enhancedPayload._preprocessed.issuesFound,
+          enhancementsApplied: enhancedPayload._preprocessed.enhancementsApplied,
+          version: enhancedPayload._preprocessed.version
+        });
+      }
+      
+      // 使用增強後的 payload 繼續
+      const coderInstructions = enhancedPayload.output.coder_instructions;
+      const files = coderInstructions.files;
+      const contracts = coderInstructions.contracts || null;
+      const projectConfig = coderInstructions.projectConfig || null;
+      
+      logger.info('Starting generation with enhanced payload', requestId, { 
+        totalFiles: files.length,
+        hasContracts: !!contracts,
+        hasProjectConfig: !!projectConfig,
+        useMockApi: this.USE_MOCK_API 
+      });
+
       // Phase 0: 自動生成配置文件（如果需要）
       logger.info('Phase 0: Generating config files', requestId);
       const configFiles = ConfigGenerator.generateAll(coderInstructions);
@@ -126,13 +145,13 @@ class Coordinator {
       logger.info('Phase 1: Generating skeletons', requestId);
       const skeletons = await this.generateAllSkeletons(coderInstructions, requestId);
       
-      // Phase 2: 序列化生成細節（傳遞 contracts）
+      // Phase 2: 序列化生成細節（傳遞 contracts 和 projectConfig）
       logger.info('Phase 2: Generating details sequentially', requestId);
-      const detailedFiles = await this.generateDetailsSequentially(files, skeletons, contracts, requestId);
+      const detailedFiles = await this.generateDetailsSequentially(files, skeletons, contracts, projectConfig, requestId);
       
       // Phase 3: 組裝（傳遞 payload 以便生成 setup 檔案）
       logger.info('Phase 3: Assembling results', requestId);
-      const result = await this.assemble(detailedFiles, skeletons, requestId, payload.output);
+      const result = await this.assemble(detailedFiles, skeletons, requestId, enhancedPayload.output);
       
       logger.info('Coordinator completed', requestId, { 
         filesGenerated: result.files.length,
@@ -339,10 +358,11 @@ class Coordinator {
    * @param {Array} files - 檔案列表
    * @param {Object} skeletons - 骨架對應表
    * @param {Object} contracts - 可選的跨檔案 contracts
+   * @param {Object} projectConfig - 項目配置（端口、API等）
    */
-  async generateDetailsSequentially(files, skeletons, contracts, requestId) {
+  async generateDetailsSequentially(files, skeletons, contracts, projectConfig, requestId) {
     // 分析檔案依賴關係
-    const { order, groups, depGraph } = this.dependencyAnalyzer.analyze(files, requestId);
+    const { order, groups, depGraph } = this.dependencyAnalyzer.analyze(files,skeletons, requestId);
     
     // 視覺化依賴關係（用於除錯）
     this.dependencyAnalyzer.visualizeDependencies(depGraph, groups, requestId);
@@ -407,6 +427,7 @@ class Coordinator {
             dependencies: completedDeps,
             allFiles: files, // 傳遞所有檔案資訊（用於預知將來的檔案）
             contracts: contracts || null, // ← 新增：傳遞 contracts 給 Worker Agents
+            projectConfig: projectConfig || null, // ← 新增：傳遞項目配置給 Worker Agents
             fileSpec: {
               path: file.path,
               language: file.language,
@@ -743,15 +764,27 @@ ${setup.dependencies.go.map(dep => `\t${dep}`).join('\n')}
    */
   selectAgent(filePath) {
     const ext = path.extname(filePath).toLowerCase();
+    const basename = path.basename(filePath).toLowerCase();
     
+    // 特殊檔案名稱處理（沒有副檔名的檔案）
+    if (basename === '.gitignore' || basename === '.env.example' || basename === 'dockerfile') {
+      return this.workers.markup;
+    }
+    
+    // requirements.txt 特別處理 → 使用 python-agent
+    if (basename === 'requirements.txt') {
+      return this.workers.python;
+    }
+    
+    // 根據副檔名匹配
     for (const [name, worker] of Object.entries(this.workers)) {
       if (worker.exts.includes(ext)) {
         return worker;
       }
     }
     
-    // 預設使用 system agent
-    return this.workers.system;
+    // 預設使用 markup agent（改為文字處理）
+    return this.workers.markup;
   }
 
   /**
@@ -1287,7 +1320,9 @@ class App:
           completedFiles: context.completedFiles || [],
           dependencies: context.dependencies || [],
           allFiles: context.allFiles || [], // 傳遞所有檔案資訊（預知未來）
-          allSkeletons: context.allSkeletons || {}
+          allSkeletons: context.allSkeletons || {},
+          contracts: context.contracts || null, // 傳遞 contracts
+          projectConfig: context.projectConfig || null // 傳遞項目配置
         }
       };
       

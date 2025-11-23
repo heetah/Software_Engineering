@@ -1,34 +1,35 @@
 {
-  "comment": "Example 2: Task Manager with API - HAS contracts.api + contracts.storage",
+  "comment": "Example 2: Task Manager with REST API - 測試 CRUD 操作、DOM contracts、storage contracts、端口配置",
   "output": {
     "coder_instructions": {
-      "task": "Build a task management application with REST API",
-      "requirements": "CRUD operations, localStorage persistence, responsive UI",
+      "task": "Build a task management application with Flask REST API backend and interactive frontend",
+      "requirements": "CRUD operations for tasks, task filtering (all/active/completed), localStorage caching for offline support, responsive mobile design, real-time status updates, form validation, error handling with user-friendly messages",
       
       "files": [
         {
           "path": "index.html",
           "type": "html",
-          "description": "Task list UI with add/edit/delete buttons and filter options",
-          "dependencies": ["styles.css", "app.js"]
+          "description": "Task manager interface: header with title and stats (id: task-stats), task form section with title input (id: task-title), description textarea (id: task-description), status select (id: task-status), submit button (id: submit-btn), cancel button (id: cancel-btn, hidden initially), filter buttons container (id: filter-controls) with buttons for all/active/completed filters (data-filter attribute), main task list container (id: task-list) for rendering task cards, each task card should have edit button (data-action='edit') and delete button (data-action='delete') with data-task-id attribute, loading overlay (id: loading), error message container (id: error-message)"
         },
         {
-          "path": "styles.css",
+          "path": "style.css",
           "type": "css",
-          "description": "Modern task manager styling with status colors",
-          "dependencies": []
+          "description": "Modern task manager styling: flexbox layout, card-based design for tasks with shadow and hover effects, status badges with colors (pending: yellow, in-progress: blue, completed: green), form with floating labels, filter buttons with active state highlight, responsive breakpoint at 768px for mobile layout, smooth transitions for card animations, loading spinner with CSS animation"
         },
         {
           "path": "app.js",
           "type": "javascript",
-          "description": "Frontend logic for task CRUD operations and API calls",
-          "dependencies": []
+          "description": "Frontend logic: on load fetch tasks from API GET /api/tasks and render, cache to localStorage. renderTasks function: create task cards with title, description, status badge, edit/delete buttons. Form submit: if task-id hidden input has value PATCH /api/tasks/:id else POST /api/tasks, clear form after success. Edit button click: populate form with task data, show cancel button, set task-id. Delete button click: confirm, call DELETE /api/tasks/:id, remove from DOM. Filter buttons: show/hide tasks based on status. Error handling: show error-message div with API error text. Use fetch API with async/await"
         },
         {
-          "path": "api.py",
+          "path": "server.py",
           "type": "python",
-          "description": "Flask REST API with task endpoints and CORS support",
-          "dependencies": []
+          "description": "Flask REST API: use Flask, Flask-CORS, initialize with Flask(__name__, static_folder='.', static_url_path=''), enable CORS. In-memory tasks list (or use SQLite for persistence). Routes: GET / serves index.html. GET /api/tasks returns all tasks array [{id, title, description, status, createdAt}]. POST /api/tasks accepts {title, description, status}, generates UUID, adds to list, returns created task. PATCH /api/tasks/<id> accepts {title, description, status} (all optional), updates task, returns updated task. DELETE /api/tasks/<id> removes task, returns {success: true}. Include error handling with 400 for validation, 404 for not found, 500 for server errors. Use logging for requests"
+        },
+        {
+          "path": "config.py",
+          "type": "python",
+          "description": "Configuration: PORT from environment (default 5001), CORS_ORIGINS list (localhost:5001), DEBUG mode, MAX_TITLE_LENGTH 200, VALID_STATUSES ['pending', 'in-progress', 'completed'], DATABASE_PATH for SQLite (optional)"
         }
       ],
       
@@ -36,216 +37,207 @@
         "api": [
           {
             "endpoint": "GET /api/tasks",
+            "method": "GET",
             "description": "Fetch all tasks",
-            "request": null,
             "response": {
-              "type": "array",
-              "items": {
-                "id": "string (UUID)",
-                "title": "string (required)",
-                "completed": "boolean (default: false)",
-                "createdAt": "string (ISO 8601 timestamp)"
+              "success": {
+                "type": "array",
+                "items": {
+                  "id": "string (UUID)",
+                  "title": "string",
+                  "description": "string",
+                  "status": "string (pending|in-progress|completed)",
+                  "createdAt": "string (ISO 8601)"
+                }
+              },
+              "error": {
+                "error": "string (error message)"
               }
             },
-            "producers": ["api.py"],
+            "producers": ["server.py"],
             "consumers": ["app.js"]
           },
           {
             "endpoint": "POST /api/tasks",
+            "method": "POST",
             "description": "Create new task",
             "request": {
               "title": "string (required, max 200 chars)",
-              "completed": "boolean (optional, default: false)"
+              "description": "string (optional)",
+              "status": "string (optional, default: pending)"
             },
             "response": {
-              "id": "string (UUID)",
-              "title": "string",
-              "completed": "boolean",
-              "createdAt": "string (ISO 8601)"
+              "success": {
+                "id": "string (UUID)",
+                "title": "string",
+                "description": "string",
+                "status": "string",
+                "createdAt": "string (ISO 8601)"
+              },
+              "error": {
+                "error": "string (validation error)"
+              }
             },
-            "producers": ["api.py"],
+            "producers": ["server.py"],
             "consumers": ["app.js"]
           },
           {
             "endpoint": "PATCH /api/tasks/:id",
-            "description": "Update task status or title",
+            "method": "PATCH",
+            "description": "Update task (partial update)",
             "request": {
               "title": "string (optional)",
-              "completed": "boolean (optional)"
+              "description": "string (optional)",
+              "status": "string (optional)"
             },
             "response": {
-              "id": "string",
-              "title": "string",
-              "completed": "boolean",
-              "createdAt": "string"
+              "success": {
+                "id": "string",
+                "title": "string",
+                "description": "string",
+                "status": "string",
+                "createdAt": "string"
+              },
+              "error": {
+                "error": "string (not found or validation error)"
+              }
             },
-            "producers": ["api.py"],
+            "producers": ["server.py"],
             "consumers": ["app.js"]
           },
           {
             "endpoint": "DELETE /api/tasks/:id",
+            "method": "DELETE",
             "description": "Delete task by ID",
-            "request": null,
             "response": {
-              "success": "boolean",
-              "message": "string"
+              "success": {
+                "success": true,
+                "message": "string"
+              },
+              "error": {
+                "error": "string (not found)"
+              }
             },
-            "producers": ["api.py"],
+            "producers": ["server.py"],
             "consumers": ["app.js"]
+          }
+        ],
+        "dom": [
+          {
+            "id": "task-title",
+            "type": "input",
+            "purpose": "Input for task title",
+            "accessedBy": ["app.js"]
+          },
+          {
+            "id": "task-description",
+            "type": "textarea",
+            "purpose": "Input for task description",
+            "accessedBy": ["app.js"]
+          },
+          {
+            "id": "task-status",
+            "type": "select",
+            "purpose": "Dropdown for task status",
+            "accessedBy": ["app.js"]
+          },
+          {
+            "id": "submit-btn",
+            "type": "button",
+            "purpose": "Submit form to create or update task",
+            "accessedBy": ["app.js"]
+          },
+          {
+            "id": "cancel-btn",
+            "type": "button",
+            "purpose": "Cancel edit mode and clear form",
+            "accessedBy": ["app.js"]
+          },
+          {
+            "id": "task-list",
+            "type": "div",
+            "purpose": "Container for rendering all task cards",
+            "accessedBy": ["app.js"]
+          },
+          {
+            "id": "filter-controls",
+            "type": "div",
+            "purpose": "Container for filter buttons",
+            "accessedBy": ["app.js"]
+          },
+          {
+            "id": "loading",
+            "type": "div",
+            "purpose": "Loading overlay during API calls",
+            "accessedBy": ["app.js"]
+          },
+          {
+            "id": "error-message",
+            "type": "div",
+            "purpose": "Display error messages",
+            "accessedBy": ["app.js"]
+          },
+          {
+            "id": "task-stats",
+            "type": "div",
+            "purpose": "Display task statistics (total, active, completed)",
+            "accessedBy": ["app.js"]
           }
         ],
         "storage": [
           {
             "key": "tasks_cache",
             "type": "localStorage",
-            "description": "Cached task list for offline viewing",
+            "description": "Cache task list for offline viewing",
             "schema": {
               "type": "array",
               "items": {
                 "id": "string",
                 "title": "string",
-                "completed": "boolean",
+                "description": "string",
+                "status": "string",
                 "createdAt": "string"
               }
             },
-            "writers": ["app.js (saveTasks)"],
-            "readers": ["app.js (loadTasks)"]
+            "writers": ["app.js"],
+            "readers": ["app.js"]
           },
           {
             "key": "filter_preference",
             "type": "localStorage",
-            "description": "User's preferred filter (all, active, completed)",
-            "schema": "string (enum: 'all' | 'active' | 'completed')",
-            "writers": ["app.js (setFilter)"],
-            "readers": ["app.js (getFilter)"]
-          }
-        ],
-        "dom": [
-          {
-            "templateId": "task-item-template",
-            "containerId": "task-list",
-            "description": "Task list item template structure for rendering tasks",
-            "requiredElements": [
-              {
-                "selector": ".task-item__title",
-                "element": "h3",
-                "purpose": "Display task title text",
-                "consumers": ["app.js (renderTasks line ~137)"]
-              },
-              {
-                "selector": ".task-item__description",
-                "element": "p",
-                "purpose": "Display task description text",
-                "consumers": ["app.js (renderTasks line ~138)"]
-              },
-              {
-                "selector": ".status-badge",
-                "element": "span",
-                "purpose": "Display task status with color-coded badge",
-                "consumers": ["app.js (renderTasks line ~140-143)"]
-              },
-              {
-                "selector": "[data-action='edit']",
-                "element": "button",
-                "purpose": "Edit button to trigger task editing",
-                "consumers": ["app.js (handleTaskListClick)"]
-              },
-              {
-                "selector": "[data-action='delete']",
-                "element": "button",
-                "purpose": "Delete button to trigger task deletion",
-                "consumers": ["app.js (handleTaskListClick)"]
-              }
-            ],
-            "producers": ["index.html"],
-            "consumers": ["app.js"]
-          },
-          {
-            "description": "Task form structure for creating and editing tasks",
-            "requiredElements": [
-              {
-                "selector": "#task-form",
-                "element": "form",
-                "purpose": "Main form for task input",
-                "consumers": ["app.js (handleFormSubmit)"]
-              },
-              {
-                "selector": "#task-id",
-                "element": "input",
-                "attributes": { "type": "hidden", "name": "taskId" },
-                "purpose": "Hidden input to store task ID when editing",
-                "consumers": ["app.js (populateFormForEdit, clearForm)"]
-              },
-              {
-                "selector": "#task-title",
-                "element": "input",
-                "attributes": { "type": "text", "name": "title", "required": true },
-                "purpose": "Input for task title",
-                "consumers": ["app.js (populateFormForEdit)"]
-              },
-              {
-                "selector": "#task-description",
-                "element": "textarea",
-                "attributes": { "name": "description" },
-                "purpose": "Input for task description",
-                "consumers": ["app.js (populateFormForEdit)"]
-              },
-              {
-                "selector": "#task-status",
-                "element": "select",
-                "attributes": { "name": "status" },
-                "purpose": "Dropdown for task status selection",
-                "consumers": ["app.js (populateFormForEdit)"]
-              },
-              {
-                "selector": "#cancel-edit-btn",
-                "element": "button",
-                "attributes": { "type": "button" },
-                "purpose": "Button to cancel edit mode",
-                "consumers": ["app.js (clearForm event listener)"]
-              }
-            ],
-            "producers": ["index.html"],
-            "consumers": ["app.js"]
-          },
-          {
-            "containerId": "filter-controls",
-            "description": "Filter buttons for task status filtering",
-            "requiredElements": [
-              {
-                "selector": "[data-filter]",
-                "element": "button",
-                "attributes": { "data-filter": "all|pending|in-progress|completed" },
-                "purpose": "Filter buttons to show tasks by status",
-                "consumers": ["app.js (handleFilterClick)"]
-              }
-            ],
-            "producers": ["index.html"],
-            "consumers": ["app.js"]
+            "description": "User's preferred filter setting",
+            "schema": "string (all|active|completed)",
+            "writers": ["app.js"],
+            "readers": ["app.js"]
           }
         ]
       },
 
-      "setup": {
-        "runtime": "mixed",
-        "pythonVersion": "3.8+",
+      "projectConfig": {
+        "backend": {
+          "host": "localhost",
+          "port": 5001,
+          "protocol": "http"
+        },
+        "frontend": {
+          "apiBaseUrl": "http://localhost:5001/api"
+        },
         "dependencies": {
-          "python": [
-            "flask==3.0.0",
-            "flask-cors==4.0.0"
-          ]
+          "frontend": {
+            "none": "Vanilla JavaScript, no frameworks"
+          },
+          "backend": {
+            "Flask": "3.0.0",
+            "Flask-CORS": "4.0.0",
+            "python-dotenv": "1.0.0"
+          }
         },
-        "environmentVariables": {
-          "FLASK_APP": "api.py",
-          "FLASK_ENV": "development",
-          "PORT": "5000",
-          "CORS_ORIGINS": "http://localhost:3000"
-        },
-        "startCommands": {
-          "backend": "python api.py",
-          "frontend": "Open index.html in your browser"
-        },
-        "instructions": "1. Install Python dependencies: `pip install -r requirements.txt`\n2. Copy `.env.example` to `.env` and configure if needed\n3. Start backend: `python api.py`\n4. Open `index.html` in your browser\n5. API will be available at http://localhost:5000"
+        "features": {
+          "offline": "localStorage caching for offline viewing",
+          "validation": "Client and server-side validation",
+          "errorHandling": "User-friendly error messages",
+          "responsive": "Mobile-first responsive design"
+        }
       }
     }
   }
