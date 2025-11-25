@@ -59,40 +59,66 @@ error-report.json
 
 ```
 Software_Engineering/
-├── dev_page/
+├── dev_page/                       # Electron 應用程式前端介面
 │   └── scss/
-│       ├── style.scss            # CSS預處理器
-│   ├── main-window.html          # 主視窗
-│   ├── main-window.js            # 函式呼叫
-│   ├── style.css                 # 前端排版設計
-├── agents/          
-│   ├── base-agent.js             # 所有agents的基底           
-│   ├── architect-agent.js        # Architecture
-│   ├── verifier-agent.js         # Verifier
-│   ├── tester-agent.js           # Tester
-│   ├── instruction-service.js    # session管理服務
-│   ├── project-writer.js         # 專案檔案寫入
-│   └── templates.js              # 模板中心
-├── utils/                      
-│   ├── api-provider-manager.js   # API 提供者管理
-│   ├── config.js                 # 配置管理
-│   ├── error-handler.js          # 錯誤處理
-│   └── token-tracker.js          # Token 追蹤
-├── data/
-│   └── sessions/                 # 會話資料
-│       └── <sessionId>/
-│           ├── architecture.json # 專案架構與規劃
-│           ├── test-plan.json    # 測試計畫(基於LLM回應)
-│           ├── generated-tests/  # 測試檔案
-│           │   └── *.test.js
-│           ├── jest-report.json  # Jest測試報告
-│           ├── test-report.json  # 測試結果報告
-│           └── error-report.json # 錯誤結果報告
-├── output/                       # 生成的專案輸出
-│   └── <sessionId>/
-│       └── [專案檔案]
-├── Coordinator.js                # 主協調器
-└── main.js                       # Electron 主程式
+│       ├── style.scss              # CSS 預處理器（SCSS 原始檔）
+│   ├── main-window.html            # Electron 主視窗 HTML 模板
+│   ├── main-window.js              # 渲染器進程核心腳本（處理 UI 互動、IPC 通訊）
+│   ├── style.css                   # 前端排版設計（編譯後的 CSS）
+├── agents/                         # 多代理系統核心目錄
+│   └── coder-agent/                # 程式碼生成代理
+│       ├── config-generator.js     # 配置檔案生成器
+│       ├── coordinator.cjs         # Coder 協調器（協調骨架生成和細節填充）
+│       ├── dependency-analyzer.js  # 依賴關係分析器
+│       ├── processor.js            # 檔案處理器
+│       ├── server.js               # Coder Agent 伺服器
+│   └── generators/                 # 程式碼生成器集合
+│       ├── base-generator.js       # 基礎生成器抽象類別
+│       ├── basic-generator.js      # 基本生成器實作
+│       ├── index.js                # 生成器入口與匯出
+│   └── shared/                     # 代理共用模組
+│       ├── api-standards.js        # API 標準規範
+│       ├── errors.js               # 錯誤定義
+│       ├── file-types-config.js    # 檔案類型配置
+│       └── logger.js               # 日誌記錄器
+│   └── vision-agent/               # 視覺分析代理
+│       ├── controllers/visionController.js # 視覺控制器
+│       ├── server.js               # Vision Agent 伺服器
+│   └── worker-agents/              # 工作代理集合
+│       ├── markup-agent/           # 標記語言生成代理（HTML/Markdown）
+│       ├── python-agent/           # Python 程式碼生成代理
+│       ├── script-agent/           # 腳本生成代理
+│       ├── style-agent/            # 樣式生成代理（CSS/SCSS）
+│       ├── system-agent/           # 系統檔案生成代理
+│       ├── api-adapter.js          # API 適配器（統一 API 呼叫介面）
+│   ├── agent-base.js               # 所有代理的基底類別（提供 API 調用、重試機制、Token 追蹤）
+│   ├── architect-agent.js          # 架構代理（分析用戶需求並生成系統架構）
+│   ├── verifier-agent.js           # 驗證代理（解析 architecture.json 並生成測試計劃）
+│   ├── tester-agent.js             # 測試代理（生成測試碼、執行 Jest、產生報告）
+│   ├── instruction-service.js      # 會話管理服務（管理 session 生命週期與架構檔案）
+│   ├── project-writer.js           # 專案檔案寫入器（將 Markdown 轉換為專案檔案）
+│   └── templates.js                # 模板中心（統一管理所有代理使用的提示模板）
+├── utils/                          # 工具模組
+│   ├── api-provider-manager.js     # API 提供者管理器（支援多 API、負載均衡、故障轉移）
+│   ├── config.js                   # 配置管理（統一管理環境變數與系統配置）
+│   ├── error-handler.js            # 錯誤處理（統一錯誤處理機制與日誌記錄）
+│   ├── token-tracker.js            # Token 追蹤器（追蹤與監控 API Token 使用量）
+│   └── errors.js                   # 錯誤類型定義（CoordinatorError、AgentError、APIError）
+├── data/                           # 資料儲存目錄
+│   └── sessions/                   # 會話資料目錄
+│       └── <sessionId>/            # 每個會話的獨立目錄
+│           ├── architecture.json   # 專案架構與規劃（由 Architect Agent 生成）
+│           ├── test-plan.json      # 測試計劃（由 Verifier Agent 生成，基於 LLM 回應）
+│           ├── generated-tests/    # 生成的測試檔案目錄
+│           │   └── *.test.js       # Jest 測試檔案（由 Tester Agent 生成）
+│           ├── jest-report.json    # Jest 測試報告（Jest 執行後的原始 JSON 報告）
+│           ├── test-report.json    # 測試結果報告（結構化的測試統計與結果）
+│           └── error-report.json   # 錯誤結果報告（失敗測試的詳細資訊與 LLM 分析）
+├── output/                         # 生成的專案輸出目錄
+│   └── <sessionId>/                # 每個會話生成的專案檔案
+│       └── [專案檔案]               # 由 Coder Coordinator 生成的實際專案檔案
+├── Coordinator.js                  # 主協調器（初始化所有 agent、管理 agent 生命週期、處理使用者輸入）
+└── main.js                         # Electron 主程式（初始化資料庫、註冊 IPC 處理器、建立主視窗）
 ```
 
 ## 模板系統
