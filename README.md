@@ -72,11 +72,11 @@ Software_Engineering/
 │       ├── dependency-analyzer.js  # 依賴關係分析器
 │       ├── processor.js            # 檔案處理器
 │       ├── server.js               # Coder Agent 伺服器
-│   └── generators/                 # 程式碼生成器集合
+│   └── generators/                 # 程式碼生成器集合（專供 coder-agent 使用）
 │       ├── base-generator.js       # 基礎生成器抽象類別
 │       ├── basic-generator.js      # 基本生成器實作
 │       ├── index.js                # 生成器入口與匯出
-│   └── shared/                     # 代理共用模組
+│   └── shared/                     # 代理共用模組（被多個 agent 使用）
 │       ├── api-standards.js        # API 標準規範
 │       ├── errors.js               # 錯誤定義
 │       ├── file-types-config.js    # 檔案類型配置
@@ -84,7 +84,7 @@ Software_Engineering/
 │   └── vision-agent/               # 視覺分析代理
 │       ├── controllers/visionController.js # 視覺控制器
 │       ├── server.js               # Vision Agent 伺服器
-│   └── worker-agents/              # 工作代理集合
+│   └── worker-agents/              # 工作代理集合（專供 coder-agent 使用，作為子代理）
 │       ├── markup-agent/           # 標記語言生成代理（HTML/Markdown）
 │       ├── python-agent/           # Python 程式碼生成代理
 │       ├── script-agent/           # 腳本生成代理
