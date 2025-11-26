@@ -250,11 +250,6 @@ function registerCoordinatorBridge() {
           50
         )}...`
       );
-      event.sender.send("message-from-agent", {
-        type: "text",
-        content: "Processing your request, please wait...",
-      });
-
       let initializedAgents;
       try {
         const result = await initializeCoordinator();
