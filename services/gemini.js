@@ -1,7 +1,8 @@
 // 載入環境變數
-require("dotenv").config();
+import dotenv from "dotenv";
+import fetch from "node-fetch";
 
-const fetch = global.fetch || require("node-fetch");
+dotenv.config();
 
 // Gemini API 設定
 const GEMINI_API_KEY =
@@ -11,7 +12,7 @@ const GEMINI_API_URL =
   process.env.GEMINI_API_URL ||
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
-async function askGemini(prompt) {
+export async function askGemini(prompt) {
   try {
     // 檢查 API Key 是否設定
     if (!GEMINI_API_KEY || GEMINI_API_KEY.includes("請在.env檔案中設定")) {
@@ -75,5 +76,3 @@ async function askGemini(prompt) {
     };
   }
 }
-
-module.exports = { askGemini };
