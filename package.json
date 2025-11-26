@@ -1,26 +1,25 @@
 {
-  "name": "software_engineering_backend",
-  "version": "0.2.0",
-  "description": "Simplified Vision-agent (architect payload processor) + Coder-agent (file generator) local backend.\n\nFlows:\n - Start vision server: npm run start:vision  # serves /api/vision/analyze for architect payloads\n - Start coder server: npm run start:coder   # receives forwarded payloads from vision-agent\n - Start both (background): npm run start:all  # convenient for local dev\n - Run end-to-end test: npm run test:architect  # tests architect payload flow\n",
-  "main": "vision-agent/server.js",
+  "name": "ai-copilot-assistant",
+  "version": "1.0.0",
+  "description": "A multi-agent AI copilot application with screenshot capabilities.",
+  "type": "module",
+  "main": "main.js",
   "scripts": {
-    "start": "node vision-agent/server.js",
-    "start:vision": "node vision-agent/server.js",
-    "start:coder": "node coder-agent/server.js",
-    "start:all": "start cmd /k \"node vision-agent/server.js\" & start cmd /k \"node coder-agent/server.js\"",
-    "test:architect": "python .\\tools\\test_post.py test_payloads/architect_payload.json",
-    "test:payloads": "powershell -ExecutionPolicy Bypass -File .\\test_payloads\\run_tests.ps1",
-    "clean": "node -e \"const fs=require('fs');const path=require('path');['vision-agent/outputs','coder-agent/outputs'].forEach(d=>{const p=path.join(__dirname,d);if(fs.existsSync(p))fs.rmSync(p,{recursive:true,force:true});fs.mkdirSync(p,{recursive:true})});console.log('Cleaned output directories')\"",
-    "clean:temp": "node -e \"const fs=require('fs');const files=['debug_failed_b64.txt','tmp_ocr_stderr.txt','tmp_ocr_stdout.txt','tmp_outputs_html.txt','vision-agent-error.log'];files.forEach(f=>{try{if(fs.existsSync(f))fs.unlinkSync(f)}catch(e){}});console.log('Cleaned temporary files')\"",
-    "lint": "echo \"Linting not configured yet - run 'npm install eslint --save-dev' to set up\"",
-    "test": "echo \"Tests not configured yet - run 'npm install jest --save-dev' to set up\""
+    "start": "electron .",
+    "dev": "nodemon main.js",
+    "build": "electron-builder"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "body-parser": "^2.2.0",
+    "axios": "^1.12.2",
     "dotenv": "^17.2.3",
-    "express": "^4.18.2",
-    "morgan": "^1.10.0",
-    "node-fetch": "^2.7.0",
-    "winston": "^3.18.3"
+    "sqlite3": "^5.1.7",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "electron": "^29.1.0",
+    "electron-builder": "^24.6.4"
   }
 }
