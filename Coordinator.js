@@ -10,7 +10,6 @@ dotenv.config();
 import ArchitectAgent from "./agents/architect-agent.js";
 import VerifierAgent from "./agents/verifier-agent.js";
 import TesterAgent from "./agents/tester-agent.js";
-import { runVerifierAgent } from "./agents/verifier-agent.js";
 // 將 Coder 產出的 Markdown 生成專案
 import { writeProjectFromMarkdown } from "./agents/project-writer.js";
 // InstructionService 用於會話管理和結構化計劃生成
@@ -226,7 +225,7 @@ export async function runWithInstructionService(userInput, agents) {
     try {
       const verifierResult = await withErrorHandling(
         'VerifierAgent.runVerifierAgent',
-        () => runVerifierAgent(plan.id),
+        () => verifier.runVerifierAgent(plan.id),
         { sessionId: plan.id }
       );
       testPlan = verifierResult.plan;
