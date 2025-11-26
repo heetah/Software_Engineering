@@ -183,6 +183,20 @@ function registerHistoryHandlers() {
     }
   );
 
+  // 刪除單一會話（並透過 ON DELETE CASCADE 一併刪除其訊息）
+  ipcMain.handle("history:delete-session", async (_event, sessionId) => {
+    if (!sessionId) {
+      return { ok: false, error: "sessionId is required" };
+    }
+    try {
+      await run("DELETE FROM sessions WHERE id = ?", [sessionId]);
+      return { ok: true };
+    } catch (error) {
+      console.error("Failed to delete session", error);
+      return { ok: false, error: error.message };
+    }
+  });
+
   ipcMain.handle("history:clear-all", async (event) => {
     const window = BrowserWindow.fromWebContents(event.sender);
     const { response } = await dialog.showMessageBox(window, {
@@ -678,6 +692,22 @@ function createMainWindow() {
     },
   });
   mainWindow.loadFile(path.join(__dirname, "dev_page", "main-window.html"));
+
+  // 允許使用 F12 或 Ctrl/Cmd + Shift/Alt + I 來切換 DevTools
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    const isToggleKey =
+      (input.key === "F12" && input.type === "keyDown") ||
+      ((input.control || input.meta) &&
+        (input.shift || input.alt) &&
+        input.key.toLowerCase() === "i" &&
+        input.type === "keyDown");
+
+    if (isToggleKey) {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
+
   const shouldOpenDevTools = process.env.ELECTRON_OPEN_DEVTOOLS !== "false";
   if (shouldOpenDevTools) {
     mainWindow.webContents.openDevTools();
