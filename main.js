@@ -740,13 +740,13 @@ function createCaptureWindow() {
       alwaysOnTop: true,
       show: false,
       webPreferences: {
-        preload: path.join(__dirname, "preload.js"),
+        preload: path.join(__dirname, "circle-to-search", "preload.js"),
         nodeIntegration: false,
         contextIsolation: true,
       },
     });
 
-    captureWindow.loadFile("index.html");
+    captureWindow.loadFile(path.join(__dirname, "circle-to-search", "index.html"));
     if (process.argv.includes("--debug")) {
       captureWindow.webContents.openDevTools();
     }
