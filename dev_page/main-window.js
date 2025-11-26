@@ -25,10 +25,18 @@ const pageSettings = document.getElementById('page-settings');
 const dataPathDisplay = document.getElementById('data-path-display');
 const clearHistoryButton = document.getElementById('clear-history-button');
 const themeToggle = document.getElementById('theme-toggle-input');
+const llmProviderAuto = document.getElementById('llm-provider-auto');
+const llmProviderGemini = document.getElementById('llm-provider-gemini');
+const llmProviderOpenAI = document.getElementById('llm-provider-openai');
+const geminiApiKeyInput = document.getElementById('gemini-api-key-input');
+const openaiApiKeyInput = document.getElementById('openai-api-key-input');
 
 /* 應用程式狀態 */
 let currentSession = null;
 let thinkingBubbleElement = null;
+let currentLlmProvider = (localStorage.getItem('llmProvider') || 'auto');
+let currentGeminiApiKey = localStorage.getItem('geminiApiKey') || '';
+let currentOpenAIApiKey = localStorage.getItem('openaiApiKey') || '';
 
 /* 綁定事件監聽器 */
 sendButton.addEventListener('click', () => {
@@ -76,6 +84,55 @@ if (themeToggle) {
       document.documentElement.classList.remove('dark-mode');
       localStorage.setItem('theme', 'light');
     }
+  });
+}
+
+// LLM 提供者選擇
+if (llmProviderAuto && llmProviderGemini && llmProviderOpenAI) {
+  // 初始化選中狀態
+  if (currentLlmProvider === 'gemini') {
+    llmProviderGemini.checked = true;
+  } else if (currentLlmProvider === 'openai') {
+    llmProviderOpenAI.checked = true;
+  } else {
+    llmProviderAuto.checked = true;
+    currentLlmProvider = 'auto';
+  }
+
+  const handleLlmProviderChange = (provider) => {
+    currentLlmProvider = provider;
+    localStorage.setItem('llmProvider', provider);
+  };
+
+  llmProviderAuto.addEventListener('change', () => {
+    if (llmProviderAuto.checked) handleLlmProviderChange('auto');
+  });
+  llmProviderGemini.addEventListener('change', () => {
+    if (llmProviderGemini.checked) handleLlmProviderChange('gemini');
+  });
+  llmProviderOpenAI.addEventListener('change', () => {
+    if (llmProviderOpenAI.checked) handleLlmProviderChange('openai');
+  });
+}
+
+// API Key 輸入綁定
+if (geminiApiKeyInput) {
+  if (currentGeminiApiKey) {
+    geminiApiKeyInput.value = currentGeminiApiKey;
+  }
+  geminiApiKeyInput.addEventListener('input', () => {
+    currentGeminiApiKey = geminiApiKeyInput.value.trim();
+    localStorage.setItem('geminiApiKey', currentGeminiApiKey);
+  });
+}
+
+if (openaiApiKeyInput) {
+  if (currentOpenAIApiKey) {
+    openaiApiKeyInput.value = currentOpenAIApiKey;
+  }
+  openaiApiKeyInput.addEventListener('input', () => {
+    currentOpenAIApiKey = openaiApiKeyInput.value.trim();
+    localStorage.setItem('openaiApiKey', currentOpenAIApiKey);
   });
 }
 
@@ -210,7 +267,12 @@ async function sendMessage() {
   ipcRenderer.send('message-to-agent', {
     type: 'text',
     content: messageText,
-    session: getSessionEnvelope(session)
+    session: getSessionEnvelope(session),
+    llmProvider: currentLlmProvider,
+    apiKeys: {
+      gemini: currentGeminiApiKey || null,
+      openai: currentOpenAIApiKey || null
+    }
   });
   
   setActivePage('page-chat');
@@ -235,7 +297,12 @@ async function handleFileUpload(event) {
   ipcRenderer.send('message-to-agent', {
     type: 'file',
     path: file.path,
-    session: getSessionEnvelope(session)
+    session: getSessionEnvelope(session),
+    llmProvider: currentLlmProvider,
+    apiKeys: {
+      gemini: currentGeminiApiKey || null,
+      openai: currentOpenAIApiKey || null
+    }
   });
   fileUploadInput.value = '';
   setActivePage('page-chat');

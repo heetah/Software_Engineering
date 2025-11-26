@@ -135,7 +135,7 @@ function all(sql, params = []) {
 
 // --- HEAD: IPC Handlers (History, Settings, Coordinator) ---
 function registerHistoryHandlers() {
-  console.log("✅ Main Process: Registering history handlers...");
+  console.log("Main Process: Registering history handlers...");
   ipcMain.handle("history:create-session", async () => {
     const row = await get("SELECT MAX(sequence) AS maxSeq FROM sessions");
     const nextSeq = (row?.maxSeq || 0) + 1;
@@ -239,7 +239,7 @@ function registerCoordinatorBridge() {
 
   ipcMain.on("message-to-agent", async (event, payload) => {
     try {
-      const { type, content, session } = payload || {};
+      const { type, content, session, llmProvider, apiKeys } = payload || {};
       if (!content || type !== "text") {
         console.warn("Received invalid message format:", payload);
         return;
@@ -267,7 +267,11 @@ function registerCoordinatorBridge() {
       try {
         plan = await coordinatorModule.runWithInstructionService(
           content,
-          initializedAgents
+          initializedAgents,
+          {
+            llmProvider: llmProvider || "auto",
+            apiKeys: apiKeys || {},
+          }
         );
       } catch (processError) {
         console.error(
@@ -284,7 +288,7 @@ function registerCoordinatorBridge() {
 
       let responseText = "";
       if (plan) {
-        responseText = `✅ Project generation completed!\n\nSession ID: ${
+        responseText = `Project generation completed!\n\nSession ID: ${
           plan.id
         }\nWorkspace: ${plan.workspaceDir || "N/A"}\nFile operations: Created=${
           plan.fileOps?.created?.length || 0
@@ -297,7 +301,7 @@ function registerCoordinatorBridge() {
           }\n\n`;
         }
         if (plan.fileOps?.created?.length > 0) {
-          responseText += `📁 Generated files:\n`;
+          responseText += `Generated files:\n`;
           plan.fileOps.created.slice(0, 10).forEach((file) => {
             responseText += `  • ${file}\n`;
           });
@@ -307,12 +311,12 @@ function registerCoordinatorBridge() {
             } more files\n`;
           }
         }
-        responseText += `\n💡 Tip: Project generated in ${
+        responseText += `\nTip: Project generated in ${
           plan.workspaceDir || "output/" + plan.id
         } directory`;
       } else {
         responseText =
-          "⚠️ Processing completed, but no plan information returned";
+          "Processing completed, but no plan information returned";
       }
 
       event.sender.send("message-from-agent", {
@@ -338,7 +342,7 @@ function registerCoordinatorBridge() {
       );
     } catch (error) {
       console.error("[Coordinator Bridge] Error processing message:", error);
-      const errorMessage = `❌ Processing failed: ${error.message}\n\nPlease check console for detailed error information.`;
+      const errorMessage = `Processing failed: ${error.message}\n\nPlease check console for detailed error information.`;
       event.sender.send("message-from-agent", {
         type: "error",
         content: errorMessage,
@@ -707,7 +711,7 @@ function createMainWindow() {
   if (shouldOpenDevTools) {
     mainWindow.webContents.openDevTools();
     console.log(
-      "ℹ️  DevTools has been opened. If you see Autofill related errors, you can safely ignore them."
+      "ℹDevTools has been opened. If you see Autofill related errors, you can safely ignore them."
     );
   }
 }

@@ -533,6 +533,46 @@ body {
   margin: 0 0 12px 0;
 }
 
+/* LLM 選擇用單選按鈕群組 */
+.settings-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-radio-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.settings-radio-option input[type="radio"] {
+  accent-color: var(--color-accent-1);
+}
+
+/* LLM API Key 輸入欄位 */
+.settings-input-group {
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+.settings-input-label {
+  display: block;
+  font-size: 13px;
+  color: var(--color-text-light);
+  margin-bottom: 4px;
+}
+
+.settings-input-field {
+  width: 100%;
+  border-radius: 10px;
+  box-shadow: var(--shadow-concave);
+  background: var(--color-bg);
+}
+
 .input-area.is-readonly {
   background: var(--color-bg);
   padding: 4px;

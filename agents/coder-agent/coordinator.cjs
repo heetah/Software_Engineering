@@ -135,9 +135,49 @@ class Coordinator {
       }
     };
     
-    // 配置參數
-    this.MAX_FILES_PER_SKELETON_BATCH = config.maxSkeletonBatch || 15;
-    this.DETAIL_GENERATION_DELAY = config.detailDelay || 1500; // 毫秒
+    // LLM 提供者選擇：auto / gemini / openai
+    this.LLM_PROVIDER = (config.llmProvider || process.env.LLM_PROVIDER || 'auto').toString().toLowerCase();
+
+    // 性能 / 併發相關配置
+    // 支援「快速模式」，優先讀取環境變數 CODER_FAST_MODE=true
+    this.FAST_MODE =
+      config.fastMode === true ||
+      String(process.env.CODER_FAST_MODE || "").toLowerCase() === "true";
+
+    // 每批產生骨架的檔案數量（預設 5，快速模式可調大）
+    const envMaxBatch = Number(process.env.CODER_MAX_FILES_PER_BATCH || NaN);
+    const defaultBatchSize = this.FAST_MODE ? 8 : 5;
+    this.MAX_FILES_PER_SKELETON_BATCH =
+      config.maxSkeletonBatch ||
+      (Number.isFinite(envMaxBatch) && envMaxBatch > 0
+        ? envMaxBatch
+        : defaultBatchSize);
+
+    // Phase 2：每一層之間的延遲（毫秒）—快速模式下預設為 0
+    const envDetailDelay = Number(
+      process.env.CODER_DETAIL_LAYER_DELAY_MS || NaN
+    );
+    this.DETAIL_GENERATION_DELAY =
+      typeof config.detailDelay === "number"
+        ? config.detailDelay
+        : Number.isFinite(envDetailDelay)
+        ? envDetailDelay
+        : this.FAST_MODE
+        ? 0
+        : 1500;
+
+    // Phase 1：骨架各批次間延遲（毫秒）—快速模式下預設為 0
+    const envSkeletonDelay = Number(
+      process.env.CODER_SKELETON_BATCH_DELAY_MS || NaN
+    );
+    this.SKELETON_BATCH_DELAY =
+      typeof config.skeletonBatchDelay === "number"
+        ? config.skeletonBatchDelay
+        : Number.isFinite(envSkeletonDelay)
+        ? envSkeletonDelay
+        : this.FAST_MODE
+        ? 0
+        : 2000;
     
     // 支持多種環境變數名稱（CLOUD_API_* 或 OPENAI_*）
     // 優先使用 Gemini，如果沒有則使用 OpenAI
@@ -148,7 +188,7 @@ class Coordinator {
     
     // 配置 Gemini API（優先）
     this.GEMINI_API_ENDPOINT = process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta';
-    this.GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    this.GEMINI_API_KEY = config.geminiApiKey || process.env.GEMINI_API_KEY;
     this.GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     
     // 配置 OpenAI API（備用）
@@ -176,7 +216,8 @@ class Coordinator {
     }
     
     this.OPENAI_API_ENDPOINT = endpoint;
-    this.OPENAI_API_KEY = config.cloudApiKey || 
+    this.OPENAI_API_KEY = config.openaiApiKey ||
+      config.cloudApiKey || 
       process.env.CLOUD_API_KEY || 
       process.env.OPENAI_API_KEY;
     
@@ -203,6 +244,7 @@ class Coordinator {
       use_mock_api: this.USE_MOCK_API,
       worker_agents: Object.keys(this.workers).length,
       max_skeleton_batch: this.MAX_FILES_PER_SKELETON_BATCH,
+      fast_mode: this.FAST_MODE,
       cloud_api_configured: hasEndpoint && hasKey,
       cloud_api_endpoint: endpointPreview,
       cloud_api_key_set: hasKey,
@@ -304,7 +346,8 @@ class Coordinator {
    * @param {Object|Array} coderInstructions - 可以是 {files, contracts} 或純 files[]
    */
   async generateSkeletonsBatch(coderInstructions, requestId) {
-    const MAX_FILES_PER_BATCH = 5;  // 每批最多 5 個檔案（避免 token 超限）
+    // 每批最多多少檔案（可由建構子 / 環境變數調整）
+    const MAX_FILES_PER_BATCH = this.MAX_FILES_PER_SKELETON_BATCH || 5;
     
     // 相容舊格式：如果傳入的是陣列，轉換成物件
     const payload = Array.isArray(coderInstructions) 
@@ -369,10 +412,13 @@ class Coordinator {
       const batchSkeletons = await this.generateSkeletonsSingleBatch(batchPayload, requestId);
       Object.assign(skeletonMap, batchSkeletons);
       
-      // 批次間延遲（避免 API rate limit）
-      if (i < batches.length - 1) {
-        logger.info(`Waiting before next batch...`, requestId);
-        await this.sleep(2000);
+      // 批次間延遲（避免 API rate limit），快速模式可為 0
+      if (i < batches.length - 1 && this.SKELETON_BATCH_DELAY > 0) {
+        logger.info(
+          `Waiting ${this.SKELETON_BATCH_DELAY}ms before next batch...`,
+          requestId
+        );
+        await this.sleep(this.SKELETON_BATCH_DELAY);
       }
     }
     
@@ -1202,8 +1248,8 @@ Return ONLY the JSON array, no markdown or explanation.`;
     // 優先嘗試 Gemini，失敗時切換到 OpenAI（一次只使用一個 API）
     const apiProviders = [];
     
-    // 優先添加 Gemini
-    if (this.GEMINI_API_KEY) {
+    // 優先添加 Gemini（若選擇 auto 或 gemini）
+    if (this.GEMINI_API_KEY && (this.LLM_PROVIDER === 'auto' || this.LLM_PROVIDER === 'gemini')) {
       apiProviders.push({
         name: 'Gemini',
         endpoint: `${this.GEMINI_API_ENDPOINT}/models/${this.GEMINI_MODEL}:generateContent`,
@@ -1212,8 +1258,8 @@ Return ONLY the JSON array, no markdown or explanation.`;
       });
     }
     
-    // 然後添加 OpenAI（備用）
-    if (this.OPENAI_API_ENDPOINT && this.OPENAI_API_KEY) {
+    // 然後添加 OpenAI（若選擇 auto 或 openai）
+    if (this.OPENAI_API_ENDPOINT && this.OPENAI_API_KEY && (this.LLM_PROVIDER === 'auto' || this.LLM_PROVIDER === 'openai')) {
       apiProviders.push({
         name: 'OpenAI',
         endpoint: this.OPENAI_API_ENDPOINT,
@@ -1237,16 +1283,21 @@ Return ONLY the JSON array, no markdown or explanation.`;
         
         if (provider.isGemini) {
           // Gemini API 格式
+          const maxTokensSkeleton = this.FAST_MODE ? 4096 : 16384;
           requestBody = {
-            contents: [{
-              parts: [{
-                text: `${systemPrompt}\n\n${userPrompt}`
-              }]
-            }],
+            contents: [
+              {
+                parts: [
+                  {
+                    text: `${systemPrompt}\n\n${userPrompt}`,
+                  },
+                ],
+              },
+            ],
             generationConfig: {
               temperature: 0.3,
-              maxOutputTokens: 16384  // 保持 16384 以支持複雜的骨架生成
-            }
+              maxOutputTokens: maxTokensSkeleton, // 快速模式下降低輸出長度以提速
+            },
           };
           
           headers = {
@@ -1478,8 +1529,8 @@ DO NOT include phrases like "Apologies", "I'm sorry", "Here's the code", etc. Ju
     // 優先嘗試 Gemini，失敗時切換到 OpenAI（一次只使用一個 API）
     const apiProviders = [];
     
-    // 優先添加 Gemini
-    if (this.GEMINI_API_KEY) {
+    // 優先添加 Gemini（若選擇 auto 或 gemini）
+    if (this.GEMINI_API_KEY && (this.LLM_PROVIDER === 'auto' || this.LLM_PROVIDER === 'gemini')) {
       apiProviders.push({
         name: 'Gemini',
         endpoint: `${this.GEMINI_API_ENDPOINT}/models/${this.GEMINI_MODEL}:generateContent`,
@@ -1488,8 +1539,8 @@ DO NOT include phrases like "Apologies", "I'm sorry", "Here's the code", etc. Ju
       });
     }
     
-    // 然後添加 OpenAI（備用）
-    if (this.OPENAI_API_ENDPOINT && this.OPENAI_API_KEY) {
+    // 然後添加 OpenAI（若選擇 auto 或 openai）
+    if (this.OPENAI_API_ENDPOINT && this.OPENAI_API_KEY && (this.LLM_PROVIDER === 'auto' || this.LLM_PROVIDER === 'openai')) {
       apiProviders.push({
         name: 'OpenAI',
         endpoint: this.OPENAI_API_ENDPOINT,
@@ -1515,16 +1566,21 @@ DO NOT include phrases like "Apologies", "I'm sorry", "Here's the code", etc. Ju
         
         if (provider.isGemini) {
           // Gemini API 格式
+          const maxTokensDetail = this.FAST_MODE ? 8192 : 16384;
           requestBody = {
-            contents: [{
-              parts: [{
-                text: `${systemPrompt}\n\n${userPrompt}`
-              }]
-            }],
+            contents: [
+              {
+                parts: [
+                  {
+                    text: `${systemPrompt}\n\n${userPrompt}`,
+                  },
+                ],
+              },
+            ],
             generationConfig: {
               temperature: 0.5,
-              maxOutputTokens: 16384  // 增加到 16384 以支持更長的 CSS 和完整功能實現
-            }
+              maxOutputTokens: maxTokensDetail, // 快速模式下降低輸出長度以提速
+            },
           };
           
           headers = {
