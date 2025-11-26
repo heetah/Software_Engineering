@@ -30,6 +30,7 @@ const llmProviderGemini = document.getElementById('llm-provider-gemini');
 const llmProviderOpenAI = document.getElementById('llm-provider-openai');
 const geminiApiKeyInput = document.getElementById('gemini-api-key-input');
 const openaiApiKeyInput = document.getElementById('openai-api-key-input');
+const saveApiKeysButton = document.getElementById('save-api-keys-button');
 
 /* 應用程式狀態 */
 let currentSession = null;
@@ -90,49 +91,92 @@ if (themeToggle) {
 // LLM 提供者選擇
 if (llmProviderAuto && llmProviderGemini && llmProviderOpenAI) {
   // 初始化選中狀態
-  if (currentLlmProvider === 'gemini') {
-    llmProviderGemini.checked = true;
-  } else if (currentLlmProvider === 'openai') {
-    llmProviderOpenAI.checked = true;
-  } else {
-    llmProviderAuto.checked = true;
-    currentLlmProvider = 'auto';
-  }
+  const initLlmProvider = () => {
+    if (currentLlmProvider === 'gemini') {
+      llmProviderGemini.checked = true;
+    } else if (currentLlmProvider === 'openai') {
+      llmProviderOpenAI.checked = true;
+    } else {
+      llmProviderAuto.checked = true;
+      currentLlmProvider = 'auto';
+    }
+  };
+  
+  initLlmProvider();
 
   const handleLlmProviderChange = (provider) => {
     currentLlmProvider = provider;
     localStorage.setItem('llmProvider', provider);
+    console.log('LLM Provider changed to:', provider);
   };
 
-  llmProviderAuto.addEventListener('change', () => {
-    if (llmProviderAuto.checked) handleLlmProviderChange('auto');
+  // 使用 change 事件監聽器
+  llmProviderAuto.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      handleLlmProviderChange('auto');
+    }
   });
-  llmProviderGemini.addEventListener('change', () => {
-    if (llmProviderGemini.checked) handleLlmProviderChange('gemini');
+  
+  llmProviderGemini.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      handleLlmProviderChange('gemini');
+    }
   });
-  llmProviderOpenAI.addEventListener('change', () => {
-    if (llmProviderOpenAI.checked) handleLlmProviderChange('openai');
+  
+  llmProviderOpenAI.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      handleLlmProviderChange('openai');
+    }
+  });
+  
+  // 確保點擊整個 label 區域都能觸發 radio
+  const toggleOptions = document.querySelectorAll('.settings-toggle-option');
+  toggleOptions.forEach((option) => {
+    option.addEventListener('click', (e) => {
+      // 如果點擊的不是 input 本身，確保觸發 input
+      const input = option.querySelector('.toggle-switch__input');
+      if (input && e.target !== input) {
+        input.checked = true;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
   });
 }
 
-// API Key 輸入綁定
+// API Key 輸入綁定（不自動儲存，等待使用者點擊儲存按鈕）
 if (geminiApiKeyInput) {
   if (currentGeminiApiKey) {
     geminiApiKeyInput.value = currentGeminiApiKey;
   }
-  geminiApiKeyInput.addEventListener('input', () => {
-    currentGeminiApiKey = geminiApiKeyInput.value.trim();
-    localStorage.setItem('geminiApiKey', currentGeminiApiKey);
-  });
 }
 
 if (openaiApiKeyInput) {
   if (currentOpenAIApiKey) {
     openaiApiKeyInput.value = currentOpenAIApiKey;
   }
-  openaiApiKeyInput.addEventListener('input', () => {
-    currentOpenAIApiKey = openaiApiKeyInput.value.trim();
-    localStorage.setItem('openaiApiKey', currentOpenAIApiKey);
+}
+
+// 儲存按鈕功能
+if (saveApiKeysButton) {
+  saveApiKeysButton.addEventListener('click', () => {
+    // 儲存 API Keys
+    if (geminiApiKeyInput) {
+      currentGeminiApiKey = geminiApiKeyInput.value.trim();
+      localStorage.setItem('geminiApiKey', currentGeminiApiKey);
+    }
+    if (openaiApiKeyInput) {
+      currentOpenAIApiKey = openaiApiKeyInput.value.trim();
+      localStorage.setItem('openaiApiKey', currentOpenAIApiKey);
+    }
+    
+    // 顯示儲存成功提示
+    const originalText = saveApiKeysButton.textContent;
+    saveApiKeysButton.textContent = '已儲存';
+    saveApiKeysButton.style.opacity = '0.8';
+    setTimeout(() => {
+      saveApiKeysButton.textContent = originalText;
+      saveApiKeysButton.style.opacity = '1';
+    }, 1500);
   });
 }
 

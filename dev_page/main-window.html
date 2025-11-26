@@ -127,18 +127,27 @@
                 <p class="settings-label-description">
                   選擇要優先使用的模型服務。如果環境中沒有對應的 API Key，請求可能會失敗。
                 </p>
-                <div class="settings-radio-group" id="llm-provider-group">
-                  <label class="settings-radio-option">
-                    <input type="radio" name="llm-provider" value="auto" id="llm-provider-auto">
-                    <span>自動（優先 Gemini，其次 OpenAI）</span>
+                <div class="settings-toggle-group" id="llm-provider-group">
+                  <label class="settings-toggle-option">
+                    <input type="radio" name="llm-provider" value="auto" id="llm-provider-auto" class="toggle-switch__input">
+                    <span class="toggle-label">自動（優先 Gemini，其次 OpenAI）</span>
+                    <span class="toggle-switch">
+                      <span class="toggle-switch__slider"></span>
+                    </span>
                   </label>
-                  <label class="settings-radio-option">
-                    <input type="radio" name="llm-provider" value="gemini" id="llm-provider-gemini">
-                    <span>只使用 Gemini</span>
+                  <label class="settings-toggle-option">
+                    <input type="radio" name="llm-provider" value="gemini" id="llm-provider-gemini" class="toggle-switch__input">
+                    <span class="toggle-label">只使用 Gemini</span>
+                    <span class="toggle-switch">
+                      <span class="toggle-switch__slider"></span>
+                    </span>
                   </label>
-                  <label class="settings-radio-option">
-                    <input type="radio" name="llm-provider" value="openai" id="llm-provider-openai">
-                    <span>只使用 OpenAI</span>
+                  <label class="settings-toggle-option">
+                    <input type="radio" name="llm-provider" value="openai" id="llm-provider-openai" class="toggle-switch__input">
+                    <span class="toggle-label">只使用 OpenAI</span>
+                    <span class="toggle-switch">
+                      <span class="toggle-switch__slider"></span>
+                    </span>
                   </label>
                 </div>
               </div>
@@ -170,6 +179,10 @@
                     autocomplete="off"
                   >
                 </div>
+
+                <button class="action-button action-button--save" id="save-api-keys-button">
+                  儲存
+                </button>
               </div>
             </div>
       
