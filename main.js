@@ -200,6 +200,19 @@ function registerHistoryHandlers() {
     return { ok: true };
   });
 
+  ipcMain.handle('history:delete-session', async (_event, sessionId) => {
+    if (!sessionId) {
+      return { ok: false, error: 'sessionId is required' };
+    }
+    try {
+      await run('DELETE FROM sessions WHERE id = ?', [sessionId]);
+      return { ok: true };
+    } catch (error) {
+      console.error('Failed to delete session', error);
+      return { ok: false, error: error.message };
+    }
+  });
+
   // 清除所有歷史紀錄（利用 ON DELETE CASCADE）
   ipcMain.handle('history:clear-all', async (event) => {
     const window = BrowserWindow.fromWebContents(event.sender);
