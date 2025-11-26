@@ -1,0 +1,77 @@
+{
+  "comment": "Example 6: Simple Calculator App - Testing basic functionality with contracts",
+  "output": {
+    "coder_instructions": {
+      "task": "Create a browser-based calculator with basic arithmetic operations",
+      "requirements": "Clean UI, keyboard support, display shows current calculation, handles decimal numbers, error handling for division by zero",
+      "files": [
+        {
+          "path": "index.html",
+          "type": "html",
+          "description": "Calculator interface with display element (id: display) showing calculations, button grid with digits 0-9 (class: digit), operators +, -, *, / (class: operator), equals button (id: equals), clear button (id: clear). Use semantic HTML with proper button types."
+        },
+        {
+          "path": "calculator.css",
+          "type": "css",
+          "description": "Modern calculator styling with CSS Grid for button layout (4 columns), dark theme with contrasting buttons, large readable display with right-aligned text, button hover and active states, responsive design for mobile screens, smooth transitions on interactions."
+        },
+        {
+          "path": "calculator.js",
+          "type": "javascript",
+          "description": "Calculator logic: query display element by id, add event listeners to all digit and operator buttons, maintain current calculation state (firstOperand, operator, secondOperand), update display on button clicks, evaluate calculation on equals button, clear all on clear button, handle keyboard input (0-9, +, -, *, /, Enter, Escape), validate division by zero and show error message, format decimal numbers to 2 places."
+        }
+      ],
+      "contracts": {
+        "dom": [
+          {
+            "description": "Calculator display and control buttons",
+            "containerId": "calculator",
+            "requiredElements": [
+              {
+                "selector": "#display",
+                "element": "div",
+                "purpose": "Display current calculation and result",
+                "consumers": ["calculator.js (updateDisplay)"]
+              },
+              {
+                "selector": "#clear",
+                "element": "button",
+                "purpose": "Clear calculator state",
+                "consumers": ["calculator.js (handleClearClick)"]
+              },
+              {
+                "selector": "#equals",
+                "element": "button",
+                "purpose": "Evaluate calculation",
+                "consumers": ["calculator.js (handleEqualsClick)"]
+              }
+            ],
+            "producers": ["index.html"],
+            "consumers": ["calculator.js"]
+          },
+          {
+            "description": "Calculator digit and operator buttons using data-value attribute",
+            "requiredElements": [
+              {
+                "selector": ".digit",
+                "element": "button",
+                "attributes": { "data-value": "0-9 or ." },
+                "purpose": "Digit buttons storing value in data-value attribute",
+                "consumers": ["calculator.js (handleDigitClick via data-value)"]
+              },
+              {
+                "selector": ".operator",
+                "element": "button",
+                "attributes": { "data-value": "+, -, *, /" },
+                "purpose": "Operator buttons storing operator in data-value attribute",
+                "consumers": ["calculator.js (handleOperatorClick via data-value)"]
+              }
+            ],
+            "producers": ["index.html"],
+            "consumers": ["calculator.js"]
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,233 @@
+{
+  "output": {
+    "coder_instructions": {
+      "task": "Build a personal expense tracker web application",
+      "requirements": "Users can add, view, edit, and delete expense records. Display expenses by category with total spending. Include filtering by date range and category. Responsive design with modern UI.",
+      
+      "projectConfig": {
+        "backend": {
+          "host": "localhost",
+          "port": 5000,
+          "protocol": "http",
+          "enableCORS": true,
+          "corsOrigins": ["*"]
+        },
+        "frontend": {
+          "canBeServedFrom": "any",
+          "mustConnectToBackend": true
+        },
+        "database": {
+          "type": "sqlite",
+          "file": "expenses.db"
+        },
+        "testAccounts": [
+          {
+            "username": "demo",
+            "password": "demo123",
+            "role": "user"
+          }
+        ]
+      },
+      
+      "files": [
+        {
+          "path": "index.html",
+          "type": "html",
+          "description": "Main expense tracker interface with expense list table, add expense form, category filter, date range picker, and total spending display. Uses semantic HTML5 with responsive layout.",
+          "dependencies": ["styles.css", "app.js"]
+        },
+        {
+          "path": "styles.css",
+          "type": "css",
+          "description": "Modern styling with card-based layout, color-coded categories (food=green, transport=blue, entertainment=purple, shopping=orange, bills=red, other=gray), responsive grid, hover effects, and modal styling for edit form.",
+          "dependencies": []
+        },
+        {
+          "path": "app.js",
+          "type": "javascript",
+          "description": "Frontend logic: fetch and display expenses, add new expense with form validation, edit expense in modal, delete with confirmation, filter by category and date range, calculate and display totals, format currency display.",
+          "dependencies": []
+        },
+        {
+          "path": "server.py",
+          "type": "python",
+          "description": "Flask REST API server with SQLite database. Endpoints: GET /api/expenses (list all with optional category/date filters), POST /api/expenses (create new), PUT /api/expenses/<id> (update), DELETE /api/expenses/<id> (delete). Initialize database schema on startup.",
+          "dependencies": []
+        }
+      ],
+      
+      "contracts": {
+        "api": [
+          {
+            "endpoint": "GET /api/expenses",
+            "description": "Fetch all expenses with optional filtering",
+            "request": {
+              "query_params": {
+                "category": "string (optional) - filter by category: food, transport, entertainment, shopping, bills, other",
+                "start_date": "string (optional) - format: YYYY-MM-DD",
+                "end_date": "string (optional) - format: YYYY-MM-DD"
+              }
+            },
+            "response": {
+              "type": "array",
+              "items": {
+                "id": "integer",
+                "description": "string",
+                "amount": "float",
+                "category": "string (food|transport|entertainment|shopping|bills|other)",
+                "date": "string (YYYY-MM-DD)",
+                "created_at": "string (ISO 8601 timestamp)"
+              }
+            },
+            "producers": ["server.py"],
+            "consumers": ["app.js (loadExpenses, filterExpenses)"]
+          },
+          {
+            "endpoint": "POST /api/expenses",
+            "description": "Create a new expense record",
+            "request": {
+              "description": "string (required, max 200 chars)",
+              "amount": "float (required, positive number)",
+              "category": "string (required, must be one of: food, transport, entertainment, shopping, bills, other)",
+              "date": "string (required, format: YYYY-MM-DD)"
+            },
+            "response": {
+              "id": "integer",
+              "description": "string",
+              "amount": "float",
+              "category": "string",
+              "date": "string",
+              "created_at": "string"
+            },
+            "producers": ["server.py"],
+            "consumers": ["app.js (addExpense)"]
+          },
+          {
+            "endpoint": "PUT /api/expenses/<id>",
+            "description": "Update an existing expense",
+            "request": {
+              "description": "string (optional)",
+              "amount": "float (optional)",
+              "category": "string (optional)",
+              "date": "string (optional, format: YYYY-MM-DD)"
+            },
+            "response": {
+              "id": "integer",
+              "description": "string",
+              "amount": "float",
+              "category": "string",
+              "date": "string",
+              "created_at": "string"
+            },
+            "producers": ["server.py"],
+            "consumers": ["app.js (updateExpense)"]
+          },
+          {
+            "endpoint": "DELETE /api/expenses/<id>",
+            "description": "Delete an expense record",
+            "request": null,
+            "response": {
+              "success": "boolean",
+              "message": "string"
+            },
+            "producers": ["server.py"],
+            "consumers": ["app.js (deleteExpense)"]
+          }
+        ],
+        "storage": [
+          {
+            "key": "expenses",
+            "type": "database",
+            "description": "SQLite database storing expense records",
+            "schema": {
+              "table": "expenses",
+              "columns": {
+                "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+                "description": "TEXT NOT NULL",
+                "amount": "REAL NOT NULL",
+                "category": "TEXT NOT NULL",
+                "date": "TEXT NOT NULL",
+                "created_at": "TEXT DEFAULT CURRENT_TIMESTAMP"
+              }
+            },
+            "writers": ["server.py (POST, PUT, DELETE endpoints)"],
+            "readers": ["server.py (GET endpoint)"]
+          }
+        ],
+        "dom": [
+          {
+            "description": "Expense list and controls",
+            "requiredElements": [
+              {
+                "selector": "#expense-form",
+                "element": "form",
+                "attributes": {
+                  "id": "expense-form"
+                },
+                "purpose": "Form to add new expenses",
+                "consumers": ["app.js (addExpense)"]
+              },
+              {
+                "selector": "#expense-table tbody",
+                "element": "tbody",
+                "attributes": {
+                  "id": "expense-tbody"
+                },
+                "purpose": "Container for expense list rows",
+                "consumers": ["app.js (renderExpenses)"]
+              },
+              {
+                "selector": "#category-filter",
+                "element": "select",
+                "attributes": {
+                  "id": "category-filter"
+                },
+                "purpose": "Dropdown to filter by category",
+                "consumers": ["app.js (filterExpenses)"]
+              },
+              {
+                "selector": "#total-amount",
+                "element": "span",
+                "attributes": {
+                  "id": "total-amount"
+                },
+                "purpose": "Display total spending amount",
+                "consumers": ["app.js (calculateTotal)"]
+              },
+              {
+                "selector": "#edit-modal",
+                "element": "div",
+                "attributes": {
+                  "id": "edit-modal",
+                  "class": "modal"
+                },
+                "purpose": "Modal dialog for editing expenses",
+                "consumers": ["app.js (showEditModal, updateExpense)"]
+              }
+            ],
+            "producers": ["index.html"],
+            "consumers": ["app.js"]
+          }
+        ]
+      },
+      
+      "setup": {
+        "runtime": "python",
+        "pythonVersion": "3.8+",
+        "dependencies": {
+          "python": ["flask==3.0.0", "flask-cors==4.0.0"]
+        },
+        "environmentVariables": {
+          "FLASK_APP": "server.py",
+          "FLASK_ENV": "development",
+          "PORT": "5000"
+        },
+        "startCommands": {
+          "backend": "python server.py",
+          "frontend": "Open index.html in browser"
+        },
+        "instructions": "1. Install Python dependencies: pip install -r requirements.txt\n2. Start Flask server: python server.py\n3. Open index.html in web browser\n4. Database (expenses.db) will be created automatically on first run"
+      }
+    }
+  }
+}

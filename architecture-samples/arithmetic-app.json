@@ -1,0 +1,144 @@
+{
+  "id": "example-arithmetic-app",
+  "createdAt": "2025-11-23T00:00:00.000Z",
+  "prompt": "Create a simple program for basic arithmetic operations.",
+  "context": {
+    "timestamp": "2025-11-23T00:00:00.000Z"
+  },
+  "output": {
+    "coder_instructions": {
+      "role": "Coder Agent",
+      "summary": "Implement a simple Node.js program for basic arithmetic operations with local JSON storage.",
+      "directives": [
+        {
+          "do": "Create a new Node.js project with package.json file.",
+          "why": "To manage dependencies and scripts for the project."
+        },
+        {
+          "do": "Create a main JavaScript file (index.js) that handles user input for arithmetic operations.",
+          "why": "To provide a user interface for performing basic arithmetic operations."
+        },
+        {
+          "do": "Implement functions for addition, subtraction, multiplication, and division.",
+          "why": "To perform the basic arithmetic operations as specified."
+        },
+        {
+          "do": "Set up local JSON storage to save and retrieve results of operations.",
+          "why": "To maintain a history of calculations performed by the user."
+        },
+        {
+          "do": "Create a README.md file with usage instructions.",
+          "why": "To help users understand how to run and use the application."
+        }
+      ],
+      "files": [
+        {
+          "path": "package.json",
+          "purpose": "Project metadata and dependencies management.",
+          "template": "{\"name\": \"arithmetic-app\", \"version\": \"1.0.0\", \"main\": \"index.js\", \"scripts\": {\"start\": \"node index.js\"}, \"dependencies\": {}}"
+        },
+        {
+          "path": "index.js",
+          "purpose": "Main application logic for arithmetic operations with CLI interface and JSON storage.",
+          "description": "Implement a command-line arithmetic calculator with operations: add, subtract, multiply, divide. Store calculation history in history.json.",
+          "requirements": [
+            "Use readline module for user input",
+            "Implement add(a, b), subtract(a, b), multiply(a, b), divide(a, b) functions",
+            "Handle division by zero error",
+            "Save each calculation to history.json with timestamp",
+            "Provide option to view calculation history",
+            "Clean code with proper error handling"
+          ]
+        },
+        {
+          "path": "README.md",
+          "purpose": "Documentation and usage instructions.",
+          "description": "Comprehensive documentation for the arithmetic calculator application.",
+          "requirements": [
+            "Include project title and description",
+            "List all features",
+            "Provide installation instructions",
+            "Show usage examples for all operations",
+            "Explain how to view calculation history"
+          ]
+        }
+      ],
+      "commands": [
+        "npm install",
+        "npm start"
+      ],
+      "acceptance": [
+        "The package.json file is created with correct metadata.",
+        "The index.js file contains functions for all four basic arithmetic operations.",
+        "Division by zero is handled with appropriate error message.",
+        "Calculations are saved to history.json with timestamps.",
+        "README.md provides clear usage instructions."
+      ],
+      "notes": [
+        "Ensure to handle division by zero in the divide function.",
+        "Consider adding input validation for non-numeric values.",
+        "History file should be created automatically if it doesn't exist."
+      ]
+    },
+    "plan": {
+      "title": "Basic Arithmetic Calculator CLI",
+      "summary": "Develop a simple Node.js command-line application that performs basic arithmetic operations and stores calculation history.",
+      "steps": [
+        {
+          "id": "1",
+          "title": "Initialize Node.js Project",
+          "description": "Set up a new Node.js project with package.json.",
+          "commands": [
+            "npm init -y"
+          ],
+          "artifacts": [
+            "package.json"
+          ],
+          "acceptance": [
+            "Project is initialized with package.json."
+          ]
+        },
+        {
+          "id": "2",
+          "title": "Implement Arithmetic Functions",
+          "description": "Create functions for addition, subtraction, multiplication, and division in index.js.",
+          "commands": [],
+          "artifacts": [
+            "index.js"
+          ],
+          "acceptance": [
+            "Functions for all four arithmetic operations are implemented.",
+            "Division by zero is handled properly."
+          ]
+        },
+        {
+          "id": "3",
+          "title": "Add JSON Storage",
+          "description": "Implement logic to save and retrieve calculation history using local JSON files.",
+          "commands": [],
+          "artifacts": [
+            "index.js",
+            "history.json"
+          ],
+          "acceptance": [
+            "Calculations are saved to history.json.",
+            "History can be viewed by the user."
+          ]
+        },
+        {
+          "id": "4",
+          "title": "Create Documentation",
+          "description": "Write README.md with installation and usage instructions.",
+          "commands": [],
+          "artifacts": [
+            "README.md"
+          ],
+          "acceptance": [
+            "README contains clear instructions for installation and usage."
+          ]
+        }
+      ]
+    },
+    "markdown": "# Handoff to Coder Agent\n\nPlease implement the following tasks:\n1. Initialize a new Node.js project with package.json.\n2. Create an `index.js` file with CLI interface and arithmetic functions.\n3. Implement local JSON storage for calculation history.\n4. Create a `README.md` file with comprehensive usage instructions.\n\nEnsure that each step meets the acceptance criteria outlined in the plan."
+  }
+}

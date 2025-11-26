@@ -1,0 +1,11 @@
+{
+  "success": true,
+  "requestId": "req-1762611886305-i7bmk7jj6",
+  "data": {
+    "coder_dir": "C:\\Users\\user\\Desktop\\the-unity-game\\Software_Engineering\\coder-agent\\outputs\\coder-2025-11-08T1426",
+    "files_generated": 2,
+    "successful": 2,
+    "failed": 0,
+    "status_url": "/outputs/coder-2025-11-08T1426/status.html"
+  }
+}
