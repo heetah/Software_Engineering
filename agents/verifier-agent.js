@@ -43,6 +43,28 @@ export default class VerifierAgent extends BaseAgent {
     });
     this.temperature = 0.1;
   }
+
+  /**
+   * 執行 Verifier Agent 主流程（實例方法）
+   * @param {string} sessionId
+   * @returns {Promise<{path:string, plan:object}>}
+   */
+  async runVerifierAgent(sessionId) {
+    if (!sessionId) throw new Error("缺少 sessionId");
+    try {
+      const architectureData = await loadArchitecture(sessionId);
+      const templateText = await loadTemplates();
+      const prompt = buildLLMPrompt(architectureData, templateText, sessionId);
+      const raw = await callLLM(prompt, this);
+      const testPlan = validateTestPlan(raw, sessionId);
+      const pathWritten = await writeTestPlan(sessionId, testPlan);
+      console.log(`test-plan.json has been generated: ${pathWritten}`);
+      return { path: pathWritten, plan: testPlan };
+    } catch (err) {
+      console.error(`Verifier Agent failed: ${err.message}`);
+      throw err;
+    }
+  }
 }
 
 // ====== 核心功能函式 ======

@@ -319,6 +319,13 @@ body {
   width: fit-content; 
   max-width: 100%;
   transition: all 0.2s ease-in-out;
+  
+  /* **修改：為了放置絕對定位的 Copy 按鈕** */
+  position: relative;
+  /* 底部留白，防止文字被按鈕遮住 */
+  padding-bottom: 25px; 
+  
+  word-wrap: break-word;
 }
 
 /* User 氣泡靠右 */
@@ -403,6 +410,10 @@ body {
   transform: translateY(0);
   box-shadow: var(--shadow-concave);
 }
+.message-actions .action-button:active {
+  box-shadow: var(--shadow-concave); /* 按下凹陷 */
+}
+
 
 
 /*
