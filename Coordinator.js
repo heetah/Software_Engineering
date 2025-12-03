@@ -114,7 +114,7 @@ export async function runWithInstructionService(
       { userInput }
     );
 
-    // Architect Agent 直接處理用戶需求並生成計劃
+    // Architect Agent 直接處理用戶需求並生成計劃或單純問答回覆
     // （不再需要 Requirement Agent，Architect Agent 會同時處理需求分析和架構設計）
     const plan = await withErrorHandling(
       'InstructionService.createPlan',
@@ -126,6 +126,12 @@ export async function runWithInstructionService(
       }),
       { userInput }
     );
+
+    // 如果是「單純問答模式」，直接回傳，不觸發後續 coder / verifier / tester
+    if (plan && plan.mode === 'qa') {
+      console.log("\nInstructionService QA mode: skip project generation / verifier / tester");
+      return plan;
+    }
 
     console.log(`\nPlan created, Session ID: ${plan.id}`);
     console.log(`Workspace directory: ${plan.workspaceDir || 'N/A'}`);

@@ -335,32 +335,38 @@ function registerCoordinatorBridge() {
 
       let responseText = "";
       if (plan) {
-        responseText = `Project generation completed!\n\nSession ID: ${
-          plan.id
-        }\nWorkspace: ${plan.workspaceDir || "N/A"}\nFile operations: Created=${
-          plan.fileOps?.created?.length || 0
-        }, Skipped=${plan.fileOps?.skipped?.length || 0}\n\n`;
-        if (plan.output?.plan) {
-          responseText += `📋 Plan title: ${
-            plan.output.plan.title
-          }\n📝 Plan summary: ${plan.output.plan.summary}\n📊 Steps: ${
-            plan.output.plan.steps?.length || 0
-          }\n\n`;
-        }
-        if (plan.fileOps?.created?.length > 0) {
-          responseText += `Generated files:\n`;
-          plan.fileOps.created.slice(0, 10).forEach((file) => {
-            responseText += `  • ${file}\n`;
-          });
-          if (plan.fileOps.created.length > 10) {
-            responseText += `  ... and ${
-              plan.fileOps.created.length - 10
-            } more files\n`;
+        // 單純問答模式：直接顯示 LLM 回覆
+        if (plan.mode === "qa") {
+          responseText = plan.answerText || "";
+        } else {
+          // 專案生成模式：維持原本的摘要訊息
+          responseText = `Project generation completed!\n\nSession ID: ${
+            plan.id
+          }\nWorkspace: ${plan.workspaceDir || "N/A"}\nFile operations: Created=${
+            plan.fileOps?.created?.length || 0
+          }, Skipped=${plan.fileOps?.skipped?.length || 0}\n\n`;
+          if (plan.output?.plan) {
+            responseText += `📋 Plan title: ${
+              plan.output.plan.title
+            }\n📝 Plan summary: ${plan.output.plan.summary}\n📊 Steps: ${
+              plan.output.plan.steps?.length || 0
+            }\n\n`;
           }
+          if (plan.fileOps?.created?.length > 0) {
+            responseText += `Generated files:\n`;
+            plan.fileOps.created.slice(0, 10).forEach((file) => {
+              responseText += `  • ${file}\n`;
+            });
+            if (plan.fileOps.created.length > 10) {
+              responseText += `  ... and ${
+                plan.fileOps.created.length - 10
+              } more files\n`;
+            }
+          }
+          responseText += `\nTip: Project generated in ${
+            plan.workspaceDir || "output/" + plan.id
+          } directory`;
         }
-        responseText += `\nTip: Project generated in ${
-          plan.workspaceDir || "output/" + plan.id
-        } directory`;
       } else {
         responseText =
           "Processing completed, but no plan information returned";
@@ -739,7 +745,7 @@ function createMainWindow() {
   });
   mainWindow.loadFile(path.join(__dirname, "dev_page", "main-window.html"));
 
-  // 允許使用 F12 或 Ctrl/Cmd + Shift/Alt + I 來切換 DevTools
+  // 允許使用 F12 或 Ctrl/Cmd + Shift/Alt + I 來手動切換 DevTools（預設不自動開啟）
   mainWindow.webContents.on("before-input-event", (event, input) => {
     const isToggleKey =
       (input.key === "F12" && input.type === "keyDown") ||
@@ -754,11 +760,12 @@ function createMainWindow() {
     }
   });
 
-  const shouldOpenDevTools = process.env.ELECTRON_OPEN_DEVTOOLS !== "false";
+  // 預設不自動開啟 DevTools，只有當明確設定 ELECTRON_OPEN_DEVTOOLS=true 時才自動開啟
+  const shouldOpenDevTools = process.env.ELECTRON_OPEN_DEVTOOLS === "true";
   if (shouldOpenDevTools) {
     mainWindow.webContents.openDevTools();
     console.log(
-      "ℹDevTools has been opened. If you see Autofill related errors, you can safely ignore them."
+      "ℹ DevTools has been opened because ELECTRON_OPEN_DEVTOOLS=true."
     );
   }
 }
