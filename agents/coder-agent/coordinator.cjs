@@ -7,249 +7,61 @@
  * 3. Phase 3: 組裝和驗證最終結果
  */
 
-// 載入 dotenv 以讀取 .env 文件中的環境變數
-// 從當前文件位置向上查找項目根目錄的 .env 文件
-const path = require('path');
-const fs = require('fs');
-
-// 嘗試多個可能的 .env 文件路徑
-const possibleEnvPaths = [
-  path.resolve(__dirname, '../../.env'),  // 從 coordinator.cjs 向上兩級
-  path.resolve(process.cwd(), '.env'),    // 從當前工作目錄
-  path.join(__dirname, '../../.env'),     // 相對路徑
-];
-
-let envPath = null;
-for (const possiblePath of possibleEnvPaths) {
-  if (fs.existsSync(possiblePath)) {
-    envPath = possiblePath;
-    break;
-  }
-}
-
-if (envPath) {
-  const result = require('dotenv').config({ path: envPath });
-  if (result.error) {
-    console.warn(`[Coordinator] Failed to load .env from ${envPath}:`, result.error.message);
-  } else {
-    console.log(`[Coordinator] Loaded .env from: ${envPath}`);
-  }
-} else {
-  // 如果找不到 .env 文件，嘗試從當前目錄載入（dotenv 默認行為）
-  require('dotenv').config();
-  console.warn(`[Coordinator] .env file not found in expected locations, using default dotenv behavior`);
-}
-
 const logger = require('../shared/logger.cjs');
+const path = require('path');
 const DependencyAnalyzer = require('./dependency-analyzer');
 const ConfigGenerator = require('./config-generator');
+const ContractsAgent = require('./contracts-agent');
 
-// ContentGenerators will be loaded dynamically when needed (ES module)
-let ContentGeneratorsPromise = null;
-
-async function loadContentGenerators() {
-  if (ContentGeneratorsPromise) {
-    return ContentGeneratorsPromise;
-  }
-  
-  ContentGeneratorsPromise = (async () => {
-    try {
-      // Use dynamic import for ES module
-      const generatorsModule = await import('../generators/index.js');
-      return generatorsModule.default || generatorsModule;
-    } catch (e) {
-      logger.warn('Could not load ContentGenerators, using basic mock generation', null, {
-        error: e.message
-      });
-      return null;
-    }
-  })();
-  
-  return ContentGeneratorsPromise;
-}
-
-// Polyfill for fetch (Node.js < 18)
-const fetch = global.fetch || (async function(...args) {
-  const https = require('https');
-  const http = require('http');
-  const url = args[0];
-  const options = args[1] || {};
-  
-  return new Promise((resolve, reject) => {
-    const urlObj = new URL(url);
-    const protocol = urlObj.protocol === 'https:' ? https : http;
-    
-    const req = protocol.request(url, {
-      method: options.method || 'GET',
-      headers: options.headers || {}
-    }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        resolve({
-          ok: res.statusCode >= 200 && res.statusCode < 300,
-          status: res.statusCode,
-          statusText: res.statusMessage,
-          json: () => Promise.resolve(JSON.parse(data)),
-          text: () => Promise.resolve(data)
-        });
-      });
-    });
-    
-    req.on('error', reject);
-    
-    if (options.body) {
-      req.write(options.body);
-    }
-    
-    req.end();
-  });
-});
+// 載入 Worker Generators（本地調用，不需要 HTTP）
+const MarkupGenerator = require('../worker-agents/markup-agent/generator');
+const ScriptGenerator = require('../worker-agents/script-agent/generator');
+const StyleGenerator = require('../worker-agents/style-agent/generator');
+const PythonGenerator = require('../worker-agents/python-agent/generator');
+const SystemGenerator = require('../worker-agents/system-agent/generator');
 
 class Coordinator {
   constructor(config = {}) {
     // 依賴分析器
     this.dependencyAnalyzer = new DependencyAnalyzer();
     
-    // Worker agents 配置（未來實作時使用）
+    // Worker generators 配置（本地調用）
     this.workers = {
       'markup': { 
-        endpoint: config.markupEndpoint || 'http://localhost:3801/generate', 
-        exts: ['.html', '.xml', '.md', '.htm'] 
-      },
-      'style': { 
-        endpoint: config.styleEndpoint || 'http://localhost:3802/generate', 
-        exts: ['.css', '.scss', '.sass', '.less'] 
+        generator: new MarkupGenerator(config),
+        exts: ['.html', '.xml', '.md', '.htm', '.txt', '.gitignore', '.env', '.ps1', '.sh', '.bat'] 
       },
       'script': { 
-        endpoint: config.scriptEndpoint || 'http://localhost:3803/generate', 
+        generator: new ScriptGenerator(config),
         exts: ['.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs'] 
       },
+      'style': { 
+        generator: new StyleGenerator(config),
+        exts: ['.css', '.scss', '.sass', '.less'] 
+      },
       'python': { 
-        endpoint: config.pythonEndpoint || 'http://localhost:3804/generate', 
+        generator: new PythonGenerator(config),
         exts: ['.py'] 
       },
       'system': { 
-        endpoint: config.systemEndpoint || 'http://localhost:3805/generate', 
+        generator: new SystemGenerator(config),
         exts: ['.c', '.cpp', '.h', '.hpp', '.go', '.rs', '.java', '.cs'] 
       }
     };
     
-    // LLM 提供者選擇：auto / gemini / openai
-    this.LLM_PROVIDER = (config.llmProvider || process.env.LLM_PROVIDER || 'auto').toString().toLowerCase();
-
-    // 性能 / 併發相關配置
-    // 支援「快速模式」，優先讀取環境變數 CODER_FAST_MODE=true
-    this.FAST_MODE =
-      config.fastMode === true ||
-      String(process.env.CODER_FAST_MODE || "").toLowerCase() === "true";
-
-    // 每批產生骨架的檔案數量（預設 5，快速模式可調大）
-    const envMaxBatch = Number(process.env.CODER_MAX_FILES_PER_BATCH || NaN);
-    const defaultBatchSize = this.FAST_MODE ? 8 : 5;
-    this.MAX_FILES_PER_SKELETON_BATCH =
-      config.maxSkeletonBatch ||
-      (Number.isFinite(envMaxBatch) && envMaxBatch > 0
-        ? envMaxBatch
-        : defaultBatchSize);
-
-    // Phase 2：每一層之間的延遲（毫秒）—快速模式下預設為 0
-    const envDetailDelay = Number(
-      process.env.CODER_DETAIL_LAYER_DELAY_MS || NaN
-    );
-    this.DETAIL_GENERATION_DELAY =
-      typeof config.detailDelay === "number"
-        ? config.detailDelay
-        : Number.isFinite(envDetailDelay)
-        ? envDetailDelay
-        : this.FAST_MODE
-        ? 0
-        : 1500;
-
-    // Phase 1：骨架各批次間延遲（毫秒）—快速模式下預設為 0
-    const envSkeletonDelay = Number(
-      process.env.CODER_SKELETON_BATCH_DELAY_MS || NaN
-    );
-    this.SKELETON_BATCH_DELAY =
-      typeof config.skeletonBatchDelay === "number"
-        ? config.skeletonBatchDelay
-        : Number.isFinite(envSkeletonDelay)
-        ? envSkeletonDelay
-        : this.FAST_MODE
-        ? 0
-        : 2000;
+    // 配置參數
+    this.MAX_FILES_PER_SKELETON_BATCH = config.maxSkeletonBatch || 15;
+    this.DETAIL_GENERATION_DELAY = config.detailDelay || 1500; // 毫秒
+    this.CLOUD_API_ENDPOINT = config.cloudApiEndpoint || process.env.CLOUD_API_ENDPOINT;
+    this.CLOUD_API_KEY = config.cloudApiKey || process.env.CLOUD_API_KEY;
     
-    // 支持多種環境變數名稱（CLOUD_API_* 或 OPENAI_*）
-    // 優先使用 Gemini，如果沒有則使用 OpenAI
-    let endpoint = config.cloudApiEndpoint || 
-      process.env.CLOUD_API_ENDPOINT || 
-      process.env.OPENAI_BASE_URL ||
-      null;
-    
-    // 配置 Gemini API（優先）
-    this.GEMINI_API_ENDPOINT = process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta';
-    this.GEMINI_API_KEY = config.geminiApiKey || process.env.GEMINI_API_KEY;
-    this.GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-    
-    // 配置 OpenAI API（備用）
-    // 如果端點是 OpenAI 基礎 URL，自動添加 chat/completions 路徑
-    if (endpoint && endpoint.includes('api.openai.com')) {
-      // 如果已經是完整端點（包含 /chat/completions），保持不變
-      if (endpoint.includes('/chat/completions')) {
-        // 已經是完整端點，不需要修改
-      } else if (endpoint.includes('/v1')) {
-        // 如果是 /v1 結尾（如 https://api.openai.com/v1），添加 /chat/completions
-        endpoint = endpoint.endsWith('/') 
-          ? endpoint + 'chat/completions' 
-          : endpoint + '/chat/completions';
-      } else {
-        // 如果只是基礎 URL（如 https://api.openai.com），添加 /v1/chat/completions
-        endpoint = endpoint.endsWith('/') 
-          ? endpoint + 'v1/chat/completions' 
-          : endpoint + '/v1/chat/completions';
-      }
-    }
-    
-    // 如果沒有端點但有 API Key，使用默認的 OpenAI 端點
-    if (!endpoint && (process.env.OPENAI_API_KEY || process.env.CLOUD_API_KEY)) {
-      endpoint = 'https://api.openai.com/v1/chat/completions';
-    }
-    
-    this.OPENAI_API_ENDPOINT = endpoint;
-    this.OPENAI_API_KEY = config.openaiApiKey ||
-      config.cloudApiKey || 
-      process.env.CLOUD_API_KEY || 
-      process.env.OPENAI_API_KEY;
-    
-    // 為了向後兼容，保留舊的變數名（優先使用 Gemini）
-    this.CLOUD_API_ENDPOINT = this.GEMINI_API_KEY ? 
-      `${this.GEMINI_API_ENDPOINT}/models/${this.GEMINI_MODEL}:generateContent` : 
-      this.OPENAI_API_ENDPOINT;
-    this.CLOUD_API_KEY = this.GEMINI_API_KEY || this.OPENAI_API_KEY;
-    
-    // 預設使用 Worker Agents（如果明確要求使用 mock 才用 mock）
+    // 預設使用真實 API（不使用 mock）
     this.USE_MOCK_API = config.useMockApi === true;
     
-    // 調試信息：檢查環境變數是否被讀取
-    const hasEndpoint = !!(this.CLOUD_API_ENDPOINT);
-    const hasKey = !!(this.CLOUD_API_KEY);
-    const endpointPreview = this.CLOUD_API_ENDPOINT ? 
-      (this.CLOUD_API_ENDPOINT.length > 50 ? this.CLOUD_API_ENDPOINT.substring(0, 50) + '...' : this.CLOUD_API_ENDPOINT) : 
-      'not set';
-    const keyPreview = this.CLOUD_API_KEY ? 
-      (this.CLOUD_API_KEY.length > 10 ? this.CLOUD_API_KEY.substring(0, 10) + '...' : '***') : 
-      'not set';
-    
-    logger.info('Coordinator initialized', null, {
+    logger.info('Coordinator initialized (local generators)', null, {
       use_mock_api: this.USE_MOCK_API,
-      worker_agents: Object.keys(this.workers).length,
-      max_skeleton_batch: this.MAX_FILES_PER_SKELETON_BATCH,
-      fast_mode: this.FAST_MODE,
-      cloud_api_configured: hasEndpoint && hasKey,
-      cloud_api_endpoint: endpointPreview,
-      cloud_api_key_set: hasKey,
-      env_endpoint: process.env.CLOUD_API_ENDPOINT ? 'set' : 'not set',
-      env_key: process.env.CLOUD_API_KEY ? 'set' : 'not set'
+      worker_generators: Object.keys(this.workers).length,
+      max_skeleton_batch: this.MAX_FILES_PER_SKELETON_BATCH
     });
   }
 
@@ -257,18 +69,36 @@ class Coordinator {
    * 主入口：從 architect payload 生成所有檔案
    */
   async generateFromArchitectPayload(payload, requestId = null) {
-    const coderInstructions = payload.output.coder_instructions;
-    const files = coderInstructions.files;
-    const contracts = coderInstructions.contracts || null; // 可選的 contracts
-    
-    logger.info('Coordinator starting', requestId, { 
-      totalFiles: files.length,
-      hasContracts: !!contracts,
-      hasProjectConfig: !!coderInstructions.projectConfig,
-      useMockApi: this.USE_MOCK_API 
-    });
+    logger.info('Coordinator starting - preprocessing payload', requestId);
 
     try {
+      // Phase -1: Contracts Agent 預處理 payload
+      logger.info('Phase -1: Running Contracts Agent preprocessing', requestId);
+      const contractsAgent = new ContractsAgent();
+      const enhancedPayload = await contractsAgent.processPayload(payload);
+      
+      // 記錄預處理結果
+      if (enhancedPayload._preprocessed) {
+        logger.info('Payload preprocessing completed', requestId, {
+          issuesFound: enhancedPayload._preprocessed.issuesFound,
+          enhancementsApplied: enhancedPayload._preprocessed.enhancementsApplied,
+          version: enhancedPayload._preprocessed.version
+        });
+      }
+      
+      // 使用增強後的 payload 繼續
+      const coderInstructions = enhancedPayload.output.coder_instructions;
+      const files = coderInstructions.files;
+      const contracts = coderInstructions.contracts || null;
+      const projectConfig = coderInstructions.projectConfig || null;
+      
+      logger.info('Starting generation with enhanced payload', requestId, { 
+        totalFiles: files.length,
+        hasContracts: !!contracts,
+        hasProjectConfig: !!projectConfig,
+        useMockApi: this.USE_MOCK_API 
+      });
+
       // Phase 0: 自動生成配置文件（如果需要）
       logger.info('Phase 0: Generating config files', requestId);
       const configFiles = ConfigGenerator.generateAll(coderInstructions);
@@ -280,28 +110,17 @@ class Coordinator {
         files.unshift(...configFiles);
       }
       
-      // Phase 0.5: 檢測是否需要生成前端檔案
-      logger.info('Phase 0.5: Checking for frontend files', requestId);
-      const frontendFiles = this.generateFrontendFilesIfNeeded(files, coderInstructions);
-      if (frontendFiles.length > 0) {
-        logger.info('Frontend files generated', requestId, {
-          files: frontendFiles.map(f => f.path)
-        });
-        // 將前端檔案加入到文件列表中
-        files.push(...frontendFiles);
-      }
-      
       // Phase 1: 生成骨架（傳遞完整的 coder_instructions 包含 contracts）
       logger.info('Phase 1: Generating skeletons', requestId);
       const skeletons = await this.generateAllSkeletons(coderInstructions, requestId);
       
-      // Phase 2: 序列化生成細節（傳遞 contracts 和完整的 coderInstructions）
+      // Phase 2: 序列化生成細節（傳遞 contracts 和 projectConfig）
       logger.info('Phase 2: Generating details sequentially', requestId);
-      const detailedFiles = await this.generateDetailsSequentially(files, skeletons, contracts, requestId, coderInstructions);
+      const detailedFiles = await this.generateDetailsSequentially(files, skeletons, contracts, projectConfig, requestId);
       
       // Phase 3: 組裝（傳遞 payload 以便生成 setup 檔案）
       logger.info('Phase 3: Assembling results', requestId);
-      const result = await this.assemble(detailedFiles, skeletons, requestId, payload.output);
+      const result = await this.assemble(detailedFiles, skeletons, requestId, enhancedPayload.output);
       
       logger.info('Coordinator completed', requestId, { 
         filesGenerated: result.files.length,
@@ -326,7 +145,7 @@ class Coordinator {
    */
   /**
    * Phase 1: 生成所有檔案的骨架（自動分批）
-   * @param {Object} coderInstructions - 包含 files, requirements, contracts, summary
+   * @param {Object} coderInstructions - 包含 files, requirements, contracts
    */
   async generateAllSkeletons(coderInstructions, requestId) {
     const files = Array.isArray(coderInstructions) ? coderInstructions : coderInstructions.files;
@@ -335,9 +154,7 @@ class Coordinator {
     });
     
     // 直接呼叫 generateSkeletonsBatch，它會自動決定是否分批
-    // 傳遞完整的 coderInstructions（包含 contracts, summary, requirements）
-    // 保存 coderInstructions 以便在 generateSkeletonsViaAPI 中使用
-    this.currentCoderInstructions = coderInstructions;
+    // 傳遞完整的 coderInstructions（包含 contracts）
     return await this.generateSkeletonsBatch(coderInstructions, requestId);
   }
 
@@ -485,43 +302,22 @@ class Coordinator {
         }
       });
       
-      // 檢查是否有檔案缺少骨架，為缺少的檔案生成基本骨架
+      // 檢查是否有檔案缺少骨架
       const missing = files.filter(f => !skeletonMap[f.path]);
       if (missing.length > 0) {
-        logger.warn('Some files missing skeletons, generating fallback skeletons', requestId, {
+        logger.warn('Some files missing skeletons', requestId, {
           missingFiles: missing.map(f => f.path),
           receivedSkeletons: Object.keys(skeletonMap)
         });
-        
-        // 為缺少的檔案生成基本骨架
-        missing.forEach(file => {
-          skeletonMap[file.path] = this.generateMockSkeleton(file);
-          logger.info(`Generated fallback skeleton for ${file.path}`, requestId);
-        });
       }
     } else {
-      logger.warn('Invalid skeleton response format, generating all skeletons from mock', requestId, { response });
-      
-      // 如果回應格式無效，為所有檔案生成 mock 骨架
-      files.forEach(file => {
-        if (!skeletonMap[file.path]) {
-          skeletonMap[file.path] = this.generateMockSkeleton(file);
-        }
-      });
+      logger.warn('Invalid skeleton response format', requestId, { response });
+      throw new Error('Cloud API returned invalid skeleton format');
     }
-
-    // 確保所有檔案都有骨架
-    files.forEach(file => {
-      if (!skeletonMap[file.path]) {
-        logger.warn(`No skeleton for ${file.path}, generating fallback`, requestId);
-        skeletonMap[file.path] = this.generateMockSkeleton(file);
-    }
-    });
 
     logger.info('Skeletons generated successfully', requestId, { 
       count: Object.keys(skeletonMap).length,
-      files: Object.keys(skeletonMap),
-      totalExpected: files.length
+      files: Object.keys(skeletonMap)
     });
     
     return skeletonMap;
@@ -535,11 +331,11 @@ class Coordinator {
    * @param {Array} files - 檔案列表
    * @param {Object} skeletons - 骨架對應表
    * @param {Object} contracts - 可選的跨檔案 contracts
-   * @param {Object} coderInstructions - 完整的 coder instructions（包含 summary, requirements 等）
+   * @param {Object} projectConfig - 項目配置（端口、API等）
    */
-  async generateDetailsSequentially(files, skeletons, contracts, requestId, coderInstructions = {}) {
+  async generateDetailsSequentially(files, skeletons, contracts, projectConfig, requestId) {
     // 分析檔案依賴關係
-    const { order, groups, depGraph } = this.dependencyAnalyzer.analyze(files, requestId);
+    const { order, groups, depGraph } = this.dependencyAnalyzer.analyze(files,skeletons, requestId);
     
     // 視覺化依賴關係（用於除錯）
     this.dependencyAnalyzer.visualizeDependencies(depGraph, groups, requestId);
@@ -604,11 +400,7 @@ class Coordinator {
             dependencies: completedDeps,
             allFiles: files, // 傳遞所有檔案資訊（用於預知將來的檔案）
             contracts: contracts || null, // ← 新增：傳遞 contracts 給 Worker Agents
-            // 傳遞完整的用戶需求和項目信息
-            userRequirement: coderInstructions.summary || coderInstructions.requirements || '',
-            projectSummary: coderInstructions.summary || '',
-            projectRequirements: coderInstructions.requirements || [],
-            coderInstructions: coderInstructions, // 傳遞完整的 coder instructions
+            projectConfig: projectConfig || null, // ← 新增：傳遞項目配置給 Worker Agents
             fileSpec: {
               path: file.path,
               language: file.language,
@@ -617,35 +409,13 @@ class Coordinator {
             }
           };
 
-          // Call worker agent (with built-in fallback)
+          // 呼叫 worker agent
           const result = await this.generateFileDetail(agent, file, context, requestId);
           
-          // Check if result is valid
-          if (!result || !result.success) {
-            throw new Error(result?.error || 'Unknown error from generateFileDetail');
-          }
-          
           if (!result.content || result.content.trim() === '') {
-            logger.warn(`⚠ Empty content returned for ${file.path}, using skeleton`, requestId);
-            // Use skeleton as fallback if content is empty
-            return {
-              path: file.path,
-              content: skeletons[file.path] || `// Empty content for ${file.path}`,
-              language: file.language,
-              metadata: result.metadata || {},
-              layer: layerIdx + 1
-            };
+            logger.warn(`⚠ Worker agent returned empty content for ${file.path}`, requestId);
           }
           
-          // Log success (check if it was a fallback)
-          const isFallback = result.metadata?.fallback === true;
-          if (isFallback) {
-            logger.info(`✓ Generated ${path.basename(file.path)} (via fallback)`, requestId, { 
-              layer: layerIdx + 1,
-              agent: agentName,
-              size: result.content?.length || 0
-            });
-          } else {
           logger.info(`✅ Generated ${path.basename(file.path)}`, requestId, { 
             layer: layerIdx + 1,
             agent: agentName,
@@ -653,7 +423,6 @@ class Coordinator {
             size: result.content?.length || 0,
             hasContent: !!(result.content && result.content.trim())
           });
-          }
 
           return {
             path: file.path,
@@ -664,19 +433,17 @@ class Coordinator {
           };
 
         } catch (error) {
-          // This catch should rarely be triggered now since generateFileDetail has fallback
-          // But keep it as a safety net
-          logger.warn(`⚠ Fallback to skeleton for ${path.basename(file.path)}`, requestId, { 
+          logger.error(`❌ Failed to generate ${path.basename(file.path)}`, requestId, { 
             layer: layerIdx + 1,
             error: error.message 
           });
           
-          // Use skeleton as final fallback
+          // 失敗時使用骨架作為 fallback
           return {
             path: file.path,
             content: skeletons[file.path] || `// Error generating ${file.path}: ${error.message}`,
             language: file.language,
-            metadata: { fallback: true, error: error.message },
+            error: error.message,
             layer: layerIdx + 1
           };
         }
@@ -970,15 +737,27 @@ ${setup.dependencies.go.map(dep => `\t${dep}`).join('\n')}
    */
   selectAgent(filePath) {
     const ext = path.extname(filePath).toLowerCase();
+    const basename = path.basename(filePath).toLowerCase();
     
+    // 特殊檔案名稱處理（沒有副檔名的檔案）
+    if (basename === '.gitignore' || basename === '.env.example' || basename === 'dockerfile') {
+      return this.workers.markup;
+    }
+    
+    // requirements.txt 特別處理 → 使用 python-agent
+    if (basename === 'requirements.txt') {
+      return this.workers.python;
+    }
+    
+    // 根據副檔名匹配
     for (const [name, worker] of Object.entries(this.workers)) {
       if (worker.exts.includes(ext)) {
         return worker;
       }
     }
     
-    // 預設使用 system agent
-    return this.workers.system;
+    // 預設使用 markup agent（改為文字處理）
+    return this.workers.markup;
   }
 
   /**
@@ -1122,21 +901,13 @@ ${hasContracts ? `
    - The content field should contain the code as-is without extra escaping
 `;
 
-    // 提取用戶需求（從 coderInstructions 或 payload）
-    const coderInstructions = this.currentCoderInstructions || {};
-    const userRequirement = payload.summary || payload.requirements || coderInstructions.summary || coderInstructions.requirements || '';
-    const projectRequirements = Array.isArray(payload.requirements) ? payload.requirements : (payload.requirements ? [payload.requirements] : []);
-    
     let userPrompt = `Generate skeletons for these files:
 
-${userRequirement ? `=== USER REQUIREMENT ===
-${userRequirement}
+Project Requirements:
+${payload.requirements || 'No specific requirements'}
 
-` : ''}${projectRequirements.length > 0 ? `=== PROJECT REQUIREMENTS ===
-${projectRequirements.join('\n')}
-
-` : ''}Files to generate:
-${payload.files.map((f, i) => `${i + 1}. ${f.path} (${f.type}): ${f.description || 'No description'}${f.requirements && f.requirements.length > 0 ? `\n   Requirements: ${Array.isArray(f.requirements) ? f.requirements.join(', ') : f.requirements}` : ''}`).join('\n')}
+Files to generate:
+${payload.files.map((f, i) => `${i + 1}. ${f.path} (${f.type}): ${f.description}`).join('\n')}
 `;
 
     // 如果有 contracts，附加到 prompt
@@ -1196,40 +967,9 @@ ${payload.files.map((f, i) => `${i + 1}. ${f.path} (${f.type}): ${f.description 
       userPrompt += `\n=== END CONTRACTS ===\n`;
     }
 
-    // 為 HTML 檔案計算相對路徑
-    const htmlFiles = payload.files.filter(f => f.path.endsWith('.html') || f.path.endsWith('.htm'));
-    const cssFiles = payload.files.filter(f => f.path.endsWith('.css'));
-    const jsFiles = payload.files.filter(f => f.path.endsWith('.js') || f.path.endsWith('.mjs') || f.path.endsWith('.cjs'));
-    
-    if (htmlFiles.length > 0 && (cssFiles.length > 0 || jsFiles.length > 0)) {
-      userPrompt += `\n=== FILE PATH RELATIONSHIPS ===\n`;
-      htmlFiles.forEach(htmlFile => {
-        const htmlDir = path.dirname(htmlFile.path);
-        userPrompt += `\nFor HTML file: ${htmlFile.path}\n`;
-        if (cssFiles.length > 0) {
-          userPrompt += `  CSS files (use relative paths from HTML directory):\n`;
-          cssFiles.forEach(cssFile => {
-            const relPath = path.relative(htmlDir, cssFile.path).replace(/\\/g, '/');
-            userPrompt += `    - ${cssFile.path} → use "${relPath}" in <link> tag\n`;
-          });
-        }
-        if (jsFiles.length > 0) {
-          userPrompt += `  JS files (use relative paths from HTML directory):\n`;
-          jsFiles.forEach(jsFile => {
-            const relPath = path.relative(htmlDir, jsFile.path).replace(/\\/g, '/');
-            userPrompt += `    - ${jsFile.path} → use "${relPath}" in <script> tag\n`;
-          });
-        }
-      });
-      userPrompt += `\nCRITICAL: HTML files MUST use the exact relative paths shown above.\n`;
-      userPrompt += `Do NOT invent paths like "styles/main.css" or "scripts/main.js".\n`;
-      userPrompt += `CRITICAL: Match the EXACT filename from the relative path (e.g., if path is "index.js", use src="index.js", NOT "app.js" or "main.js").\n`;
-      userPrompt += `=== END FILE PATH RELATIONSHIPS ===\n\n`;
-    }
-
     userPrompt += `
 Generate structural skeletons following language conventions:
-- HTML: DOCTYPE, head, body structure, script/link tags with CORRECT relative file paths (see above)
+- HTML: DOCTYPE, head, body structure, script/link tags with correct file paths
 - CSS: Selectors matching HTML classes/IDs
 - JavaScript: Function signatures, class definitions, imports, event listeners
 - Python: Class/function definitions, imports, type hints, route handlers
@@ -1245,134 +985,48 @@ Do not include any text before or after the JSON array.
 
 Return ONLY the JSON array, no markdown or explanation.`;
 
-    // 優先嘗試 Gemini，失敗時切換到 OpenAI（一次只使用一個 API）
-    const apiProviders = [];
-    
-    // 優先添加 Gemini（若選擇 auto 或 gemini）
-    if (this.GEMINI_API_KEY && (this.LLM_PROVIDER === 'auto' || this.LLM_PROVIDER === 'gemini')) {
-      apiProviders.push({
-        name: 'Gemini',
-        endpoint: `${this.GEMINI_API_ENDPOINT}/models/${this.GEMINI_MODEL}:generateContent`,
-        key: this.GEMINI_API_KEY,
-        isGemini: true
-      });
-    }
-    
-    // 然後添加 OpenAI（若選擇 auto 或 openai）
-    if (this.OPENAI_API_ENDPOINT && this.OPENAI_API_KEY && (this.LLM_PROVIDER === 'auto' || this.LLM_PROVIDER === 'openai')) {
-      apiProviders.push({
-        name: 'OpenAI',
-        endpoint: this.OPENAI_API_ENDPOINT,
-        key: this.OPENAI_API_KEY,
-        isGemini: false
-      });
-    }
-    
-    if (apiProviders.length === 0) {
-      throw new Error('No API providers configured (neither Gemini nor OpenAI)');
-    }
-    
-    let lastError = null;
-    
-    // 依次嘗試每個 API 提供者（優先 Gemini）
-    for (const provider of apiProviders) {
-      try {
-        logger.info(`Trying ${provider.name} API for skeleton generation`, requestId);
-        
-        let requestBody, headers, apiUrl, response, result, generatedText;
-        
-        if (provider.isGemini) {
-          // Gemini API 格式
-          const maxTokensSkeleton = this.FAST_MODE ? 4096 : 16384;
-          requestBody = {
-            contents: [
-              {
-                parts: [
-                  {
-                    text: `${systemPrompt}\n\n${userPrompt}`,
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.3,
-              maxOutputTokens: maxTokensSkeleton, // 快速模式下降低輸出長度以提速
-            },
-          };
-          
-          headers = {
-            'Content-Type': 'application/json'
-          };
-          
-          // Gemini 使用 query parameter 認證
-          apiUrl = `${provider.endpoint}?key=${provider.key}`;
-          
-          response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(requestBody)
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            const statusCode = response.status;
-            const errorCode = JSON.parse(errorText || '{}')?.error?.code;
-            
-            // 如果是配額錯誤或認證錯誤，嘗試下一個提供者
-            if (statusCode === 429 || errorCode === 'insufficient_quota' || statusCode === 401 || statusCode === 403) {
-              logger.warn(`${provider.name} API failed (${statusCode || errorCode}), switching to next provider...`, requestId);
-              lastError = new Error(`${provider.name} API error: ${statusCode} - ${errorText}`);
-              continue; // 嘗試下一個提供者
-            }
-            throw new Error(`Gemini API error: ${statusCode} - ${errorText}`);
-          }
-
-          result = await response.json();
-          generatedText = result.candidates[0].content.parts[0].text;
-          
-        } else {
-          // OpenAI API 格式
-          requestBody = {
-            model: 'gpt-4',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt }
-            ],
+    try {
+      // 檢測 API 類型（Gemini 或 OpenAI）
+      const isGemini = this.CLOUD_API_ENDPOINT.includes('generativelanguage.googleapis.com');
+      
+      let requestBody, headers;
+      
+      if (isGemini) {
+        // Gemini API 格式
+        requestBody = {
+          contents: [{
+            parts: [{
+              text: `${systemPrompt}\n\n${userPrompt}`
+            }]
+          }],
+          generationConfig: {
             temperature: 0.3,
-            max_tokens: 4000
-          };
-          
-          headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${provider.key}`
-          };
-          
-          response = await fetch(provider.endpoint, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(requestBody)
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            const statusCode = response.status;
-            const errorCode = JSON.parse(errorText || '{}')?.error?.code;
-            
-            // 如果是配額錯誤或認證錯誤，嘗試下一個提供者
-            if (statusCode === 429 || errorCode === 'insufficient_quota' || statusCode === 401 || statusCode === 403) {
-              logger.warn(`${provider.name} API failed (${statusCode || errorCode}), switching to next provider...`, requestId);
-              lastError = new Error(`OpenAI API error: ${statusCode} - ${errorText}`);
-              continue; // 嘗試下一個提供者
-            }
-            throw new Error(`OpenAI API error: ${statusCode} - ${errorText}`);
+            maxOutputTokens: 16384  // 提高到 16384 以處理複雜專案（實際會被 Gemini 限制在 8192）
           }
+        };
+        
+        headers = {
+          'Content-Type': 'application/json'
+        };
+        
+        // Gemini 使用 query parameter 認證
+        const apiUrl = `${this.CLOUD_API_ENDPOINT}?key=${this.CLOUD_API_KEY}`;
+        
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify(requestBody)
+        });
 
-          result = await response.json();
-          generatedText = result.choices[0].message.content;
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
         }
+
+        const result = await response.json();
+        const generatedText = result.candidates[0].content.parts[0].text;
         
         logger.info('Raw API response received', requestId, {
-          provider: provider.name,
           textLength: generatedText.length,
           preview: generatedText.substring(0, 200)
         });
@@ -1389,7 +1043,7 @@ Return ONLY the JSON array, no markdown or explanation.`;
         const jsonMatch = cleanedText.match(/\[[\s\S]*\]/);
         if (!jsonMatch) {
           logger.error('No JSON array found in response', requestId, {
-            fullText: cleanedText.substring(0, 2000)
+            fullText: cleanedText.substring(0, 2000)  // 增加顯示長度
           });
           throw new Error('API response does not contain valid JSON array');
         }
@@ -1400,16 +1054,17 @@ Return ONLY the JSON array, no markdown or explanation.`;
         } catch (parseError) {
           logger.error('JSON parse failed', requestId, {
             error: parseError.message,
-            jsonPreview: jsonMatch[0].substring(0, 1000),
+            jsonPreview: jsonMatch[0].substring(0, 1000),  // 增加預覽長度
             jsonLength: jsonMatch[0].length
           });
           
           // 嘗試修復常見的轉義問題
           try {
+            // 移除多餘的反斜線轉義
             let fixedJson = jsonMatch[0]
-              .replace(/\\\\\\\\/g, '\\')
-              .replace(/\\\\\"/g, '"')
-              .replace(/\\\\n/g, '\\n');
+              .replace(/\\\\\\\\/g, '\\')  // 4個反斜線 → 1個
+              .replace(/\\\\\"/g, '"')     // 2個反斜線+引號 → 引號
+              .replace(/\\\\n/g, '\\n');   // 2個反斜線+n → \n
             
             skeletons = JSON.parse(fixedJson);
             logger.info('JSON parse succeeded after fixing escaping', requestId);
@@ -1422,305 +1077,65 @@ Return ONLY the JSON array, no markdown or explanation.`;
         }
         
         logger.info('Skeleton generation via API completed', requestId, {
-          provider: provider.name,
           fileCount: skeletons.length,
-          tokensUsed: provider.isGemini ? (result.usageMetadata?.totalTokenCount || 0) : (result.usage?.total_tokens || 0)
+          tokensUsed: result.usageMetadata?.totalTokenCount || 0
         });
         
         return { skeletons };
         
-      } catch (error) {
-        lastError = error;
-        // 如果還有其他提供者可以嘗試，繼續
-        if (apiProviders.indexOf(provider) < apiProviders.length - 1) {
-          logger.warn(`${provider.name} API request failed, trying next provider...`, requestId, {
-            error: error.message
-          });
-          continue;
-        }
-        // 如果是最後一個提供者，拋出錯誤
-        logger.error('Failed to generate skeletons via API', requestId, { 
-          error: error.message,
-          triedProviders: apiProviders.map(p => p.name).join(', ')
-        });
-        throw error;
-      }
-    }
-    
-    // 所有提供者都失敗了
-    throw lastError || new Error('All API providers failed');
-  }
-
-  /**
-   * 使用 Cloud API 生成檔案細節
-   */
-  async generateDetailsViaCloudAPI(payload, requestId) {
-    logger.info('Calling Cloud API to generate file details', requestId, { 
-      file: payload.fileSpec?.path 
-    });
-
-    const fileSpec = payload.fileSpec || {};
-    const skeleton = payload.skeleton || '';
-    const context = payload.context || {};
-    
-    const systemPrompt = `You are an expert software developer. Generate complete, production-ready code implementations.
-
-Your task:
-1. Take the provided skeleton code and expand it into a complete, working implementation
-2. Include all necessary functionality, error handling, and best practices
-3. Ensure code is well-structured, readable, and follows language conventions
-4. Add appropriate comments for complex logic
-5. Ensure consistency with related files (if provided in context)
-
-Requirements:
-- Generate COMPLETE, WORKING code (not just placeholders)
-- Include proper error handling
-- Follow best practices for the language
-- Maintain consistency with skeleton structure
-- If context includes completed files, ensure compatibility`;
-
-    // 構建包含用戶需求的完整 prompt
-    const userRequirement = context.userRequirement || context.projectSummary || '';
-    const projectRequirements = context.projectRequirements || [];
-    
-    const userPrompt = `Generate complete implementation for: ${fileSpec.path}
-
-${userRequirement ? `=== USER REQUIREMENT ===
-${userRequirement}
-
-` : ''}${projectRequirements.length > 0 ? `=== PROJECT REQUIREMENTS ===
-${Array.isArray(projectRequirements) ? projectRequirements.join('\n') : projectRequirements}
-
-` : ''}File Type: ${fileSpec.language || 'unknown'}
-Description: ${fileSpec.description || 'No description'}
-${fileSpec.requirements && fileSpec.requirements.length > 0 ? `
-File-Specific Requirements:
-${Array.isArray(fileSpec.requirements) ? fileSpec.requirements.join('\n') : fileSpec.requirements}
-` : ''}
-
-Skeleton Code:
-\`\`\`${fileSpec.language || 'text'}
-${skeleton}
-\`\`\`
-
-${context.completedFiles && context.completedFiles.length > 0 ? `
-Related Files (for reference):
-${context.completedFiles.map(f => `- ${f.path} (${f.language})`).join('\n')}
-` : ''}
-
-${context.dependencies && context.dependencies.length > 0 ? `
-Dependencies:
-${context.dependencies.map(d => `- ${d.path}`).join('\n')}
-` : ''}
-
-Generate the complete implementation now. 
-
-CRITICAL REQUIREMENTS:
-- The code MUST implement the user's requirement: "${userRequirement || 'see description above'}"
-- Return ONLY the code content, no explanations, no apologies, no markdown formatting
-- For JSON files: Return valid JSON only, no text before or after
-- For JavaScript files: Return complete, working code that fulfills the user's requirement
-- For config files: Return appropriate configuration based on file path (backend config should export module.exports, frontend config should use window.APP_CONFIG)
-- If the skeleton is empty or unclear, infer reasonable defaults based on the user requirement and file path/description
-- The implementation should be specific to the user's needs, not a generic template
-
-DO NOT include phrases like "Apologies", "I'm sorry", "Here's the code", etc. Just return the code directly.`;
-
-    // 優先嘗試 Gemini，失敗時切換到 OpenAI（一次只使用一個 API）
-    const apiProviders = [];
-    
-    // 優先添加 Gemini（若選擇 auto 或 gemini）
-    if (this.GEMINI_API_KEY && (this.LLM_PROVIDER === 'auto' || this.LLM_PROVIDER === 'gemini')) {
-      apiProviders.push({
-        name: 'Gemini',
-        endpoint: `${this.GEMINI_API_ENDPOINT}/models/${this.GEMINI_MODEL}:generateContent`,
-        key: this.GEMINI_API_KEY,
-        isGemini: true
-      });
-    }
-    
-    // 然後添加 OpenAI（若選擇 auto 或 openai）
-    if (this.OPENAI_API_ENDPOINT && this.OPENAI_API_KEY && (this.LLM_PROVIDER === 'auto' || this.LLM_PROVIDER === 'openai')) {
-      apiProviders.push({
-        name: 'OpenAI',
-        endpoint: this.OPENAI_API_ENDPOINT,
-        key: this.OPENAI_API_KEY,
-        isGemini: false
-      });
-    }
-    
-    if (apiProviders.length === 0) {
-      throw new Error('No API providers configured (neither Gemini nor OpenAI)');
-    }
-    
-    let lastError = null;
-    
-    // 依次嘗試每個 API 提供者（優先 Gemini）
-    for (const provider of apiProviders) {
-      try {
-        logger.info(`Trying ${provider.name} API for detail generation`, requestId, {
-          file: fileSpec.path
-        });
-        
-        let requestBody, headers, apiUrl, response, result, generatedText;
-        
-        if (provider.isGemini) {
-          // Gemini API 格式
-          const maxTokensDetail = this.FAST_MODE ? 8192 : 16384;
-          requestBody = {
-            contents: [
-              {
-                parts: [
-                  {
-                    text: `${systemPrompt}\n\n${userPrompt}`,
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.5,
-              maxOutputTokens: maxTokensDetail, // 快速模式下降低輸出長度以提速
-            },
-          };
-          
-          headers = {
-            'Content-Type': 'application/json'
-          };
-          
-          apiUrl = `${provider.endpoint}?key=${provider.key}`;
-          
-          response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(requestBody)
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            const statusCode = response.status;
-            const errorCode = JSON.parse(errorText || '{}')?.error?.code;
-            
-            // 如果是配額錯誤或認證錯誤，嘗試下一個提供者
-            if (statusCode === 429 || errorCode === 'insufficient_quota' || statusCode === 401 || statusCode === 403) {
-              logger.warn(`${provider.name} API failed (${statusCode || errorCode}), switching to next provider...`, requestId, {
-                file: fileSpec.path
-              });
-              lastError = new Error(`Gemini API error: ${statusCode} - ${errorText}`);
-              continue; // 嘗試下一個提供者
-            }
-            throw new Error(`Gemini API error: ${statusCode} - ${errorText}`);
-          }
-
-          result = await response.json();
-          generatedText = result.candidates[0].content.parts[0].text;
-          
-        } else {
-          // OpenAI API 格式
-          requestBody = {
-            model: 'gpt-4',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt }
-            ],
-            temperature: 0.5,
-            max_tokens: 4000
-          };
-          
-          headers = {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${provider.key}`
-          };
-          
-          response = await fetch(provider.endpoint, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(requestBody)
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            const statusCode = response.status;
-            const errorCode = JSON.parse(errorText || '{}')?.error?.code;
-            
-            // 如果是配額錯誤或認證錯誤，嘗試下一個提供者
-            if (statusCode === 429 || errorCode === 'insufficient_quota' || statusCode === 401 || statusCode === 403) {
-              logger.warn(`${provider.name} API failed (${statusCode || errorCode}), switching to next provider...`, requestId, {
-                file: fileSpec.path
-              });
-              lastError = new Error(`OpenAI API error: ${statusCode} - ${errorText}`);
-              continue; // 嘗試下一個提供者
-            }
-            throw new Error(`OpenAI API error: ${statusCode} - ${errorText}`);
-          }
-
-          result = await response.json();
-          generatedText = result.choices[0].message.content;
-        }
-        
-        // 移除可能的 markdown code block 包裝和錯誤訊息
-        let content = generatedText.trim();
-        
-        // 檢查是否包含錯誤訊息（API 可能返回錯誤而不是代碼）
-        if (content.toLowerCase().includes('apologies') || 
-            content.toLowerCase().includes('i\'m sorry') ||
-            content.toLowerCase().includes('i cannot') ||
-            content.toLowerCase().includes('unclear') ||
-            content.toLowerCase().includes('confusion') ||
-            content.toLowerCase().includes('not clear')) {
-          logger.warn('Cloud API returned error message instead of code, using skeleton', requestId, {
-            file: fileSpec.path,
-            preview: content.substring(0, 200)
-          });
-          // 使用骨架作為 fallback
-          content = skeleton || '';
-        }
-        
-        // 移除 markdown code block 包裝
-        if (content.startsWith('```')) {
-          content = content.replace(/^```[\w]*\s*\n/, '').replace(/\n```\s*$/, '');
-        }
-        
-        // 移除常見的前綴文字
-        content = content.replace(/^(here's|here is|the code|code:|implementation:)\s*/i, '');
-        
-        logger.info('Detail generation via Cloud API completed', requestId, {
-          provider: provider.name,
-          file: fileSpec.path,
-          contentLength: content.length,
-          tokensUsed: provider.isGemini ? (result.usageMetadata?.totalTokenCount || 0) : (result.usage?.total_tokens || 0)
-        });
-        
-        return {
-          content: content,
-          metadata: {
-            tokens_used: provider.isGemini ? (result.usageMetadata?.totalTokenCount || 0) : (result.usage?.total_tokens || 0),
-            model: provider.isGemini ? 'gemini-2.5-flash' : 'gpt-4',
-            method: 'cloud_api'
-          }
+      } else {
+        // OpenAI API 格式
+        requestBody = {
+          model: 'gpt-4',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: 0.3,
+          max_tokens: 4000
         };
         
-      } catch (error) {
-        lastError = error;
-        // 如果還有其他提供者可以嘗試，繼續
-        if (apiProviders.indexOf(provider) < apiProviders.length - 1) {
-          logger.warn(`${provider.name} API request failed, trying next provider...`, requestId, {
-            file: fileSpec.path,
-            error: error.message
-          });
-          continue;
-        }
-        // 如果是最後一個提供者，拋出錯誤
-        logger.error('Failed to generate details via Cloud API', requestId, {
-          error: error.message,
-          file: fileSpec.path,
-          triedProviders: apiProviders.map(p => p.name).join(', ')
+        headers = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.CLOUD_API_KEY}`
+        };
+        
+        const response = await fetch(this.CLOUD_API_ENDPOINT, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify(requestBody)
         });
-        throw error;
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+        }
+
+        const result = await response.json();
+        const generatedText = result.choices[0].message.content;
+        
+        // 解析 JSON
+        const jsonMatch = generatedText.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) {
+          throw new Error('API response does not contain valid JSON array');
+        }
+        
+        const skeletons = JSON.parse(jsonMatch[0]);
+        
+        logger.info('Skeleton generation via API completed', requestId, {
+          fileCount: skeletons.length,
+          tokensUsed: result.usage?.total_tokens || 0
+        });
+        
+        return { skeletons };
       }
+      
+    } catch (error) {
+      logger.error('Failed to generate skeletons via API', requestId, { 
+        error: error.message 
+      });
+      throw error;
     }
-    
-    // 所有提供者都失敗了
-    throw lastError || new Error('All API providers failed');
   }
 
   /**
@@ -1742,19 +1157,25 @@ DO NOT include phrases like "Apologies", "I'm sorry", "Here's the code", etc. Ju
       return Promise.resolve({ skeletons });
       
     } else if (payload.task === 'fill_details') {
-      // 生成細節的 mock 回應（異步處理以支持 ContentGenerators）
-      return this.generateMockDetailedContentAsync(payload.context);
+      // 生成細節的 mock 回應
+      const content = this.generateMockDetailedContent(payload.context);
+      return Promise.resolve({
+        content: content,
+        metadata: {
+          tokens_used: Math.floor(Math.random() * 3000) + 1000,
+          model: 'mock-model-v1'
+        }
+      });
     }
 
     return Promise.reject(new Error(`Unknown mock task: ${payload.task}`));
   }
 
   /**
-   * 生成 mock 骨架（改進版，生成更完整的骨架）
+   * 生成 mock 骨架
    */
   generateMockSkeleton(file) {
     const ext = path.extname(file.path).toLowerCase();
-    const description = file.description || file.path;
     
     switch (ext) {
       case '.html':
@@ -1764,509 +1185,77 @@ DO NOT include phrases like "Apologies", "I'm sorry", "Here's the code", etc. Ju
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${description}</title>
+    <title>${file.description || 'Page'}</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>${description}</h1>
-        </header>
-        <main>
-            <p>Content goes here</p>
-        </main>
-    </div>
-    <script src="script.js"></script>
+    <!-- TODO: Implement ${file.description || 'content'} -->
 </body>
 </html>`;
 
       case '.css':
       case '.scss':
-        return `/* ${description} */
+        return `/* ${file.description || 'Styles'} */
 
-* {
+/* TODO: Implement styles */
+body {
     margin: 0;
     padding: 0;
-    box-sizing: border-box;
-}
-
-body {
-    font-family: Arial, sans-serif;
-    line-height: 1.6;
-    color: #333;
-}
-
-.container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 20px;
 }`;
 
       case '.js':
       case '.jsx':
-      case '.mjs':
-      case '.cjs':
-        // 根據檔案名稱判斷類型
-        const isCalculator = file.path.toLowerCase().includes('calculator') || 
-                            description.toLowerCase().includes('calculator') ||
-                            description.toLowerCase().includes('計算');
-        
-        if (isCalculator) {
-          return `// Calculator JavaScript
-let display = document.getElementById('display');
-let currentInput = '';
+        return `// ${file.description || 'JavaScript Module'}
 
-function appendToDisplay(value) {
-    currentInput += value;
-    if (display) display.value = currentInput;
-}
-
-function clearDisplay() {
-    currentInput = '';
-    if (display) display.value = '';
-}
-
-function deleteLast() {
-    currentInput = currentInput.slice(0, -1);
-    if (display) display.value = currentInput;
-}
-
-function calculate() {
-    try {
-        const result = eval(currentInput);
-        currentInput = String(result);
-        if (display) display.value = currentInput;
-    } catch (error) {
-        alert('Error: ' + error.message);
+// TODO: Implement functionality
+export class App {
+    constructor() {
+        // TODO: Initialize
     }
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-    display = document.getElementById('display');
-});`;
-        }
-        
-        // 一般 JavaScript 檔案
-        return `// ${description}
-
-// Main functionality
-function init() {
-    console.log('${file.path} initialized');
-}
-
-// Event listeners
-document.addEventListener('DOMContentLoaded', init);`;
-
-      case '.json':
-        // 根據檔案名稱生成不同的 JSON 結構
-        const fileName = file.path.toLowerCase();
-        if (fileName.includes('package.json')) {
-          return JSON.stringify({
-            name: "generated-project",
-            version: "1.0.0",
-            description: description || "Generated project",
-            main: "server.js",
-            scripts: {
-              start: "node server.js",
-              dev: "node server.js"
-            },
-            dependencies: {
-              express: "^4.18.2"
-            }
-          }, null, 2);
-        } else if (fileName.includes('calculation') || fileName.includes('data')) {
-          return JSON.stringify({
-            calculations: [],
-            metadata: {
-              generated: new Date().toISOString(),
-              description: description || "Calculation data"
-            }
-          }, null, 2);
-        } else {
-          return JSON.stringify({
-            data: [],
-            metadata: {
-              generated: new Date().toISOString(),
-              description: description || "Data file"
+    
+    init() {
+        // TODO: Setup
     }
-          }, null, 2);
-        }
+}`;
 
       case '.py':
         return `"""
-${description}
+${file.description || 'Python Module'}
 """
 
-def main():
-    """Main function"""
-    print('${file.path} started')
+# TODO: Implement functionality
 
-if __name__ == '__main__':
-    main()`;
-
-      case '.md':
-        return `# ${description}
-
-## Description
-
-${description}
-
-## Usage
-
-Add usage instructions here.`;
+class App:
+    """Main application class"""
+    
+    def __init__(self):
+        """Initialize the application"""
+        pass
+    
+    def run(self):
+        """Run the application"""
+        pass`;
 
       default:
-        // 根據檔案路徑判斷可能的類型
-        if (file.path.includes('package.json') || file.path.includes('package')) {
-          return JSON.stringify({
-            name: "generated-project",
-            version: "1.0.0",
-            description: description,
-            main: "index.js",
-            scripts: {
-              start: "node index.js"
-            },
-            dependencies: {}
-          }, null, 2);
-        }
-        
-        if (file.path.includes('server') || (file.path.includes('index') && file.path.endsWith('.js') && !file.path.includes('public'))) {
-          return `const express = require('express');
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Middleware
-app.use(express.json());
-app.use(express.static('public'));
-
-// Routes
-app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/public/index.html');
-});
-
-// API routes
-app.post('/api/calculate', (req, res) => {
-    try {
-        const { expression } = req.body;
-        const result = eval(expression);
-        res.json({ result });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-app.listen(PORT, () => {
-    console.log(\`Server running on port \${PORT}\`);
-});`;
-        }
-        
-        return `// ${description}
-
-// Implementation for ${file.path}
-// Add your code here`;
+        return `// ${file.description || 'Module'}\n\n// TODO: Implement ${file.path}`;
     }
   }
 
   /**
-   * 異步生成 mock 詳細內容（使用 ContentGenerators 生成完整內容）
+   * 生成 mock 詳細內容（簡單擴充骨架）
    */
-  async generateMockDetailedContentAsync(context) {
+  generateMockDetailedContent(context) {
     if (!context || !context.skeleton) {
-      return {
-        content: '// Error: No skeleton provided',
-        metadata: {
-          tokens_used: 0,
-          model: 'mock-model-v1'
-        }
-      };
+      return '// Error: No skeleton provided';
     }
 
+    // 簡單地在骨架後面添加一些實作
     const skeleton = context.skeleton;
     const fileSpec = context.fileSpec || {};
-    const ext = path.extname(fileSpec.path || '').toLowerCase();
     
-    // 嘗試使用 ContentGenerators 生成更完整的內容
-    try {
-      const ContentGenerators = await loadContentGenerators();
-      if (ContentGenerators) {
-        const generators = new ContentGenerators();
-        
-        // 根據檔案類型選擇生成方法
-        if (['.html', '.htm'].includes(ext)) {
-          const generated = generators.generateHTML(fileSpec, skeleton);
-          if (generated && generated.length > skeleton.length) {
-            return {
-              content: generated,
-              metadata: {
-                tokens_used: Math.floor(Math.random() * 3000) + 1000,
-                model: 'mock-model-v1-with-generators'
-              }
-            };
-          }
-        } else if (['.js', '.jsx', '.mjs', '.cjs'].includes(ext)) {
-          const generated = generators.generateJavaScript(fileSpec, skeleton, context);
-          if (generated && generated.length > skeleton.length) {
-            return {
-              content: generated,
-              metadata: {
-                tokens_used: Math.floor(Math.random() * 3000) + 1000,
-                model: 'mock-model-v1-with-generators'
-              }
-            };
-          }
-        } else if (['.css', '.scss', '.sass', '.less'].includes(ext)) {
-          // 對於 CSS，需要檢查 HTML 文件
-          const htmlFiles = context.allFiles?.filter(f => 
-            ['.html', '.htm'].includes(path.extname(f.path || '').toLowerCase())
-          ) || [];
-          const generated = generators.generateCSS(fileSpec, htmlFiles);
-          if (generated) {
-            return {
-              content: generated,
-              metadata: {
-                tokens_used: Math.floor(Math.random() * 2000) + 500,
-                model: 'mock-model-v1-with-generators'
-              }
-            };
-          }
-        }
-      }
-    } catch (error) {
-      logger.debug(`ContentGenerators failed for ${fileSpec.path}, using basic fallback`, null, {
-        error: error.message
-      });
-    }
-    
-    // Fallback: 基本擴充骨架
-    let content = skeleton;
-    
-    // 根據檔案類型添加基本實作
-    if (['.html', '.htm'].includes(ext)) {
-      // HTML: 確保有基本結構並修復錯誤引用
-      if (content.includes('TODO') || content.length < 200) {
-        content = content.replace(/<!--\s*TODO[^-]*-->/gi, '');
-        
-        // 修復錯誤的 script 引用（不應該引用 server.js 或 config.js）
-        content = content.replace(/<script[^>]*src=['"]server\.js['"][^>]*><\/script>/gi, '');
-        content = content.replace(/<script[^>]*src=['"]config\.js['"][^>]*><\/script>/gi, '');
-        
-        // 根據檔案位置決定正確的 script 引用
-        const filePath = fileSpec.path || '';
-        const isPublicFile = filePath.includes('public/');
-        const scriptSrc = isPublicFile ? 'index.js' : 'public/index.js';
-        
-        if (content.includes('<body>') && content.match(/<body>[\s\S]*?<\/body>/i)?.[0].length < 100) {
-          content = content.replace(
-            /<body>([\s\S]*?)<\/body>/i,
-            `<body>
-    <div class="container">
-        <header>
-            <h1>${fileSpec.description || 'Application'}</h1>
-        </header>
-        <main>
-            <div class="content">
-                <p>Welcome to the application</p>
-            </div>
-        </main>
-    </div>
-    <script src="${scriptSrc}"></script>
-</body>`
-          );
-        } else if (!content.includes(`<script src="${scriptSrc}">`)) {
-          // 如果 body 有內容但沒有 script，添加 script
-          content = content.replace(/<\/body>/i, `    <script src="${scriptSrc}"></script>\n</body>`);
-        }
-      }
-      
-      // 確保有正確的 CSS 引用
-      if (!content.includes('style.css') && !content.includes('styles.css')) {
-        const filePath = fileSpec.path || '';
-        const isPublicFile = filePath.includes('public/');
-        const cssHref = isPublicFile ? 'style.css' : 'public/style.css';
-        content = content.replace(/<\/head>/i, `    <link rel="stylesheet" href="${cssHref}">\n</head>`);
-      }
-      
-      // 修復錯誤的 CSS 引用（如 css/styles.css 應該改為 style.css）
-      content = content.replace(/href=['"]css\/styles\.css['"]/gi, 'href="style.css"');
-      content = content.replace(/href=['"]styles\.css['"]/gi, 'href="style.css"');
-      
-      // 修復錯誤的 JS 引用（如 js/index.js 應該改為 index.js）
-      content = content.replace(/src=['"]js\/index\.js['"]/gi, 'src="index.js"');
-      content = content.replace(/src=['"]js\/script\.js['"]/gi, 'src="index.js"');
-    } else if (['.js', '.jsx', '.mjs', '.cjs'].includes(ext)) {
-      // JavaScript: 根據檔案類型添加實作
-      const filePath = fileSpec.path || '';
-      const isServerFile = filePath.includes('server') || 
-                          (filePath.includes('index') && !filePath.includes('public'));
-      
-      if (isServerFile) {
-        // 伺服器檔案：生成完整的 Express 伺服器
-        if (content.includes('require') && content.includes('express')) {
-          // 如果已經有 express，擴充它
-          if (!content.includes('app.get') || content.includes('// handle')) {
-            content = content.replace(/app\.get\(['"]\/['"],\s*\(req,\s*res\)\s*=>\s*\{[\s\S]*?\}\);/g, 
-              `app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/public/index.html');
-});`);
-          }
-          if (!content.includes('app.post') && !content.includes('/api/')) {
-            content += `\n\n// API routes
-app.post('/api/calculate', (req, res) => {
-    try {
-        const { expression } = req.body;
-        const result = eval(expression);
-        res.json({ result });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});`;
-          }
-          // 確保有 express.static
-          if (!content.includes('express.static')) {
-            content = content.replace(/app\.use\(express\.json\(\)\);/g, 
-              `app.use(express.json());
-app.use(express.static('public'));`);
-          }
-        }
-      } else {
-        // 前端 JavaScript：添加基本實作
-        content = content.replace(/TODO: Implement/g, '// Implemented');
-        content = content.replace(/TODO: /g, '// ');
-        if (content.includes('class') && content.includes('constructor')) {
-          content = content.replace(/constructor\(\)\s*\{[\s\S]*?\}/g, (match) => {
-            if (match.includes('TODO') || match.length < 30) {
-              return `constructor() {\n        // Initialize\n        console.log('${fileSpec.path} initialized');\n    }`;
-            }
-            return match;
-          });
-        }
-      }
-    } else if (['.css', '.scss'].includes(ext)) {
-      // CSS: 添加基本樣式
-      if (content.includes('TODO') || content.length < 100) {
-        content = `/* ${fileSpec.description || 'Styles'} */
-
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
-
-body {
-    font-family: Arial, sans-serif;
-    line-height: 1.6;
-    color: #333;
-}
-
-.container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 20px;
-}`;
-      }
-    } else if (ext === '.json') {
-      // JSON: 清理無效的註解並返回有效結構
-      // 移除 JSON 中的註解（JSON 不支持註解）
-      content = content.replace(/\/\*[\s\S]*?\*\//g, ''); // 移除 /* */ 註解
-      content = content.replace(/\/\/.*$/gm, ''); // 移除 // 註解
-      content = content.trim();
-      
-      // 檢查是否包含錯誤訊息（API 可能返回錯誤而不是 JSON）
-      if (content.toLowerCase().includes('apologies') || 
-          content.toLowerCase().includes('i\'m sorry') ||
-          content.toLowerCase().includes('i cannot') ||
-          content.toLowerCase().includes('unclear') ||
-          content.toLowerCase().includes('confusion') ||
-          content.toLowerCase().includes('not clear') ||
-          content.toLowerCase().includes('please provide')) {
-        logger.warn('JSON file contains error message, using default structure', null, {
-          file: fileSpec.path,
-          preview: content.substring(0, 200)
-        });
-        // 使用默認結構
-        content = '';
-      }
-      
-      // 如果內容無效或為空，生成有效的 JSON
-      if (content.includes('TODO') || content === '{}' || content === '[]' || !content) {
-        const fileName = (fileSpec.path || '').toLowerCase();
-        if (fileName.includes('calculation') || fileName.includes('data')) {
-          content = JSON.stringify({
-            calculations: [],
-            metadata: {
-              generated: new Date().toISOString(),
-              description: fileSpec.description || 'Calculation data'
-            }
-          }, null, 2);
-        } else {
-          content = JSON.stringify({
-            data: [],
-            metadata: {
-              generated: new Date().toISOString(),
-              description: fileSpec.description || 'Data file'
-            }
-          }, null, 2);
-        }
-      } else {
-        // 嘗試解析現有 JSON，如果失敗則使用默認結構
-        try {
-          JSON.parse(content);
-          // 如果解析成功，保持原樣
-        } catch (e) {
-          // 如果解析失敗，使用默認結構
-          logger.warn('JSON parse failed, using default structure', null, {
-            file: fileSpec.path,
-            error: e.message
-          });
-          const fileName = (fileSpec.path || '').toLowerCase();
-          if (fileName.includes('calculation') || fileName.includes('data')) {
-            content = JSON.stringify({
-              calculations: [],
-              metadata: {
-                generated: new Date().toISOString(),
-                description: fileSpec.description || 'Calculation data'
-              }
-            }, null, 2);
-          } else {
-            content = JSON.stringify({
-              data: [],
-              metadata: {
-                generated: new Date().toISOString(),
-                description: fileSpec.description || 'Data file'
-              }
-            }, null, 2);
-          }
-        }
-      }
-    } else if (ext === '.py') {
-      // Python: 添加基本實作
-      content = content.replace(/# TODO: Implement/g, '# Implemented');
-      content = content.replace(/# TODO: /g, '# ');
-      if (content.includes('def ') && content.includes('pass')) {
-        content = content.replace(/def (\w+)\([^)]*\):\s*pass/g, (match, funcName) => {
-          return `def ${funcName}(self):\n        """${fileSpec.description || 'Method implementation'}"""\n        return None`;
-        });
-      }
-    }
-    
-    // 移除所有剩餘的 TODO 註解（但保留 JSON 文件的完整性）
-    if (ext !== '.json') {
-      content = content.replace(/\/\/\s*TODO[^\n]*/gi, '');
-      content = content.replace(/\/\*\s*TODO[^*]*\*\//gi, '');
-      content = content.replace(/#\s*TODO[^\n]*/gi, '');
-      
-      // 只在非 JSON 文件末尾添加註解
-      content = content + `\n\n// Generated with mock API for ${fileSpec.path}\n`;
-    }
-    // JSON 文件不添加註解，保持有效的 JSON 格式
-    
-    return {
-      content: content,
-      metadata: {
-        tokens_used: Math.floor(Math.random() * 2000) + 500,
-        model: 'mock-model-v1'
-      }
-    };
+    return skeleton.replace(/TODO: Implement/g, 'IMPLEMENTED (mock)') 
+                   .replace(/TODO: /g, '')
+                   + `\n\n// Generated with mock API for ${fileSpec.path}\n`;
   }
 
   /**
@@ -2275,258 +1264,63 @@ body {
   async generateFileDetail(agent, fileSpec, context, requestId) {
     const agentName = this.getAgentName(agent);
     
-    // If using mock API, use mock directly
-    if (this.USE_MOCK_API) {
-      logger.debug(`Using mock API for ${fileSpec.path}`, requestId);
-      const apiPayload = {
-        task: 'fill_details',
-        context: context
-      };
-      const mockResult = await this.mockCloudAPI(apiPayload, requestId);
-      
-      // Return unified format
-      return {
-        success: true,
-        content: mockResult.content,
-        metadata: mockResult.metadata
-      };
-    }
-
-    // 使用真實的 Worker Agent
     try {
-      logger.debug(`Calling ${agentName} for ${fileSpec.path}`, requestId);
+      logger.debug(`Calling ${agentName} generator for ${fileSpec.path}`, requestId);
       
-      // 準備請求 payload
-      const payload = {
+      // 準備請求參數
+      const params = {
         skeleton: context.skeleton || '',
         fileSpec: context.fileSpec,
         context: {
           completedFiles: context.completedFiles || [],
           dependencies: context.dependencies || [],
-          allFiles: context.allFiles || [], // 傳遞所有檔案資訊（預知未來）
-          allSkeletons: context.allSkeletons || {}
+          allFiles: context.allFiles || [],
+          allSkeletons: context.allSkeletons || {},
+          contracts: context.contracts || null,
+          projectConfig: context.projectConfig || null
         }
       };
       
-      // 呼叫 worker agent
-      const response = await fetch(agent.endpoint, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-Request-ID': requestId
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Worker agent ${agentName} error: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
-      const result = await response.json();
+      // 直接調用本地 generator
+      const result = await agent.generator.generate(params);
       
-      if (!result.success) {
-        throw new Error(`Worker agent ${agentName} returned failure: ${result.error || 'Unknown error'}`);
+      if (!result || !result.content) {
+        throw new Error(`Generator returned invalid result`);
       }
       
       logger.debug(`✓ ${agentName} generated ${fileSpec.path}`, requestId, {
-        tokens: result.metadata?.tokens_used,
-        time_ms: result.metadata?.generation_time_ms,
-        method: result.metadata?.method
+        tokens: result.tokensUsed,
+        method: result.method,
+        size: result.content.length
       });
       
-      return result;
+      // 統一返回格式
+      return {
+        success: true,
+        content: result.content,
+        metadata: {
+          tokens_used: result.tokensUsed,
+          method: result.method,
+          agent: agentName
+        }
+      };
       
     } catch (error) {
-      // Worker agent failed, try Cloud API first, then fallback to mock
-      logger.debug(`Worker agent ${agentName} unavailable, trying Cloud API for ${fileSpec.path}`, requestId, { 
-        error: error.message 
+      logger.error(`Worker generator ${agentName} error`, requestId, { 
+        error: error.message,
+        file: fileSpec.path
       });
       
-      // Try Cloud API if configured
-      if (this.CLOUD_API_ENDPOINT && this.CLOUD_API_KEY) {
-        try {
-          logger.info(`Using Cloud API for detail generation (fallback from worker agent)`, requestId, {
-            file: fileSpec.path
-          });
-          
-          const apiPayload = {
-            task: 'fill_details',
-            instructions: `Generate complete implementation for ${fileSpec.path}. Include full functionality, error handling, and best practices.`,
-            skeleton: context.skeleton || '',
-            fileSpec: context.fileSpec,
-            context: {
-              completedFiles: context.completedFiles || [],
-              dependencies: context.dependencies || [],
-              allFiles: context.allFiles || [],
-              allSkeletons: context.allSkeletons || {},
-              contracts: context.contracts || null
-            }
-          };
-          
-          const cloudResponse = await this.generateDetailsViaCloudAPI(apiPayload, requestId);
-          
-          if (cloudResponse && cloudResponse.content) {
-            logger.info(`✓ Cloud API generated ${fileSpec.path} (fallback)`, requestId, {
-              size: cloudResponse.content.length
-            });
-            
-            return {
-              success: true,
-              content: cloudResponse.content,
-              metadata: cloudResponse.metadata || { 
-                fallback: true, 
-                method: 'cloud_api_fallback',
-                original_error: error.message 
-              }
-            };
-          }
-        } catch (cloudError) {
-          logger.warn(`Cloud API fallback failed for ${fileSpec.path}, using mock API`, requestId, {
-            cloudError: cloudError.message
-          });
+      // Fallback 到骨架
+      return {
+        success: false,
+        content: context.skeleton || `// Error generating ${fileSpec.path}: ${error.message}`,
+        metadata: {
+          error: error.message,
+          fallback: 'skeleton'
         }
-      }
-      
-      // Final fallback: mock API
-      try {
-        logger.debug(`Using mock API as final fallback for ${fileSpec.path}`, requestId);
-        const apiPayload = {
-          task: 'fill_details',
-          context: context
-        };
-        const mockResult = await this.mockCloudAPI(apiPayload, requestId);
-        
-        return {
-          success: true,
-          content: mockResult.content,
-          metadata: mockResult.metadata || { 
-            fallback: true, 
-            method: 'mock_api_fallback',
-            original_error: error.message 
-          }
-        };
-      } catch (fallbackError) {
-        // Even mock API failed (shouldn't happen, but handle it)
-        logger.error(`All generation methods failed for ${fileSpec.path}`, requestId, {
-          workerError: error.message,
-          mockError: fallbackError.message
-        });
-        
-        // Return skeleton as final fallback
-        return {
-          success: true,
-          content: context.skeleton || `// Error: Could not generate ${fileSpec.path}`,
-          metadata: { 
-            fallback: true, 
-            error: `All generation methods failed: ${error.message}` 
-          }
-        };
-      }
+      };
     }
-  }
-
-  /**
-   * 生成前端檔案（每次都強制生成，通過 Worker Agents 根據使用者需求生成內容）
-   * @param {Array} files - 現有檔案列表
-   * @param {Object} coderInstructions - Coder instructions
-   * @returns {Array} 生成的前端檔案列表（只有檔案規格，不包含 template）
-   */
-  generateFrontendFilesIfNeeded(files, coderInstructions) {
-    const frontendFiles = [];
-    
-    // 獲取使用者需求摘要（用於生成描述）
-    const userRequirement = coderInstructions.summary || 
-                           coderInstructions.directives?.map(d => d.do).join(' ') || 
-                           'web application';
-    
-    logger.info('Generating frontend files (always generate, will be processed by Worker Agents)', null, {
-      userRequirement: userRequirement.substring(0, 100),
-      existingFrontendFiles: files.filter(f => 
-        f.path.startsWith('public/') || 
-        f.path.includes('index.html') ||
-        f.path.includes('style.css') ||
-        f.path.includes('app.js') ||
-        f.path.includes('script.js')
-      ).map(f => f.path)
-    });
-    
-    // 移除已存在的相同路徑檔案（強制重新生成）
-    const existingPaths = new Set(files.map(f => f.path));
-    const filesToRemove = ['public/index.html', 'public/style.css', 'public/index.js'];
-    filesToRemove.forEach(path => {
-      if (existingPaths.has(path)) {
-        const index = files.findIndex(f => f.path === path);
-        if (index !== -1) {
-          files.splice(index, 1);
-          logger.info(`Removed existing ${path} to force regeneration`, null);
-        }
-      }
-    });
-    
-    // 生成 public/index.html（不包含 template，讓 Phase 1 和 Phase 2 生成）
-    frontendFiles.push({
-      path: 'public/index.html',
-      language: 'html',
-      type: 'html',
-      description: `Main HTML page for ${userRequirement}. Generate a complete, semantic HTML structure that matches the user's requirements. Include proper meta tags, accessibility attributes, and structure that aligns with the application's purpose.`,
-      purpose: 'Frontend entry point',
-      requirements: [
-        'Must be semantic HTML5',
-        'Include proper meta tags for viewport and charset',
-        'CRITICAL: Use <link rel="stylesheet" href="style.css"> (exact filename, relative path)',
-        'CRITICAL: Use <script src="index.js"></script> (exact filename "index.js", NOT "app.js" or "main.js", relative path)',
-        'Structure should match the user requirement',
-        'Include accessibility attributes (aria-labels, roles if needed)',
-        'For calculator: Include number buttons (0-9), operator buttons (+, -, *, /), equals button (=), clear button, and a display area'
-      ]
-    });
-    
-    // 生成 public/style.css（不包含 template，讓 Phase 1 和 Phase 2 生成）
-    frontendFiles.push({
-      path: 'public/style.css',
-      language: 'css',
-      type: 'css',
-      description: `Main stylesheet for ${userRequirement}. Generate modern, responsive CSS that matches the application's design requirements. Use CSS Grid or Flexbox for layout, include mobile-first responsive design, and ensure styles align with the HTML structure.`,
-      purpose: 'Application styles',
-      requirements: [
-        'Mobile-first responsive design',
-        'Use CSS Grid or Flexbox for layout',
-        'Match the HTML structure and classes',
-        'Include modern CSS features (custom properties, transitions if needed)',
-        'Ensure proper color scheme and typography'
-      ]
-    });
-    
-    // 生成 public/index.js（不包含 template，讓 Phase 1 和 Phase 2 生成）
-    frontendFiles.push({
-      path: 'public/index.js',
-      language: 'javascript',
-      type: 'javascript',
-      description: `Main JavaScript file for ${userRequirement}. Generate complete, functional JavaScript code that implements the application's frontend logic. Include DOM manipulation, event handlers, and any required functionality based on the user's requirements.`,
-      purpose: 'Frontend JavaScript logic',
-      requirements: [
-        'Use modern ES6+ syntax',
-        'Include proper DOM manipulation',
-        'Add event listeners for user interactions',
-        'CRITICAL: Match selectors to the EXACT HTML structure (check completed HTML files)',
-        'CRITICAL: Do NOT use selectors for elements that don\'t exist in the HTML',
-        'For calculator: Handle button clicks, update display, perform calculations, handle clear',
-        'Implement functionality based on user requirements',
-        'Include error handling where appropriate',
-        'Use async/await for any asynchronous operations',
-        'Do NOT use import/export statements (use plain script tag)',
-        'Do NOT use process.env (browser doesn\'t support it)'
-      ]
-    });
-    
-    logger.info('Frontend files added for generation', null, {
-      files: frontendFiles.map(f => f.path),
-      count: frontendFiles.length,
-      note: 'These files will be processed through Phase 1 (skeleton) and Phase 2 (details) by Worker Agents'
-    });
-    
-    return frontendFiles;
   }
 
   /**

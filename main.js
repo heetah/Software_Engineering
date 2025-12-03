@@ -46,6 +46,49 @@ let captureWindow = null;
 let isCapturing = false;
 
 // --- HEAD: Database Functions ---
+async function normalizeSessions() {
+  // Re-sequence sessions to be contiguous and refresh titles (Session 001, 002, ...)
+  const rows = await all(
+    "SELECT id, sequence, title, created_at FROM sessions ORDER BY created_at ASC"
+  );
+  if (!rows || rows.length === 0) return [];
+
+  const planned = rows.map((row, idx) => ({
+    id: row.id,
+    newSequence: idx + 1,
+    newTitle: `Session ${String(idx + 1).padStart(3, "0")}`,
+  }));
+
+  // Two-phase update to avoid UNIQUE conflicts on sequence
+  await run("BEGIN IMMEDIATE");
+  try {
+    for (const p of planned) {
+      await run("UPDATE sessions SET sequence = ? WHERE id = ?", [
+        p.newSequence + 1000000,
+        p.id,
+      ]);
+    }
+    for (const p of planned) {
+      await run("UPDATE sessions SET sequence = ?, title = ? WHERE id = ?", [
+        p.newSequence,
+        p.newTitle,
+        p.id,
+      ]);
+    }
+    await run("COMMIT");
+  } catch (error) {
+    await run("ROLLBACK").catch(() => {});
+    throw error;
+  }
+
+  return all(
+    `SELECT s.id, s.sequence, s.title, s.created_at, COALESCE(m.message_count, 0) AS message_count
+     FROM sessions AS s
+     LEFT JOIN (SELECT session_id, COUNT(*) AS message_count FROM messages GROUP BY session_id) AS m ON m.session_id = s.id
+     ORDER BY s.created_at DESC`
+  );
+}
+
 function initDatabase() {
   return new Promise((resolve, reject) => {
     const dbPath = path.join(app.getPath("userData"), "chat-history.db");
@@ -154,6 +197,10 @@ function registerHistoryHandlers() {
        LEFT JOIN (SELECT session_id, COUNT(*) AS message_count FROM messages GROUP BY session_id) AS m ON m.session_id = s.id
        ORDER BY s.created_at DESC`
     );
+  });
+
+  ipcMain.handle("history:normalize", async () => {
+    return normalizeSessions();
   });
 
   ipcMain.handle("history:get-messages", async (_event, sessionId) => {

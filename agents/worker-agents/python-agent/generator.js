@@ -1,5 +1,5 @@
 const path = require('path');
-const { callCloudAPI } = require('../api-adapter');
+const { callCloudAPI } = require('../api-adapter.cjs');
 
 class PythonGenerator {
   constructor(config = {}) {
