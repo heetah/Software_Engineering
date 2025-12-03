@@ -163,7 +163,8 @@ class Coordinator {
    * @param {Object|Array} coderInstructions - 可以是 {files, contracts} 或純 files[]
    */
   async generateSkeletonsBatch(coderInstructions, requestId) {
-    const MAX_FILES_PER_BATCH = 5;  // 每批最多 5 個檔案（避免 token 超限）
+    // 每批最多多少檔案（可由建構子 / 環境變數調整）
+    const MAX_FILES_PER_BATCH = this.MAX_FILES_PER_SKELETON_BATCH || 5;
     
     // 相容舊格式：如果傳入的是陣列，轉換成物件
     const payload = Array.isArray(coderInstructions) 
@@ -228,10 +229,13 @@ class Coordinator {
       const batchSkeletons = await this.generateSkeletonsSingleBatch(batchPayload, requestId);
       Object.assign(skeletonMap, batchSkeletons);
       
-      // 批次間延遲（避免 API rate limit）
-      if (i < batches.length - 1) {
-        logger.info(`Waiting before next batch...`, requestId);
-        await this.sleep(2000);
+      // 批次間延遲（避免 API rate limit），快速模式可為 0
+      if (i < batches.length - 1 && this.SKELETON_BATCH_DELAY > 0) {
+        logger.info(
+          `Waiting ${this.SKELETON_BATCH_DELAY}ms before next batch...`,
+          requestId
+        );
+        await this.sleep(this.SKELETON_BATCH_DELAY);
       }
     }
     

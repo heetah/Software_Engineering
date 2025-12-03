@@ -59,12 +59,21 @@ export function initializeAgents(force = false) {
  * 獲取或創建 Coder Coordinator 實例
  */
 export function getCoderCoordinator(config = {}) {
-  if (!agentCache || !agentCache.coderCoordinator) {
-    agentCache = agentCache || initializeAgents(true);
-    agentCache.coderCoordinator = new CoderCoordinator({
-      useMockApi: config.useMockApi || false
-    });
+  if (!agentCache) {
+    agentCache = initializeAgents(true);
   }
+
+  const requestedProvider = (config.llmProvider || "auto").toLowerCase();
+  const apiKeys = config.apiKeys || {};
+
+  // 每次依據目前設定建立新的 CoderCoordinator，確保 API Key / Provider 最新
+  agentCache.coderCoordinator = new CoderCoordinator({
+    useMockApi: config.useMockApi || false,
+    llmProvider: requestedProvider,
+    geminiApiKey: apiKeys.gemini || null,
+    openaiApiKey: apiKeys.openai || null,
+  });
+
   return agentCache.coderCoordinator;
 }
 
@@ -90,7 +99,11 @@ async function main() {
  * 使用 InstructionService 的流程
  * 可被外部調用來處理使用者輸入
  */
-export async function runWithInstructionService(userInput, agents) {
+export async function runWithInstructionService(
+  userInput,
+  agents,
+  options = {}
+) {
   const { architect, verifier, tester } = agents;
 
   try {
@@ -163,7 +176,11 @@ export async function runWithInstructionService(userInput, agents) {
     }
     
     if (coderInstructions) {
-      const coderCoordinator = getCoderCoordinator({ useMockApi: false });
+      const coderCoordinator = getCoderCoordinator({
+        useMockApi: false,
+        llmProvider: options.llmProvider || "auto",
+        apiKeys: options.apiKeys || {},
+      });
       const requestId = `coordinator-${plan.id}`;
       
       // 構建 Coordinator 需要的 payload 格式

@@ -18,3 +18,4 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("update-vision-result", (event, text) => callback(text));
   },
 });
+

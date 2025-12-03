@@ -3,7 +3,7 @@
  * Provides consistent error formats across all API endpoints
  */
 
-const logger = require('./logger');
+import logger from './logger.js';
 
 /**
  * Standard error codes
@@ -119,7 +119,7 @@ function requestIdMiddleware(req, res, next) {
   next();
 }
 
-module.exports = {
+export {
   ERROR_CODES,
   createErrorResponse,
   createSuccessResponse,

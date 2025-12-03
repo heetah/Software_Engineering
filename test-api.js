@@ -1,8 +1,6 @@
 // API 測試腳本
-import dotenv from "dotenv";
-import fetch from "node-fetch";
-
-dotenv.config();
+require("dotenv").config();
+const fetch = require("node-fetch");
 
 const GOOGLE_API_KEY =
   process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || "未設定";

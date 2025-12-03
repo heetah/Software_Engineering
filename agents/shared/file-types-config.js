@@ -55,10 +55,14 @@ const FILE_SIZE_LIMITS = {
   '.log': 2 * 1024 * 1024   // 2 MB (日誌檔)
 };
 
-module.exports = {
+function getMaxFileSize(ext) {
+  return FILE_SIZE_LIMITS[ext] || FILE_SIZE_LIMITS.default;
+}
+
+export {
   FILE_TYPE_CONFIG,
   SECURITY_LEVELS,
   ALLOWED_EXT,
   FILE_SIZE_LIMITS,
-  getMaxFileSize: (ext) => FILE_SIZE_LIMITS[ext] || FILE_SIZE_LIMITS.default
+  getMaxFileSize
 };
