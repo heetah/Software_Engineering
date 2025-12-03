@@ -1,7 +1,7 @@
 {
   "name": "ai-copilot-assistant",
   "version": "1.0.0",
-  "description": "A multi-agent AI copilot application with screenshot capabilities.",
+  "description": "A multi-agent AI copilot application.",
   "type": "module",
   "main": "main.js",
   "scripts": {

@@ -216,7 +216,7 @@ function createHistoryItem(session) {
 }
 
 async function bootstrapHistory() {
-  const sessions = await refreshSessionList();
+  const sessions = await refreshSessionList(undefined, { normalize: true });
   
   if (sessions.length === 0) {
     await createAndActivateSession();
@@ -236,9 +236,12 @@ async function bootstrapHistory() {
   showGreetingIfEmpty();
 }
 
-async function refreshSessionList(activeSessionId) {
+async function refreshSessionList(activeSessionId, options = {}) {
+  const { normalize = false } = options;
   try {
-    const sessions = await ipcRenderer.invoke('history:get-sessions');
+    const sessions = normalize
+      ? await ipcRenderer.invoke('history:normalize')
+      : await ipcRenderer.invoke('history:get-sessions');
     historyList.innerHTML = '';
     sessions.forEach((session) => {
       const item = createHistoryItem(session);
@@ -376,14 +379,25 @@ function appendMessage(text, sender, messageType = 'text') {
 
   const copyButton = document.createElement('button');
   copyButton.classList.add('action-button');
-  copyButton.textContent = 'Copy';
+  
+  // [修改點 1] 將圖示改為文字
+  copyButton.textContent = '複製'; 
+  // copyButton.setAttribute('title', '複製內容'); // 文字按鈕本身就很直觀，這行可留可不留
+
   copyButton.addEventListener('click', () => {
     const textToCopy = messageType === 'thinking' ? '' : text;
     navigator.clipboard.writeText(textToCopy).then(() => {
-      copyButton.textContent = 'Copied';
+      // [修改點 2] 複製後的回饋文字
+      copyButton.textContent = '已複製';
+      
+      // 這裡可以選擇不變色，或者稍微變深一點點表示狀態
+      // copyButton.style.color = 'var(--color-text)'; 
+
       setTimeout(() => {
-        copyButton.textContent = 'Copy';
-      }, 1500);
+        // [修改點 3] 恢復原狀
+        copyButton.textContent = '複製';
+        // copyButton.style.color = ''; 
+      }, 2000);
     });
   });
 
@@ -462,7 +476,19 @@ async function clearAllHistory() {
     if (result.ok) {
       console.log('History cleared successfully.');
       await bootstrapHistory(); 
-      setActivePage('page-chat');
+      const clearBtn = document.getElementById('clear-history-button');
+      if (clearBtn) {
+        const originalText = clearBtn.textContent;
+        clearBtn.textContent = '已清除所有紀錄';
+        clearBtn.style.opacity = '0.7';
+        clearBtn.disabled = true;
+
+        setTimeout(() => {
+          clearBtn.textContent = originalText;
+          clearBtn.style.opacity = '1';
+          clearBtn.disabled = false;
+        }, 2000);
+      }
     } else if (result.cancelled) {
       console.log('History clear operation was cancelled.');
     } else {
@@ -516,7 +542,6 @@ function persistMessage(sessionId, role, content) {
 
 async function createAndActivateSession() {
   const session = await ipcRenderer.invoke('history:create-session');
-  currentSession = session;
   await setActiveSession(session);
   return session;
 }
@@ -531,7 +556,7 @@ async function deleteSession(sessionId) {
     if (currentSession && currentSession.id === sessionId) {
       currentSession = null;
     }
-    const sessions = await refreshSessionList();
+    const sessions = await refreshSessionList(currentSession?.id, { normalize: true });
     if (sessions.length > 0) {
       await setActiveSession(sessions[0]);
     } else {
