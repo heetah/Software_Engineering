@@ -254,103 +254,154 @@ body {
 
 /*
  * ====================================================================
- * 5. 訊息元件 (修改點 3：Copy 按鈕內嵌)
+ * 5. 訊息元件 (完整修復版 - 包含頭像、氣泡、圖示按鈕)
  * ====================================================================
  */
 
+/* --- 1. 訊息群組容器 --- */
 .message-group {
   display: flex;
+  align-items: flex-start;
   margin-bottom: 25px;
+  width: 100%;
   animation: fadeInUp 0.3s ease-out;
 }
-.message-group--ai .message-avatar {
-  color: var(--color-text-light);
-  font-weight: bold;
-}
 
+/* User 的訊息方向反轉 */
 .message-group--user {
-  align-self: flex-end;
   flex-direction: row-reverse;
 }
 
-.message-group--user .message-avatar {
-  margin-left: 15px;
-  margin-right: 0;
-  border-radius: 50%;
-  background: var(--color-bg);
-  box-shadow: var(--shadow-convex);
-}
-.message-group--user .message-bubble {
-  border-radius: 20px;
-  background: var(--color-bg);
-  box-shadow: var(--shadow-convex);
-}
-
+/* --- 2. 頭像樣式 (修復消失問題) --- */
 .message-avatar {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
-  margin-right: 15px;
+  margin-right: 15px; 
+  margin-top: 0;
   display: flex;
   justify-content: center;
   align-items: center;
+  font-size: 12px;
+  font-weight: bold;
   border-radius: 50%;
   background: var(--color-bg);
   box-shadow: var(--shadow-convex);
+  color: var(--color-text-light);
 }
 
+/* User 頭像的間距調整 */
+.message-group--user .message-avatar {
+  margin-right: 0;
+  margin-left: 15px;
+  color: var(--color-text);
+}
+
+/* --- 3. 訊息內容與氣泡 --- */
 .message-content {
   display: flex;
   flex-direction: column;
-  max-width: 80%; /* 限制氣泡最大寬度 */
+  flex: 1; 
+  min-width: 0;
+  max-width: 100%;
 }
 
-/* 訊息氣泡 (通用) */
+/* 氣泡本體 */
 .message-bubble {
+  position: relative;
   padding: 15px 20px;
+  padding-bottom: 42px;
   border-radius: 20px;
   background: var(--color-bg);
   box-shadow: var(--shadow-convex);
-  transition: all 0.2s ease-in-out;
-  
-  /* **修改：為了放置絕對定位的 Copy 按鈕** */
-  position: relative;
-  /* 底部留白，防止文字被按鈕遮住 */
-  padding-bottom: 25px; 
-  
+  color: var(--color-text);
   word-wrap: break-word;
+  width: fit-content; 
+  max-width: 100%;
+  transition: all 0.2s ease-in-out;
 }
 
-/* **修改：Copy 按鈕容器 (現在在氣泡內)** */
+/* User 氣泡靠右 */
+.message-group--user .message-content {
+  align-items: flex-end;
+}
+
+/* 思考中氣泡樣式 */
+.message-bubble--thinking {
+  padding: 15px 20px;
+  padding-bottom: 15px;
+  min-width: 60px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* --- 4. Copy 按鈕 (Soft UI 圖示風格) --- */
 .message-actions {
   position: absolute;
-  bottom: 5px;
-  right: 8px;
+  bottom: 8px;
   margin: 0;
   padding: 0;
-  opacity: 0.6; /* 預設半透明，不搶視覺 */
-  transition: opacity 0.2s;
-}
-.message-bubble:hover .message-actions {
-  opacity: 1; /* 懸停時變明顯 */
+  opacity: 0.5;
+  transition: opacity 0.3s ease;
+  z-index: 5;
 }
 
-/* **修改：Copy 按鈕樣式 (縮小)** */
+/* 懸停氣泡時按鈕變明顯 */
+.message-bubble:hover .message-actions {
+  opacity: 1;
+}
+
+/* AI 按鈕在左下 */
+.message-group--ai .message-actions {
+  left: 10px;
+  right: auto;
+}
+
+/* User 按鈕在右下 */
+.message-group--user .message-actions {
+  right: 10px;
+  left: auto;
+}
+
+/* 按鈕本體樣式 (圓形 Soft UI) */
 .message-actions .action-button {
   border: none;
-  background: var(--color-bg); /* 按鈕背景 */
-  box-shadow: var(--shadow-convex); /* 小凸起 */
-  color: var(--color-text-light);
+  outline: none;
   cursor: pointer;
-  font-size: 10px; /* 字體縮小 */
-  padding: 4px 8px; /* 內距縮小 */
-  border-radius: 8px;
+  
+  /* [形狀修改] 改為膠囊狀，寬度自動 */
+  width: auto; 
+  height: auto;
+  padding: 4px 10px; /* 給文字一點呼吸空間 */
+  border-radius: 8px; /* 圓角矩形 */
+  
+  /* [字體修改] */
+  font-size: 11px; /* 字體稍微縮小 */
+  color: var(--color-text-light); /* [關鍵] 淺灰色文字 */
+  font-weight: normal;
+  
+  /* [背景與陰影] 保持 Soft UI */
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex); 
+  
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* 懸停狀態 */
 .message-actions .action-button:hover {
-  color: var(--color-text);
+  /* 懸停時字體稍微變深，增加可讀性 */
+  color: var(--color-text); 
+  transform: translateY(-1px);
+  box-shadow: 
+    4px 4px 8px var(--color-shadow-dark),
+    -4px -4px 8px var(--color-shadow-light);
 }
+
+/* 點擊狀態 */
 .message-actions .action-button:active {
-  box-shadow: var(--shadow-concave); /* 按下凹陷 */
+  transform: translateY(0);
+  box-shadow: var(--shadow-concave);
 }
 
 
@@ -533,6 +584,134 @@ body {
   margin: 0 0 12px 0;
 }
 
+/* LLM 選擇用單選按鈕群組 */
+.settings-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-radio-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.settings-radio-option input[type="radio"] {
+  accent-color: var(--color-accent-1);
+}
+
+/* Toggle Switch 群組（用於 LLM 選擇） */
+.settings-toggle-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-toggle-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.settings-toggle-option:hover {
+  transform: translateY(-1px);
+  box-shadow: 6px 6px 14px var(--color-shadow-dark);
+}
+
+.toggle-label {
+  font-size: 14px;
+  color: var(--color-text);
+  font-weight: 500;
+  flex: 1;
+}
+
+/* Toggle Switch 在設定頁面的樣式（用於 radio） */
+.settings-toggle-option .toggle-switch__input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+.settings-toggle-option .toggle-switch {
+  width: 50px;
+  height: 28px;
+  flex-shrink: 0;
+  position: relative;
+  display: inline-block;
+}
+
+.settings-toggle-option .toggle-switch__slider {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 28px;
+  background-color: var(--color-bg);
+  box-shadow: var(--shadow-concave);
+  transition: all 0.3s ease;
+}
+
+.settings-toggle-option .toggle-switch__slider::before {
+  content: "";
+  position: absolute;
+  height: 22px;
+  width: 22px;
+  left: 3px;
+  bottom: 3px;
+  border-radius: 50%;
+  background: var(--gradient-accent);
+  box-shadow: var(--shadow-accent);
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* 當 radio 被選中時，滑塊移動到右側 */
+.settings-toggle-option .toggle-switch__input:checked ~ .toggle-switch .toggle-switch__slider::before {
+  transform: translateX(22px);
+  background: var(--color-accent-text);
+  box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* 選中狀態的背景色 */
+.settings-toggle-option .toggle-switch__input:checked ~ .toggle-switch .toggle-switch__slider {
+  background: var(--gradient-accent);
+  box-shadow: var(--shadow-accent);
+}
+
+/* LLM API Key 輸入欄位 */
+.settings-input-group {
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+.settings-input-label {
+  display: block;
+  font-size: 13px;
+  color: var(--color-text-light);
+  margin-bottom: 4px;
+}
+
+.settings-input-field {
+  width: 100%;
+  border-radius: 10px;
+  box-shadow: var(--shadow-concave);
+  background: var(--color-bg);
+}
+
 .input-area.is-readonly {
   background: var(--color-bg);
   padding: 4px;
@@ -546,11 +725,24 @@ body {
   white-space: nowrap;
 }
 
-/* 設定頁面的按鈕 (繼承上方通用，這裡只針對特殊顏色) */
+/* 設定頁面的危險按鈕 (修改點 5：移除黑框) */
 .action-button--danger {
   background: var(--gradient-danger);
   color: var(--color-danger-text);
   box-shadow: var(--shadow-danger);
+  border: none; 
+  outline: none; 
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+/* 為了更好的無障礙體驗，focus 時改用陰影而非黑框 */
+.action-button--danger:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(248, 122, 122, 0.4), var(--shadow-danger);
 }
 
 .action-button--danger:hover {
@@ -561,6 +753,32 @@ body {
 .action-button--danger:active {
   background: var(--gradient-danger);
   box-shadow: var(--shadow-danger-inset);
+}
+
+/* 儲存按鈕樣式 */
+.action-button--save {
+  background: var(--gradient-accent);
+  color: var(--color-accent-text);
+  box-shadow: var(--shadow-accent);
+  margin-top: 15px;
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.action-button--save:hover {
+  background: linear-gradient(135deg, #9aa4ff, #7a88f8);
+  box-shadow: 6px 6px 16px var(--color-shadow-dark);
+  transform: translateY(-1px);
+}
+
+.action-button--save:active {
+  box-shadow: var(--shadow-concave);
+  transform: translateY(1px);
 }
 
 /* ====================================================================

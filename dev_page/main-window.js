@@ -25,10 +25,19 @@ const pageSettings = document.getElementById('page-settings');
 const dataPathDisplay = document.getElementById('data-path-display');
 const clearHistoryButton = document.getElementById('clear-history-button');
 const themeToggle = document.getElementById('theme-toggle-input');
+const llmProviderAuto = document.getElementById('llm-provider-auto');
+const llmProviderGemini = document.getElementById('llm-provider-gemini');
+const llmProviderOpenAI = document.getElementById('llm-provider-openai');
+const geminiApiKeyInput = document.getElementById('gemini-api-key-input');
+const openaiApiKeyInput = document.getElementById('openai-api-key-input');
+const saveApiKeysButton = document.getElementById('save-api-keys-button');
 
 /* 應用程式狀態 */
 let currentSession = null;
 let thinkingBubbleElement = null;
+let currentLlmProvider = (localStorage.getItem('llmProvider') || 'auto');
+let currentGeminiApiKey = localStorage.getItem('geminiApiKey') || '';
+let currentOpenAIApiKey = localStorage.getItem('openaiApiKey') || '';
 
 /* 綁定事件監聽器 */
 sendButton.addEventListener('click', () => {
@@ -79,6 +88,98 @@ if (themeToggle) {
   });
 }
 
+// LLM 提供者選擇
+if (llmProviderAuto && llmProviderGemini && llmProviderOpenAI) {
+  // 初始化選中狀態
+  const initLlmProvider = () => {
+    if (currentLlmProvider === 'gemini') {
+      llmProviderGemini.checked = true;
+    } else if (currentLlmProvider === 'openai') {
+      llmProviderOpenAI.checked = true;
+    } else {
+      llmProviderAuto.checked = true;
+      currentLlmProvider = 'auto';
+    }
+  };
+  
+  initLlmProvider();
+
+  const handleLlmProviderChange = (provider) => {
+    currentLlmProvider = provider;
+    localStorage.setItem('llmProvider', provider);
+    console.log('LLM Provider changed to:', provider);
+  };
+
+  // 使用 change 事件監聽器
+  llmProviderAuto.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      handleLlmProviderChange('auto');
+    }
+  });
+  
+  llmProviderGemini.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      handleLlmProviderChange('gemini');
+    }
+  });
+  
+  llmProviderOpenAI.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      handleLlmProviderChange('openai');
+    }
+  });
+  
+  // 確保點擊整個 label 區域都能觸發 radio
+  const toggleOptions = document.querySelectorAll('.settings-toggle-option');
+  toggleOptions.forEach((option) => {
+    option.addEventListener('click', (e) => {
+      // 如果點擊的不是 input 本身，確保觸發 input
+      const input = option.querySelector('.toggle-switch__input');
+      if (input && e.target !== input) {
+        input.checked = true;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+  });
+}
+
+// API Key 輸入綁定（不自動儲存，等待使用者點擊儲存按鈕）
+if (geminiApiKeyInput) {
+  if (currentGeminiApiKey) {
+    geminiApiKeyInput.value = currentGeminiApiKey;
+  }
+}
+
+if (openaiApiKeyInput) {
+  if (currentOpenAIApiKey) {
+    openaiApiKeyInput.value = currentOpenAIApiKey;
+  }
+}
+
+// 儲存按鈕功能
+if (saveApiKeysButton) {
+  saveApiKeysButton.addEventListener('click', () => {
+    // 儲存 API Keys
+    if (geminiApiKeyInput) {
+      currentGeminiApiKey = geminiApiKeyInput.value.trim();
+      localStorage.setItem('geminiApiKey', currentGeminiApiKey);
+    }
+    if (openaiApiKeyInput) {
+      currentOpenAIApiKey = openaiApiKeyInput.value.trim();
+      localStorage.setItem('openaiApiKey', currentOpenAIApiKey);
+    }
+    
+    // 顯示儲存成功提示
+    const originalText = saveApiKeysButton.textContent;
+    saveApiKeysButton.textContent = '已儲存';
+    saveApiKeysButton.style.opacity = '0.8';
+    setTimeout(() => {
+      saveApiKeysButton.textContent = originalText;
+      saveApiKeysButton.style.opacity = '1';
+    }, 1500);
+  });
+}
+
 /* 應用程式初始化 */
 bootstrapHistory().catch((error) => console.error('Failed to initialise history', error));
 
@@ -115,7 +216,7 @@ function createHistoryItem(session) {
 }
 
 async function bootstrapHistory() {
-  const sessions = await refreshSessionList();
+  const sessions = await refreshSessionList(undefined, { normalize: true });
   
   if (sessions.length === 0) {
     await createAndActivateSession();
@@ -135,9 +236,12 @@ async function bootstrapHistory() {
   showGreetingIfEmpty();
 }
 
-async function refreshSessionList(activeSessionId) {
+async function refreshSessionList(activeSessionId, options = {}) {
+  const { normalize = false } = options;
   try {
-    const sessions = await ipcRenderer.invoke('history:get-sessions');
+    const sessions = normalize
+      ? await ipcRenderer.invoke('history:normalize')
+      : await ipcRenderer.invoke('history:get-sessions');
     historyList.innerHTML = '';
     sessions.forEach((session) => {
       const item = createHistoryItem(session);
@@ -210,7 +314,12 @@ async function sendMessage() {
   ipcRenderer.send('message-to-agent', {
     type: 'text',
     content: messageText,
-    session: getSessionEnvelope(session)
+    session: getSessionEnvelope(session),
+    llmProvider: currentLlmProvider,
+    apiKeys: {
+      gemini: currentGeminiApiKey || null,
+      openai: currentOpenAIApiKey || null
+    }
   });
   
   setActivePage('page-chat');
@@ -235,7 +344,12 @@ async function handleFileUpload(event) {
   ipcRenderer.send('message-to-agent', {
     type: 'file',
     path: file.path,
-    session: getSessionEnvelope(session)
+    session: getSessionEnvelope(session),
+    llmProvider: currentLlmProvider,
+    apiKeys: {
+      gemini: currentGeminiApiKey || null,
+      openai: currentOpenAIApiKey || null
+    }
   });
   fileUploadInput.value = '';
   setActivePage('page-chat');
@@ -265,14 +379,25 @@ function appendMessage(text, sender, messageType = 'text') {
 
   const copyButton = document.createElement('button');
   copyButton.classList.add('action-button');
-  copyButton.textContent = 'Copy';
+  
+  // [修改點 1] 將圖示改為文字
+  copyButton.textContent = '複製'; 
+  // copyButton.setAttribute('title', '複製內容'); // 文字按鈕本身就很直觀，這行可留可不留
+
   copyButton.addEventListener('click', () => {
     const textToCopy = messageType === 'thinking' ? '' : text;
     navigator.clipboard.writeText(textToCopy).then(() => {
-      copyButton.textContent = 'Copied';
+      // [修改點 2] 複製後的回饋文字
+      copyButton.textContent = '已複製';
+      
+      // 這裡可以選擇不變色，或者稍微變深一點點表示狀態
+      // copyButton.style.color = 'var(--color-text)'; 
+
       setTimeout(() => {
-        copyButton.textContent = 'Copy';
-      }, 1500);
+        // [修改點 3] 恢復原狀
+        copyButton.textContent = '複製';
+        // copyButton.style.color = ''; 
+      }, 2000);
     });
   });
 
@@ -351,7 +476,19 @@ async function clearAllHistory() {
     if (result.ok) {
       console.log('History cleared successfully.');
       await bootstrapHistory(); 
-      setActivePage('page-chat');
+      const clearBtn = document.getElementById('clear-history-button');
+      if (clearBtn) {
+        const originalText = clearBtn.textContent;
+        clearBtn.textContent = '已清除所有紀錄';
+        clearBtn.style.opacity = '0.7';
+        clearBtn.disabled = true;
+
+        setTimeout(() => {
+          clearBtn.textContent = originalText;
+          clearBtn.style.opacity = '1';
+          clearBtn.disabled = false;
+        }, 2000);
+      }
     } else if (result.cancelled) {
       console.log('History clear operation was cancelled.');
     } else {
@@ -405,7 +542,6 @@ function persistMessage(sessionId, role, content) {
 
 async function createAndActivateSession() {
   const session = await ipcRenderer.invoke('history:create-session');
-  currentSession = session;
   await setActiveSession(session);
   return session;
 }
@@ -420,7 +556,7 @@ async function deleteSession(sessionId) {
     if (currentSession && currentSession.id === sessionId) {
       currentSession = null;
     }
-    const sessions = await refreshSessionList();
+    const sessions = await refreshSessionList(currentSession?.id, { normalize: true });
     if (sessions.length > 0) {
       await setActiveSession(sessions[0]);
     } else {
