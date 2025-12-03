@@ -5,7 +5,7 @@
  */
 
 const path = require('path');
-const { callCloudAPI } = require('../api-adapter');
+const { callCloudAPI } = require('../api-adapter.cjs');
 
 class SystemGenerator {
   constructor(config = {}) {
