@@ -59,11 +59,54 @@ class ContractsAgent {
     async enhanceWithAI(payload) {
         console.log(`🤖 Calling ${this.apiType} API for payload enhancement...`);
         
+        // 保存原始 files 的 template 欄位
+        const originalTemplates = this.extractTemplates(payload);
+        
+        let enhanced;
         if (this.apiType === 'gemini') {
-            return this.enhanceWithGemini(payload);
+            enhanced = await this.enhanceWithGemini(payload);
         } else {
-            return this.enhanceWithAnthropic(payload);
+            enhanced = await this.enhanceWithAnthropic(payload);
         }
+        
+        // 恢復 template 欄位到增強後的 payload
+        this.restoreTemplates(enhanced, originalTemplates);
+        
+        return enhanced;
+    }
+    
+    /**
+     * 提取所有檔案的 template
+     */
+    extractTemplates(payload) {
+        const files = payload.output?.coder_instructions?.files || [];
+        const templates = {};
+        
+        files.forEach(file => {
+            if (file.template) {
+                templates[file.path] = file.template;
+            }
+        });
+        
+        console.log(`📋 Extracted ${Object.keys(templates).length} templates before AI processing`);
+        return templates;
+    }
+    
+    /**
+     * 恢復 template 欄位到增強後的檔案
+     */
+    restoreTemplates(payload, templates) {
+        const files = payload.output?.coder_instructions?.files || [];
+        let restored = 0;
+        
+        files.forEach(file => {
+            if (templates[file.path]) {
+                file.template = templates[file.path];
+                restored++;
+            }
+        });
+        
+        console.log(`✅ Restored ${restored} templates after AI processing`);
     }
     
     /**

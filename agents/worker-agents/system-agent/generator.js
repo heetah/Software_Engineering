@@ -31,6 +31,27 @@ class SystemGenerator {
 
   async generate({ skeleton, fileSpec, context }) {
     console.log(`[Generator] Processing ${fileSpec.path}`);
+    
+    // 優先級 1: 使用 template（Architect 提供的完整代碼）
+    if (fileSpec.template && fileSpec.template.trim()) {
+      console.log(`[Generator] ✅ Using template (${fileSpec.template.length} chars)`);
+      return {
+        content: fileSpec.template,
+        tokensUsed: 0,
+        method: 'template'
+      };
+    }
+    
+    // 優先級 2: 使用 contracts 結構（example2 格式）
+    const hasContracts = context.contracts && (
+      (context.contracts.dom && context.contracts.dom.length > 0) ||
+      (context.contracts.api && context.contracts.api.length > 0)
+    );
+    
+    if (hasContracts) {
+      console.log(`[Generator] ✓ Using contracts-based generation`);
+    }
+    
     console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
     
     if (this.useMockApi) {
