@@ -37,11 +37,23 @@ const __dirname = path.dirname(__filename);
 // ===== VerifierAgent Class =====
 export default class VerifierAgent extends BaseAgent {
   constructor() {
+    // 支援 OPENAI_API_KEY, API_KEY (舊版), CLOUD_API_KEY (fallback)
+    const apiKey = process.env.OPENAI_API_KEY || process.env.API_KEY || process.env.CLOUD_API_KEY;
+    const baseUrl = process.env.OPENAI_BASE_URL || process.env.BASE_URL || 
+                   (process.env.CLOUD_API_ENDPOINT ? this._detectBaseUrl(process.env.CLOUD_API_ENDPOINT) : "https://api.openai.com/v1");
+    
     super("Verifier Agent", "JSON", "verifier", {
-      baseUrl: process.env.OPENAI_BASE_URL || process.env.BASE_URL || "https://api.openai.com/v1",
-      apiKey: process.env.OPENAI_API_KEY || process.env.API_KEY
+      baseUrl,
+      apiKey
     });
     this.temperature = 0.1;
+  }
+
+  _detectBaseUrl(endpoint) {
+    if (endpoint.includes('generativelanguage.googleapis.com')) {
+      return 'https://generativelanguage.googleapis.com/v1beta';
+    }
+    return endpoint;
   }
 
   /**

@@ -4,17 +4,63 @@
  */
 
 const path = require('path');
-const { callCloudAPI } = require('../api-adapter');
+const { callCloudAPI } = require('../api-adapter.cjs');
 
 class MarkupGenerator {
   constructor(config = {}) {
-    this.cloudApiEndpoint = config.cloudApiEndpoint || process.env.CLOUD_API_ENDPOINT;
-    this.cloudApiKey = config.cloudApiKey || process.env.CLOUD_API_KEY;
+    // API 配置優先順序：1. config 參數 2. CLOUD_API 3. OPENAI_API
+    this.cloudApiEndpoint = config.cloudApiEndpoint || 
+                           process.env.CLOUD_API_ENDPOINT || 
+                           process.env.OPENAI_BASE_URL;
+    this.cloudApiKey = config.cloudApiKey || 
+                      process.env.CLOUD_API_KEY || 
+                      process.env.OPENAI_API_KEY;
     this.useMockApi = !this.cloudApiEndpoint;
+    
+    // 🔍 Debug: 記錄配置
+    console.log('[MarkupGenerator] Initialized:', {
+      hasConfigEndpoint: !!config.cloudApiEndpoint,
+      hasConfigKey: !!config.cloudApiKey,
+      hasEnvCloudEndpoint: !!process.env.CLOUD_API_ENDPOINT,
+      hasEnvOpenaiEndpoint: !!process.env.OPENAI_BASE_URL,
+      finalEndpoint: this.cloudApiEndpoint ? this.cloudApiEndpoint.substring(0, 50) + '...' : 'MISSING',
+      willUseMock: this.useMockApi
+    });
   }
 
   async generate({ skeleton, fileSpec, context }) {
     console.log(`[Generator] Processing ${fileSpec.path}`);
+    
+    // 優先級 1: 使用 contracts 結構（example2 格式）
+    const hasContracts = context.contracts && (
+      (context.contracts.dom && context.contracts.dom.length > 0) ||
+      (context.contracts.api && context.contracts.api.length > 0)
+    );
+    
+    if (hasContracts) {
+      console.log(`[Generator] ✓ Using contracts-based generation (preferred method)`);
+      console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
+      
+      if (this.useMockApi) {
+        return this.generateWithMock({ skeleton, fileSpec, context });
+      } else {
+        return this.generateWithCloudAPI({ skeleton, fileSpec, context });
+      }
+    }
+    
+    // 優先級 2: 使用 template（Architect 提供的完整代碼）
+    if (fileSpec.template && fileSpec.template.trim()) {
+      console.log(`[Generator] ⚠ Using template fallback (${fileSpec.template.length} chars)`);
+      console.log(`[Generator] Note: Consider using contracts for better flexibility`);
+      return {
+        content: fileSpec.template,
+        tokensUsed: 0,
+        method: 'template'
+      };
+    }
+    
+    // 優先級 3: AI 生成（無 contracts 也無 template）
+    console.log(`[Generator] ⚠ No contracts or template - using AI generation`);
     console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
     
     if (this.useMockApi) {
@@ -45,7 +91,7 @@ class MarkupGenerator {
         throw new Error('API returned empty content (possibly blocked by safety filters)');
       }
       
-      let cleanContent = content
+      const cleanContent = content
         .replace(/^```html\n/, '')
         .replace(/^```\n/, '')
         .replace(/\n```$/, '')
@@ -57,22 +103,6 @@ class MarkupGenerator {
         console.warn('[Generator] Original content preview:', content.substring(0, 200));
         throw new Error('Content became empty after markdown removal');
       }
-      
-      // 驗證並修正檔案路徑引用（必須在返回前執行）
-      cleanContent = this.fixFileReferences(cleanContent, fileSpec, context);
-      
-      // 二次驗證：確保沒有錯誤的引用
-      const jsFiles = (context.allFiles || []).filter(f => f.path.endsWith('.js') || f.path.endsWith('.mjs') || f.path.endsWith('.cjs'));
-      jsFiles.forEach(jsFile => {
-        if (jsFile.path === 'public/index.js') {
-          const correctPath = path.relative(path.dirname(fileSpec.path), jsFile.path).replace(/\\/g, '/');
-          // 強制替換所有可能的錯誤引用
-          cleanContent = cleanContent.replace(/src=['"]\.\/app\.js['"]/gi, `src="${correctPath}"`);
-          cleanContent = cleanContent.replace(/src=['"]app\.js['"]/gi, `src="${correctPath}"`);
-          cleanContent = cleanContent.replace(/src=['"]\.\/main\.js['"]/gi, `src="${correctPath}"`);
-          cleanContent = cleanContent.replace(/src=['"]main\.js['"]/gi, `src="${correctPath}"`);
-        }
-      });
       
       return {
         content: cleanContent,
@@ -125,8 +155,31 @@ class MarkupGenerator {
       prompt += `Description: ${description}\n\n`;
     }
     
+    // ========== 自動檢測：config.js 和腳本載入順序 ==========
+    const hasConfigJs = allFiles.some(f => f.path === 'config.js' || f.path.endsWith('/config.js'));
+    const hasAppJs = allFiles.some(f => f.path.endsWith('app.js') || f.path.includes('.js'));
+    
+    if (hasConfigJs && hasAppJs) {
+      prompt += `🔴 CRITICAL REQUIREMENT - SCRIPT LOADING ORDER:\n`;
+      prompt += `The HTML MUST load scripts in this EXACT order in <head>:\n`;
+      prompt += `1. <script src="config.js"></script>  <!-- FIRST: Configuration -->\n`;
+      prompt += `2. <script src="app.js" defer></script>  <!-- SECOND: Application logic -->\n`;
+      prompt += `This order is MANDATORY because app.js depends on window.APP_CONFIG from config.js.\n`;
+      prompt += `If you violate this order, the application WILL FAIL.\n\n`;
+    }
+    
+    // ========== DOM 元素命名規範 ==========
+    prompt += `🔴 DOM ELEMENT NAMING STANDARDS:\n`;
+    prompt += `1. Form IDs: Use full descriptive names (e.g., 'add-expense-form', NOT 'form')\n`;
+    prompt += `2. Input IDs: Prefix with context (e.g., 'expense-amount', 'edit-expense-amount')\n`;
+    prompt += `3. Modal IDs: Use pattern '<feature>-modal' (e.g., 'edit-expense-modal')\n`;
+    prompt += `4. Modal form fields: Prefix with modal context (e.g., 'edit-expense-description')\n`;
+    prompt += `5. Filter dropdowns: If value 'all' means no filter, include it as default <option>\n`;
+    prompt += `6. Container IDs: Use '-body' or '-container' suffix (e.g., 'expense-table-body')\n`;
+    prompt += `7. Display elements: Use descriptive IDs (e.g., 'total-spending', NOT 'total')\n\n`;
+    
     if (requirements.length > 0) {
-      prompt += `Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
+      prompt += `Additional Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
     }
     
     // ← 新增：如果有 contracts，顯示相關資訊
@@ -135,9 +188,9 @@ class MarkupGenerator {
       
       // ✨ DOM contracts - 最重要！定義必須存在的 HTML 元素
       if (contracts.dom && contracts.dom.length > 0) {
-        const relevantDom = contracts.dom.filter(dom => 
-          dom.producers.includes(filePath)
-        );
+        // For HTML files, show ALL DOM elements (HTML produces them, JavaScript consumes them)
+        // The accessedBy field indicates which JS files consume these elements
+        const relevantDom = contracts.dom;
         
         if (relevantDom.length > 0) {
           prompt += `\n⚠️ CRITICAL: DOM STRUCTURE REQUIREMENTS ⚠️\n`;
@@ -145,8 +198,18 @@ class MarkupGenerator {
           prompt += `Missing ANY of these will cause JavaScript errors!\n\n`;
           
           relevantDom.forEach((dom, idx) => {
-            prompt += `DOM Contract #${idx + 1}: ${dom.description}\n`;
+            prompt += `DOM Contract #${idx + 1}: ${dom.description || dom.purpose}\n`;
             
+            // Support simple format: { id, type, purpose, accessedBy }
+            if (dom.id) {
+              prompt += `  Element ID: #${dom.id}\n`;
+              prompt += `  Element Type: <${dom.type}>\n`;
+              if (dom.accessedBy) {
+                prompt += `  Accessed by: ${dom.accessedBy.join(', ')}\n`;
+              }
+            }
+            
+            // Support complex format: { templateId, containerId, requiredElements }
             if (dom.templateId) {
               prompt += `  Template ID: #${dom.templateId}\n`;
             }
@@ -154,15 +217,19 @@ class MarkupGenerator {
               prompt += `  Container ID: #${dom.containerId}\n`;
             }
             
-            prompt += `  Required Elements:\n`;
-            dom.requiredElements.forEach(elem => {
-              prompt += `    • ${elem.selector} <${elem.element}>\n`;
-              prompt += `      Purpose: ${elem.purpose}\n`;
-              if (elem.attributes) {
-                prompt += `      Attributes: ${JSON.stringify(elem.attributes)}\n`;
-              }
-              prompt += `      Used by: ${elem.consumers.join(', ')}\n`;
-            });
+            if (dom.requiredElements && dom.requiredElements.length > 0) {
+              prompt += `  Required Elements:\n`;
+              dom.requiredElements.forEach(elem => {
+                prompt += `    • ${elem.selector} <${elem.element}>\n`;
+                prompt += `      Purpose: ${elem.purpose}\n`;
+                if (elem.attributes) {
+                  prompt += `      Attributes: ${JSON.stringify(elem.attributes)}\n`;
+                }
+                if (elem.consumers) {
+                  prompt += `      Used by: ${elem.consumers.join(', ')}\n`;
+                }
+              });
+            }
             prompt += `\n`;
           });
           
@@ -225,43 +292,13 @@ class MarkupGenerator {
       const cssFiles = allFiles.filter(f => f.path.endsWith('.css'));
       const jsFiles = allFiles.filter(f => f.path.endsWith('.js'));
       
-      // 計算相對路徑（從 HTML 檔案位置到 CSS/JS 檔案）
-      const htmlDir = path.dirname(filePath);
-      
       if (cssFiles.length > 0) {
-        prompt += `CSS files available:\n`;
-        cssFiles.forEach(cssFile => {
-          // 計算相對路徑
-          const relativePath = path.relative(htmlDir, cssFile.path).replace(/\\/g, '/');
-          prompt += `  - ${cssFile.path} (use relative path: "${relativePath}")\n`;
-        });
+        prompt += `CSS files: ${cssFiles.map(f => f.path).join(', ')}\n`;
       }
       if (jsFiles.length > 0) {
-        prompt += `JS files available:\n`;
-        jsFiles.forEach(jsFile => {
-          // 計算相對路徑
-          const relativePath = path.relative(htmlDir, jsFile.path).replace(/\\/g, '/');
-          prompt += `  - ${jsFile.path} (use relative path: "${relativePath}")\n`;
-        });
+        prompt += `JS files: ${jsFiles.map(f => f.path).join(', ')}\n`;
       }
-      prompt += `\nCRITICAL: Use the relative paths shown above in <link> and <script> tags.\n`;
-      prompt += `For example, if HTML is at "public/index.html" and CSS is at "public/style.css", use href="style.css" (not "public/style.css" or "styles/main.css").\n`;
-      prompt += `CRITICAL: If JS file is "public/index.js", use src="index.js" (NOT "app.js" or "main.js" or "scripts/main.js").\n`;
-      prompt += `CRITICAL: Match the EXACT filename from the relative path above.\n\n`;
-    }
-    
-    // 優先使用 context 中的完整用戶需求，而不是僅依賴文件描述
-    const userRequirement = context.userRequirement || context.projectSummary || fileSpec.description || '';
-    const projectRequirements = context.projectRequirements || [];
-    const isCalculator = userRequirement.toLowerCase().includes('calculator') || 
-                        userRequirement.toLowerCase().includes('計算') ||
-                        userRequirement.toLowerCase().includes('計算機') ||
-                        fileSpec.description?.toLowerCase().includes('calculator') ||
-                        fileSpec.description?.toLowerCase().includes('計算');
-    
-    // 在 prompt 開頭添加用戶需求
-    if (userRequirement && userRequirement !== fileSpec.description) {
-      prompt = `=== USER REQUIREMENT ===\n${userRequirement}\n\n${projectRequirements.length > 0 ? `=== PROJECT REQUIREMENTS ===\n${projectRequirements.join('\n')}\n\n` : ''}${prompt}`;
+      prompt += `\nInclude proper <link> and <script> tags.\n\n`;
     }
     
     prompt += `Generate complete, production-ready HTML with:\n`;
@@ -270,137 +307,10 @@ class MarkupGenerator {
     prompt += `- data-* attributes for all interactive elements that need JS handling\n`;
     prompt += `- CRITICAL: All IDs, classes, data-* attributes, and element text MUST match skeleton exactly\n`;
     prompt += `- CRITICAL: Any symbols or values in buttons/inputs that JS will read must be consistent\n`;
-    prompt += `- CRITICAL: Use EXACT relative paths shown above for <link> and <script> tags\n`;
-    prompt += `- CRITICAL: Do NOT invent paths like "styles/main.css" or "scripts/main.js" - use the actual relative paths provided above\n`;
-    prompt += `- The HTML file is at: ${filePath}\n`;
-    prompt += `- Use relative paths from the HTML file's directory to the CSS/JS files\n`;
-    if (isCalculator) {
-      prompt += `\nCALCULATOR-SPECIFIC REQUIREMENTS:\n`;
-      prompt += `- Create a well-structured calculator layout:\n`;
-      prompt += `  * Display area at the top (use <div> or <input> with id="display")\n`;
-      prompt += `  * Buttons container with class="buttons" using CSS Grid\n`;
-      prompt += `  * Number buttons (0-9) with values matching their text\n`;
-      prompt += `  * Operator buttons (+, -, *, /) with distinct styling classes\n`;
-      prompt += `  * Equals button (=) and clear button (C)\n`;
-      prompt += `  * Use semantic structure for better accessibility\n`;
-    }
-    prompt += `\nReturn ONLY the code, no markdown.`;
+    prompt += `- Include proper <link> and <script> tags matching actual file names\n\n`;
+    prompt += `Return ONLY the code, no markdown.`;
     
     return prompt;
-  }
-
-  /**
-   * 修正 HTML 中的檔案引用路徑
-   * 確保使用正確的相對路徑和檔案名稱
-   */
-  fixFileReferences(htmlContent, fileSpec, context) {
-    const htmlDir = path.dirname(fileSpec.path);
-    const allFiles = context.allFiles || [];
-    
-    // 找出 CSS 和 JS 檔案
-    const cssFiles = allFiles.filter(f => f.path.endsWith('.css'));
-    const jsFiles = allFiles.filter(f => f.path.endsWith('.js') || f.path.endsWith('.mjs') || f.path.endsWith('.cjs'));
-    
-    // 修正 CSS 引用
-    cssFiles.forEach(cssFile => {
-      const correctPath = path.relative(htmlDir, cssFile.path).replace(/\\/g, '/');
-      const fileName = path.basename(cssFile.path);
-      
-      // 替換錯誤的路徑模式
-      const patterns = [
-        /href=["']styles\/[^"']+\.css["']/gi,
-        /href=["']css\/[^"']+\.css["']/gi,
-        /href=["']\.\/styles\/[^"']+\.css["']/gi,
-        /href=["']public\/[^"']+\.css["']/gi
-      ];
-      
-      patterns.forEach(pattern => {
-        htmlContent = htmlContent.replace(pattern, `href="${correctPath}"`);
-      });
-      
-      // 確保使用正確的檔案名稱
-      if (cssFile.path === 'public/style.css' && !htmlContent.includes(`href="${correctPath}"`)) {
-        // 如果沒有找到正確的引用，添加或替換
-        if (htmlContent.includes('<link')) {
-          htmlContent = htmlContent.replace(/<link[^>]*rel=["']stylesheet["'][^>]*>/gi, 
-            `<link rel="stylesheet" href="${correctPath}">`);
-        } else if (htmlContent.includes('</head>')) {
-          htmlContent = htmlContent.replace('</head>', `  <link rel="stylesheet" href="${correctPath}">\n</head>`);
-        }
-      }
-    });
-    
-      // 修正 JS 引用
-      jsFiles.forEach(jsFile => {
-        const correctPath = path.relative(htmlDir, jsFile.path).replace(/\\/g, '/');
-        const fileName = path.basename(jsFile.path);
-        
-        // 替換錯誤的路徑模式（更全面的模式匹配）
-        const patterns = [
-          /src=["']scripts\/[^"']+\.js["']/gi,
-          /src=["']js\/[^"']+\.js["']/gi,
-          /src=["']\.\/scripts\/[^"']+\.js["']/gi,
-          /src=["']public\/[^"']+\.js["']/gi,
-          /src=["']app\.js["']/gi,  // 特別處理 app.js → index.js
-          /src=["']main\.js["']/gi,  // 特別處理 main.js → index.js
-          /src=["'][^"']*app\.js["']/gi,  // 任何包含 app.js 的路徑
-          /src=["'][^"']*main\.js["']/gi  // 任何包含 main.js 的路徑
-        ];
-        
-        patterns.forEach(pattern => {
-          if (jsFile.path === 'public/index.js') {
-            htmlContent = htmlContent.replace(pattern, `src="${correctPath}"`);
-          } else {
-            htmlContent = htmlContent.replace(pattern, `src="${correctPath}"`);
-          }
-        });
-        
-        // 強制修正：如果 HTML 中有任何 script 標籤但路徑不對，全部替換
-        if (jsFile.path === 'public/index.js') {
-          // 先替換所有可能的錯誤引用模式
-          const errorPatterns = [
-            /src=['"]\.\/app\.js['"]/gi,
-            /src=['"]app\.js['"]/gi,
-            /src=['"]\.\/main\.js['"]/gi,
-            /src=['"]main\.js['"]/gi,
-            /src=['"]scripts\/[^"']+\.js['"]/gi,
-            /src=['"]js\/[^"']+\.js['"]/gi
-          ];
-          
-          errorPatterns.forEach(pattern => {
-            htmlContent = htmlContent.replace(pattern, `src="${correctPath}"`);
-          });
-          
-          // 找出所有 script 標籤並檢查
-          const scriptRegex = /<script[^>]*src=["']([^"']+)["'][^>]*><\/script>/gi;
-          let match;
-          const matches = [];
-          while ((match = scriptRegex.exec(htmlContent)) !== null) {
-            matches.push({ full: match[0], src: match[1] });
-          }
-          
-          // 替換所有錯誤的引用
-          matches.forEach(m => {
-            const currentSrc = m.src;
-            if (currentSrc !== correctPath && (currentSrc.includes('app.js') || currentSrc.includes('main.js') || currentSrc.includes('scripts/') || currentSrc.includes('js/'))) {
-              htmlContent = htmlContent.replace(m.full, `<script src="${correctPath}"></script>`);
-            }
-          });
-          
-          // 如果還是沒有正確的引用，強制添加或替換
-          if (!htmlContent.includes(`src="${correctPath}"`)) {
-            if (htmlContent.includes('<script')) {
-              // 替換所有 script 標籤
-              htmlContent = htmlContent.replace(/<script[^>]*src=["'][^"']+["'][^>]*><\/script>/gi, 
-                `<script src="${correctPath}"></script>`);
-            } else if (htmlContent.includes('</body>')) {
-              htmlContent = htmlContent.replace('</body>', `  <script src="${correctPath}"></script>\n</body>`);
-            }
-          }
-        }
-      });
-    
-    return htmlContent;
   }
 }
 

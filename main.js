@@ -46,6 +46,49 @@ let captureWindow = null;
 let isCapturing = false;
 
 // --- HEAD: Database Functions ---
+async function normalizeSessions() {
+  // Re-sequence sessions to be contiguous and refresh titles (Session 001, 002, ...)
+  const rows = await all(
+    "SELECT id, sequence, title, created_at FROM sessions ORDER BY created_at ASC"
+  );
+  if (!rows || rows.length === 0) return [];
+
+  const planned = rows.map((row, idx) => ({
+    id: row.id,
+    newSequence: idx + 1,
+    newTitle: `Session ${String(idx + 1).padStart(3, "0")}`,
+  }));
+
+  // Two-phase update to avoid UNIQUE conflicts on sequence
+  await run("BEGIN IMMEDIATE");
+  try {
+    for (const p of planned) {
+      await run("UPDATE sessions SET sequence = ? WHERE id = ?", [
+        p.newSequence + 1000000,
+        p.id,
+      ]);
+    }
+    for (const p of planned) {
+      await run("UPDATE sessions SET sequence = ?, title = ? WHERE id = ?", [
+        p.newSequence,
+        p.newTitle,
+        p.id,
+      ]);
+    }
+    await run("COMMIT");
+  } catch (error) {
+    await run("ROLLBACK").catch(() => {});
+    throw error;
+  }
+
+  return all(
+    `SELECT s.id, s.sequence, s.title, s.created_at, COALESCE(m.message_count, 0) AS message_count
+     FROM sessions AS s
+     LEFT JOIN (SELECT session_id, COUNT(*) AS message_count FROM messages GROUP BY session_id) AS m ON m.session_id = s.id
+     ORDER BY s.created_at DESC`
+  );
+}
+
 function initDatabase() {
   return new Promise((resolve, reject) => {
     const dbPath = path.join(app.getPath("userData"), "chat-history.db");
@@ -135,7 +178,7 @@ function all(sql, params = []) {
 
 // --- HEAD: IPC Handlers (History, Settings, Coordinator) ---
 function registerHistoryHandlers() {
-  console.log("✅ Main Process: Registering history handlers...");
+  console.log("Main Process: Registering history handlers...");
   ipcMain.handle("history:create-session", async () => {
     const row = await get("SELECT MAX(sequence) AS maxSeq FROM sessions");
     const nextSeq = (row?.maxSeq || 0) + 1;
@@ -154,6 +197,10 @@ function registerHistoryHandlers() {
        LEFT JOIN (SELECT session_id, COUNT(*) AS message_count FROM messages GROUP BY session_id) AS m ON m.session_id = s.id
        ORDER BY s.created_at DESC`
     );
+  });
+
+  ipcMain.handle("history:normalize", async () => {
+    return normalizeSessions();
   });
 
   ipcMain.handle("history:get-messages", async (_event, sessionId) => {
@@ -182,6 +229,20 @@ function registerHistoryHandlers() {
       return { ok: true };
     }
   );
+
+  // 刪除單一會話（並透過 ON DELETE CASCADE 一併刪除其訊息）
+  ipcMain.handle("history:delete-session", async (_event, sessionId) => {
+    if (!sessionId) {
+      return { ok: false, error: "sessionId is required" };
+    }
+    try {
+      await run("DELETE FROM sessions WHERE id = ?", [sessionId]);
+      return { ok: true };
+    } catch (error) {
+      console.error("Failed to delete session", error);
+      return { ok: false, error: error.message };
+    }
+  });
 
   ipcMain.handle("history:clear-all", async (event) => {
     const window = BrowserWindow.fromWebContents(event.sender);
@@ -225,7 +286,7 @@ function registerCoordinatorBridge() {
 
   ipcMain.on("message-to-agent", async (event, payload) => {
     try {
-      const { type, content, session } = payload || {};
+      const { type, content, session, llmProvider, apiKeys } = payload || {};
       if (!content || type !== "text") {
         console.warn("Received invalid message format:", payload);
         return;
@@ -236,11 +297,6 @@ function registerCoordinatorBridge() {
           50
         )}...`
       );
-      event.sender.send("message-from-agent", {
-        type: "text",
-        content: "Processing your request, please wait...",
-      });
-
       let initializedAgents;
       try {
         const result = await initializeCoordinator();
@@ -258,7 +314,11 @@ function registerCoordinatorBridge() {
       try {
         plan = await coordinatorModule.runWithInstructionService(
           content,
-          initializedAgents
+          initializedAgents,
+          {
+            llmProvider: llmProvider || "auto",
+            apiKeys: apiKeys || {},
+          }
         );
       } catch (processError) {
         console.error(
@@ -275,35 +335,41 @@ function registerCoordinatorBridge() {
 
       let responseText = "";
       if (plan) {
-        responseText = `✅ Project generation completed!\n\nSession ID: ${
-          plan.id
-        }\nWorkspace: ${plan.workspaceDir || "N/A"}\nFile operations: Created=${
-          plan.fileOps?.created?.length || 0
-        }, Skipped=${plan.fileOps?.skipped?.length || 0}\n\n`;
-        if (plan.output?.plan) {
-          responseText += `📋 Plan title: ${
-            plan.output.plan.title
-          }\n📝 Plan summary: ${plan.output.plan.summary}\n📊 Steps: ${
-            plan.output.plan.steps?.length || 0
-          }\n\n`;
-        }
-        if (plan.fileOps?.created?.length > 0) {
-          responseText += `📁 Generated files:\n`;
-          plan.fileOps.created.slice(0, 10).forEach((file) => {
-            responseText += `  • ${file}\n`;
-          });
-          if (plan.fileOps.created.length > 10) {
-            responseText += `  ... and ${
-              plan.fileOps.created.length - 10
-            } more files\n`;
+        // 單純問答模式：直接顯示 LLM 回覆
+        if (plan.mode === "qa") {
+          responseText = plan.answerText || "";
+        } else {
+          // 專案生成模式：維持原本的摘要訊息
+          responseText = `Project generation completed!\n\nSession ID: ${
+            plan.id
+          }\nWorkspace: ${plan.workspaceDir || "N/A"}\nFile operations: Created=${
+            plan.fileOps?.created?.length || 0
+          }, Skipped=${plan.fileOps?.skipped?.length || 0}\n\n`;
+          if (plan.output?.plan) {
+            responseText += `📋 Plan title: ${
+              plan.output.plan.title
+            }\n📝 Plan summary: ${plan.output.plan.summary}\n📊 Steps: ${
+              plan.output.plan.steps?.length || 0
+            }\n\n`;
           }
+          if (plan.fileOps?.created?.length > 0) {
+            responseText += `Generated files:\n`;
+            plan.fileOps.created.slice(0, 10).forEach((file) => {
+              responseText += `  • ${file}\n`;
+            });
+            if (plan.fileOps.created.length > 10) {
+              responseText += `  ... and ${
+                plan.fileOps.created.length - 10
+              } more files\n`;
+            }
+          }
+          responseText += `\nTip: Project generated in ${
+            plan.workspaceDir || "output/" + plan.id
+          } directory`;
         }
-        responseText += `\n💡 Tip: Project generated in ${
-          plan.workspaceDir || "output/" + plan.id
-        } directory`;
       } else {
         responseText =
-          "⚠️ Processing completed, but no plan information returned";
+          "Processing completed, but no plan information returned";
       }
 
       event.sender.send("message-from-agent", {
@@ -329,7 +395,7 @@ function registerCoordinatorBridge() {
       );
     } catch (error) {
       console.error("[Coordinator Bridge] Error processing message:", error);
-      const errorMessage = `❌ Processing failed: ${error.message}\n\nPlease check console for detailed error information.`;
+      const errorMessage = `Processing failed: ${error.message}\n\nPlease check console for detailed error information.`;
       event.sender.send("message-from-agent", {
         type: "error",
         content: errorMessage,
@@ -678,11 +744,28 @@ function createMainWindow() {
     },
   });
   mainWindow.loadFile(path.join(__dirname, "dev_page", "main-window.html"));
-  const shouldOpenDevTools = process.env.ELECTRON_OPEN_DEVTOOLS !== "false";
+
+  // 允許使用 F12 或 Ctrl/Cmd + Shift/Alt + I 來手動切換 DevTools（預設不自動開啟）
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    const isToggleKey =
+      (input.key === "F12" && input.type === "keyDown") ||
+      ((input.control || input.meta) &&
+        (input.shift || input.alt) &&
+        input.key.toLowerCase() === "i" &&
+        input.type === "keyDown");
+
+    if (isToggleKey) {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
+
+  // 預設不自動開啟 DevTools，只有當明確設定 ELECTRON_OPEN_DEVTOOLS=true 時才自動開啟
+  const shouldOpenDevTools = process.env.ELECTRON_OPEN_DEVTOOLS === "true";
   if (shouldOpenDevTools) {
     mainWindow.webContents.openDevTools();
     console.log(
-      "ℹ️  DevTools has been opened. If you see Autofill related errors, you can safely ignore them."
+      "ℹ DevTools has been opened because ELECTRON_OPEN_DEVTOOLS=true."
     );
   }
 }
@@ -711,13 +794,13 @@ function createCaptureWindow() {
       alwaysOnTop: true,
       show: false,
       webPreferences: {
-        preload: path.join(__dirname, "preload.js"),
+        preload: path.join(__dirname, "circle-to-search", "preload.js"),
         nodeIntegration: false,
         contextIsolation: true,
       },
     });
 
-    captureWindow.loadFile("index.html");
+    captureWindow.loadFile(path.join(__dirname, "circle-to-search", "index.html"));
     if (process.argv.includes("--debug")) {
       captureWindow.webContents.openDevTools();
     }
