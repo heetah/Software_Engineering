@@ -8,9 +8,27 @@ const API_STANDARDS = require('../../shared/api-standards.cjs');
 
 class ScriptGenerator {
   constructor(config = {}) {
-    this.cloudApiEndpoint = config.cloudApiEndpoint || process.env.CLOUD_API_ENDPOINT;
-    this.cloudApiKey = config.cloudApiKey || process.env.CLOUD_API_KEY;
+    // API 配置優先順序：1. config 參數 2. CLOUD_API 3. OPENAI_API
+    this.cloudApiEndpoint = config.cloudApiEndpoint || 
+                           process.env.CLOUD_API_ENDPOINT || 
+                           process.env.OPENAI_BASE_URL;
+    this.cloudApiKey = config.cloudApiKey || 
+                      process.env.CLOUD_API_KEY || 
+                      process.env.OPENAI_API_KEY;
     this.useMockApi = !this.cloudApiEndpoint;
+    
+    // 🔍 Debug: 記錄 Worker Generator 初始化
+    console.log('[ScriptGenerator] Initialized:', {
+      hasConfigEndpoint: !!config.cloudApiEndpoint,
+      hasConfigKey: !!config.cloudApiKey,
+      hasEnvCloudEndpoint: !!process.env.CLOUD_API_ENDPOINT,
+      hasEnvCloudKey: !!process.env.CLOUD_API_KEY,
+      hasEnvOpenaiEndpoint: !!process.env.OPENAI_BASE_URL,
+      hasEnvOpenaiKey: !!process.env.OPENAI_API_KEY,
+      finalEndpoint: this.cloudApiEndpoint ? this.cloudApiEndpoint.substring(0, 50) + '...' : 'MISSING',
+      finalKeyExists: !!this.cloudApiKey,
+      willUseMock: this.useMockApi
+    });
   }
 
   async generate({ skeleton, fileSpec, context }) {
