@@ -25,41 +25,69 @@ class Coordinator {
     // 依賴分析器
     this.dependencyAnalyzer = new DependencyAnalyzer();
     
-    // Worker generators 配置（本地調用）
-    this.workers = {
-      'markup': { 
-        generator: new MarkupGenerator(config),
-        exts: ['.html', '.xml', '.md', '.htm', '.txt', '.gitignore', '.env', '.ps1', '.sh', '.bat'] 
-      },
-      'script': { 
-        generator: new ScriptGenerator(config),
-        exts: ['.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs'] 
-      },
-      'style': { 
-        generator: new StyleGenerator(config),
-        exts: ['.css', '.scss', '.sass', '.less'] 
-      },
-      'python': { 
-        generator: new PythonGenerator(config),
-        exts: ['.py'] 
-      },
-      'system': { 
-        generator: new SystemGenerator(config),
-        exts: ['.c', '.cpp', '.h', '.hpp', '.go', '.rs', '.java', '.cs'] 
-      }
-    };
-    
-    // 配置參數
+    // 配置參數（先設定，再傳給 workers）
     this.MAX_FILES_PER_SKELETON_BATCH = config.maxSkeletonBatch || 15;
     this.DETAIL_GENERATION_DELAY = config.detailDelay || 1500; // 毫秒
-    this.CLOUD_API_ENDPOINT = config.cloudApiEndpoint || process.env.CLOUD_API_ENDPOINT;
-    this.CLOUD_API_KEY = config.cloudApiKey || process.env.CLOUD_API_KEY;
+    
+    // API 配置優先順序：1. config 參數 2. CLOUD_API 3. OPENAI_API
+    this.CLOUD_API_ENDPOINT = config.cloudApiEndpoint || 
+                             process.env.CLOUD_API_ENDPOINT || 
+                             process.env.OPENAI_BASE_URL;
+    this.CLOUD_API_KEY = config.cloudApiKey || 
+                        process.env.CLOUD_API_KEY || 
+                        process.env.OPENAI_API_KEY;
     
     // 預設使用真實 API（不使用 mock）
     this.USE_MOCK_API = config.useMockApi === true;
     
+    // 🔍 Debug: 記錄接收到的配置
+    console.log('[CoderCoordinator] Config received:', {
+      hasCloudApiEndpoint: !!config.cloudApiEndpoint,
+      hasCloudApiKey: !!config.cloudApiKey,
+      hasEnvCloudEndpoint: !!process.env.CLOUD_API_ENDPOINT,
+      hasEnvCloudKey: !!process.env.CLOUD_API_KEY,
+      hasEnvOpenaiEndpoint: !!process.env.OPENAI_BASE_URL,
+      hasEnvOpenaiKey: !!process.env.OPENAI_API_KEY,
+      finalEndpoint: this.CLOUD_API_ENDPOINT ? this.CLOUD_API_ENDPOINT.substring(0, 50) + '...' : 'MISSING',
+      finalKeyExists: !!this.CLOUD_API_KEY,
+      useMockApi: this.USE_MOCK_API
+    });
+    
+    // 建立 worker config，確保傳遞 API 配置
+    const workerConfig = {
+      ...config,
+      cloudApiEndpoint: this.CLOUD_API_ENDPOINT,
+      cloudApiKey: this.CLOUD_API_KEY,
+      useMockApi: this.USE_MOCK_API
+    };
+    
+    // Worker generators 配置（本地調用）
+    this.workers = {
+      'markup': { 
+        generator: new MarkupGenerator(workerConfig),
+        exts: ['.html', '.xml', '.md', '.htm', '.txt', '.gitignore', '.env', '.ps1', '.sh', '.bat'] 
+      },
+      'script': { 
+        generator: new ScriptGenerator(workerConfig),
+        exts: ['.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs'] 
+      },
+      'style': { 
+        generator: new StyleGenerator(workerConfig),
+        exts: ['.css', '.scss', '.sass', '.less'] 
+      },
+      'python': { 
+        generator: new PythonGenerator(workerConfig),
+        exts: ['.py'] 
+      },
+      'system': { 
+        generator: new SystemGenerator(workerConfig),
+        exts: ['.c', '.cpp', '.h', '.hpp', '.go', '.rs', '.java', '.cs'] 
+      }
+    };
+    
     logger.info('Coordinator initialized (local generators)', null, {
       use_mock_api: this.USE_MOCK_API,
+      has_api_config: !!(this.CLOUD_API_ENDPOINT && this.CLOUD_API_KEY),
       worker_generators: Object.keys(this.workers).length,
       max_skeleton_batch: this.MAX_FILES_PER_SKELETON_BATCH
     });
@@ -405,7 +433,8 @@ class Coordinator {
               path: file.path,
               language: file.language,
               description: file.description || '',
-              requirements: file.requirements || []
+              requirements: file.requirements || [],
+              template: file.template || null // ← 🔥 CRITICAL: 傳遞 template 給 Worker Agents
             }
           };
 

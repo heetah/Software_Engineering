@@ -3,13 +3,49 @@ const { callCloudAPI } = require('../api-adapter.cjs');
 
 class PythonGenerator {
   constructor(config = {}) {
-    this.cloudApiEndpoint = config.cloudApiEndpoint || process.env.CLOUD_API_ENDPOINT;
-    this.cloudApiKey = config.cloudApiKey || process.env.CLOUD_API_KEY;
+    // API 配置優先順序：1. config 參數 2. CLOUD_API 3. OPENAI_API
+    this.cloudApiEndpoint = config.cloudApiEndpoint || 
+                           process.env.CLOUD_API_ENDPOINT || 
+                           process.env.OPENAI_BASE_URL;
+    this.cloudApiKey = config.cloudApiKey || 
+                      process.env.CLOUD_API_KEY || 
+                      process.env.OPENAI_API_KEY;
     this.useMockApi = !this.cloudApiEndpoint;
+    
+    // 🔍 Debug: 記錄配置
+    console.log('[PythonGenerator] Initialized:', {
+      hasConfigEndpoint: !!config.cloudApiEndpoint,
+      hasConfigKey: !!config.cloudApiKey,
+      hasEnvCloudEndpoint: !!process.env.CLOUD_API_ENDPOINT,
+      hasEnvOpenaiEndpoint: !!process.env.OPENAI_BASE_URL,
+      finalEndpoint: this.cloudApiEndpoint ? this.cloudApiEndpoint.substring(0, 50) + '...' : 'MISSING',
+      willUseMock: this.useMockApi
+    });
   }
 
   async generate({ skeleton, fileSpec, context }) {
     console.log(`[Generator] Processing ${fileSpec.path}`);
+    
+    // 優先級 1: 使用 template（Architect 提供的完整代碼）
+    if (fileSpec.template && fileSpec.template.trim()) {
+      console.log(`[Generator] ✅ Using template (${fileSpec.template.length} chars)`);
+      return {
+        content: fileSpec.template,
+        tokensUsed: 0,
+        method: 'template'
+      };
+    }
+    
+    // 優先級 2: 使用 contracts 結構（example2 格式）
+    const hasContracts = context.contracts && (
+      (context.contracts.dom && context.contracts.dom.length > 0) ||
+      (context.contracts.api && context.contracts.api.length > 0)
+    );
+    
+    if (hasContracts) {
+      console.log(`[Generator] ✓ Using contracts-based generation`);
+    }
+    
     console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
     
     if (this.useMockApi) {

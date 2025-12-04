@@ -11,11 +11,23 @@ dotenv.config();
 
 export default class ArchitectAgent extends BaseAgent {
   constructor() {
-    // 使用 OpenAI API（從環境變數讀取）
+    // 使用 OpenAI API（從環境變數讀取），支援 CLOUD_API 作為 fallback
+    const apiKey = process.env.OPENAI_API_KEY || process.env.CLOUD_API_KEY;
+    const baseUrl = process.env.OPENAI_BASE_URL || 
+                   (process.env.CLOUD_API_ENDPOINT ? this._detectBaseUrl(process.env.CLOUD_API_ENDPOINT) : "https://api.openai.com/v1");
+    
     super("Architect Agent", "JSON", "architect", {
-      baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-      apiKey: process.env.OPENAI_API_KEY
+      baseUrl,
+      apiKey
     });
+  }
+
+  _detectBaseUrl(endpoint) {
+    // 如果是 Gemini API endpoint，需要轉換成適合 BaseAgent 的格式
+    if (endpoint.includes('generativelanguage.googleapis.com')) {
+      return 'https://generativelanguage.googleapis.com/v1beta';
+    }
+    return endpoint;
   }
 
   prompt(requirementOutput) {

@@ -342,7 +342,9 @@ function registerCoordinatorBridge() {
           // 專案生成模式：維持原本的摘要訊息
           responseText = `Project generation completed!\n\nSession ID: ${
             plan.id
-          }\nWorkspace: ${plan.workspaceDir || "N/A"}\nFile operations: Created=${
+          }\nWorkspace: ${
+            plan.workspaceDir || "N/A"
+          }\nFile operations: Created=${
             plan.fileOps?.created?.length || 0
           }, Skipped=${plan.fileOps?.skipped?.length || 0}\n\n`;
           if (plan.output?.plan) {
@@ -368,8 +370,7 @@ function registerCoordinatorBridge() {
           } directory`;
         }
       } else {
-        responseText =
-          "Processing completed, but no plan information returned";
+        responseText = "Processing completed, but no plan information returned";
       }
 
       event.sender.send("message-from-agent", {
@@ -422,6 +423,216 @@ function registerVisionHandlers() {
     if (captureWindow) {
       isCapturing = false;
       captureWindow.hide();
+
+      // 清除視窗內容，為下次使用做準備
+      captureWindow.webContents
+        .executeJavaScript(
+          `
+        if (typeof resetCanvas === 'function') {
+          resetCanvas();
+        }
+      `
+        )
+        .catch(() => {
+          // 忽略錯誤，視窗可能還沒載入完成
+        });
+    }
+  });
+
+  // Google Lens 以圖搜圖
+  ipcMain.on("open-google-lens", async (event, imageData) => {
+    try {
+      console.log("Opening Google Lens with image...");
+
+      // 將圖片儲存到臨時檔案
+      const tempPath = path.join(__dirname, "temp");
+      if (!fs.existsSync(tempPath)) {
+        fs.mkdirSync(tempPath, { recursive: true });
+      }
+
+      const timestamp = Date.now();
+      const imagePath = path.join(tempPath, `google-search-${timestamp}.png`);
+      const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
+      fs.writeFileSync(imagePath, base64Data, "base64");
+
+      console.log("Image saved to:", imagePath);
+
+      const { shell } = require("electron");
+
+      // 建立一個使用正確 Google Lens 端點的 HTML 頁面
+      const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Google Lens 搜圖</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .container {
+      background: white;
+      border-radius: 16px;
+      padding: 40px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+      max-width: 600px;
+      text-align: center;
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 20px;
+      font-size: 28px;
+    }
+    .status {
+      color: #666;
+      font-size: 16px;
+      margin: 20px 0;
+      line-height: 1.6;
+    }
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #4285f4;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin: 30px auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    img {
+      max-width: 100%;
+      max-height: 300px;
+      border-radius: 8px;
+      margin: 20px 0;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .manual-link {
+      display: inline-block;
+      margin-top: 20px;
+      padding: 12px 24px;
+      background: #4285f4;
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+      font-size: 14px;
+      transition: background 0.3s;
+    }
+    .manual-link:hover {
+      background: #357ae8;
+    }
+    #uploadForm {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 Google Lens 搜圖</h1>
+    <img src="data:image/png;base64,${base64Data}" alt="Captured Image" id="previewImage">
+    <div class="spinner"></div>
+    <div class="status" id="status">正在準備上傳到 Google Lens...</div>
+    
+    <!-- 表單用於上傳到 Google Lens -->
+    <form id="uploadForm" action="https://lens.google.com/upload" method="POST" enctype="multipart/form-data" target="_blank">
+      <input type="file" name="encoded_image" id="fileInput">
+    </form>
+    
+    <a href="https://www.google.com/?olud" class="manual-link" id="manualLink" style="display:none;">手動開啟 Google Lens</a>
+  </div>
+  
+  <script>
+    // 將 base64 轉換為 Blob
+    function base64ToBlob(base64, contentType = 'image/png') {
+      const byteCharacters = atob(base64);
+      const byteArrays = [];
+      
+      for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+        const slice = byteCharacters.slice(offset, offset + 512);
+        const byteNumbers = new Array(slice.length);
+        for (let i = 0; i < slice.length; i++) {
+          byteNumbers[i] = slice.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        byteArrays.push(byteArray);
+      }
+      
+      return new Blob(byteArrays, { type: contentType });
+    }
+    
+    // 自動上傳到 Google Lens
+    async function uploadToGoogleLens() {
+      try {
+        document.getElementById('status').textContent = '正在上傳圖片到 Google Lens...';
+        
+        const base64Data = '${base64Data}';
+        const blob = base64ToBlob(base64Data);
+        
+        // 使用表單提交
+        const form = document.getElementById('uploadForm');
+        const fileInput = document.getElementById('fileInput');
+        
+        // 將 blob 轉換為 File 物件
+        const file = new File([blob], 'screenshot.png', { type: 'image/png' });
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        fileInput.files = dataTransfer.files;
+        
+        document.getElementById('status').textContent = '正在開啟 Google Lens...';
+        
+        // 提交表單到新視窗
+        setTimeout(() => {
+          form.submit();
+          document.getElementById('status').innerHTML = '✅ Google Lens 已在新視窗中開啟！<br><br>搜尋結果將顯示在瀏覽器中。';
+          document.querySelector('.spinner').style.display = 'none';
+          document.getElementById('manualLink').style.display = 'inline-block';
+        }, 800);
+        
+      } catch (error) {
+        console.error('Upload error:', error);
+        document.getElementById('status').innerHTML = '正在開啟 Google Lens...<br><br>請稍候片刻。';
+        document.querySelector('.spinner').style.display = 'none';
+        
+        setTimeout(() => {
+          window.open('https://www.google.com/?olud', '_blank');
+          document.getElementById('manualLink').style.display = 'inline-block';
+        }, 500);
+      }
+    }
+    
+    // 頁面載入後自動執行
+    window.onload = () => {
+      setTimeout(uploadToGoogleLens, 800);
+    };
+  </script>
+</body>
+</html>
+      `;
+
+      const htmlPath = path.join(tempPath, `google-search-${timestamp}.html`);
+      fs.writeFileSync(htmlPath, htmlContent, "utf8");
+
+      // 使用預設瀏覽器開啟
+      shell
+        .openPath(htmlPath)
+        .then(() => {
+          console.log("Google Lens search initiated successfully");
+        })
+        .catch((err) => {
+          console.error("Failed to open search page:", err);
+        });
+    } catch (error) {
+      console.error("Error opening Google Lens:", error);
+      dialog.showErrorBox("錯誤", `無法開啟 Google Lens: ${error.message}`);
     }
   });
 
@@ -800,7 +1011,9 @@ function createCaptureWindow() {
       },
     });
 
-    captureWindow.loadFile(path.join(__dirname, "circle-to-search", "index.html"));
+    captureWindow.loadFile(
+      path.join(__dirname, "circle-to-search", "index.html")
+    );
     if (process.argv.includes("--debug")) {
       captureWindow.webContents.openDevTools();
     }
@@ -826,8 +1039,13 @@ async function startCapture() {
     isCapturing = true;
     const sources = await desktopCapturer.getSources({ types: ["screen"] });
     if (captureWindow && sources.length > 0) {
+      // 確保視窗處於正確狀態
+      if (!captureWindow.isVisible()) {
+        captureWindow.show();
+      }
+      // 發送新的截圖源
       captureWindow.webContents.send("SET_SCREEN_SOURCE", sources[0].id);
-      captureWindow.show();
+      captureWindow.focus();
     }
   } catch (error) {
     isCapturing = false;
