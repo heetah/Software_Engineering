@@ -157,6 +157,111 @@ body {
   padding-bottom: 8px;
 }
 
+/* 模式選擇面板 */
+#mode-selector {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(145deg, #ffffff, #e6e9f0);
+  border-radius: 20px;
+  box-shadow: 10px 10px 30px var(--soft-shadow-dark),
+    -10px -10px 30px var(--soft-shadow-light);
+  padding: 32px;
+  min-width: 400px;
+  opacity: 1;
+  transition: all 0.3s ease;
+  z-index: 2000;
+}
+
+#mode-selector.hidden {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.9);
+  pointer-events: none;
+}
+
+.mode-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--soft-text);
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.mode-buttons {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.mode-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 16px;
+  background: linear-gradient(145deg, #ffffff, #e6e9f0);
+  border: none;
+  border-radius: 16px;
+  box-shadow: 5px 5px 15px var(--soft-shadow-dark),
+    -5px -5px 15px var(--soft-shadow-light);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  color: var(--soft-text);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.mode-btn:hover {
+  box-shadow: inset 3px 3px 8px var(--soft-shadow-dark),
+    inset -3px -3px 8px var(--soft-shadow-light);
+  transform: translateY(-2px);
+}
+
+.mode-btn:active {
+  box-shadow: inset 5px 5px 12px var(--soft-shadow-dark),
+    inset -5px -5px 12px var(--soft-shadow-light);
+  transform: translateY(0);
+}
+
+.mode-icon {
+  width: 40px;
+  height: 40px;
+  stroke-width: 2;
+  color: var(--soft-blue);
+}
+
+.mode-desc {
+  font-size: 12px;
+  font-weight: 400;
+  color: #7f8c8d;
+}
+
+.mode-footer {
+  display: flex;
+  justify-content: center;
+}
+
+.cancel-btn {
+  padding: 10px 32px;
+  background: linear-gradient(145deg, #ffffff, #e6e9f0);
+  border: none;
+  border-radius: 12px;
+  box-shadow: 3px 3px 10px var(--soft-shadow-dark),
+    -3px -3px 10px var(--soft-shadow-light);
+  cursor: pointer;
+  color: var(--soft-text);
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.cancel-btn:hover {
+  box-shadow: inset 2px 2px 6px var(--soft-shadow-dark),
+    inset -2px -2px 6px var(--soft-shadow-light);
+}
+
 /* 美化捲軸 */
 .result-content::-webkit-scrollbar {
   width: 8px;
@@ -176,4 +281,3 @@ body {
 .result-content::-webkit-scrollbar-thumb:hover {
   opacity: 1;
 }
-
