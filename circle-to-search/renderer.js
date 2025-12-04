@@ -17,11 +17,88 @@ const selectionSize = document.getElementById("selection-size");
 const hint = document.getElementById("hint");
 const visionResult = document.getElementById("vision-result");
 const resultText = document.getElementById("result-text");
+const modeSelector = document.getElementById("mode-selector");
+
+let selectedMode = null; // 'lens' 或 'ai'
+let capturedImageData = null; // 儲存截圖數據
 
 // 關閉結果視窗
 document.querySelector(".close-button").addEventListener("click", () => {
   visionResult.classList.add("hidden");
+  resetCanvas();
+  window.electronAPI.closeCaptureWindow();
 });
+
+// 模式選擇按鈕事件
+document.querySelectorAll(".mode-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    selectedMode = btn.getAttribute("data-mode");
+    modeSelector.classList.add("hidden");
+    handleModeSelection(selectedMode, capturedImageData);
+  });
+});
+
+// 取消按鈕
+document.querySelector(".cancel-btn").addEventListener("click", () => {
+  modeSelector.classList.add("hidden");
+  resetCanvas();
+  window.electronAPI.closeCaptureWindow();
+});
+
+// 處理模式選擇
+function handleModeSelection(mode, imageData) {
+  if (mode === "lens") {
+    // Google 智慧鏡頭：開啟 Google Lens 搜圖
+    openGoogleLens(imageData);
+    // 清除 canvas 並關閉視窗
+    resetCanvas();
+    window.electronAPI.closeCaptureWindow();
+  } else if (mode === "ai") {
+    // AI 智能分析：使用原本的 Vision API
+    visionResult.classList.remove("hidden");
+    resultText.textContent = "正在使用 AI 分析圖片...";
+    window.electronAPI.sendSelectionComplete(imageData);
+    // AI 分析時不關閉視窗，讓使用者可以看到結果
+    // 使用者可以透過關閉按鈕或 ESC 鍵來關閉
+  }
+}
+
+// 重置 canvas 狀態
+function resetCanvas() {
+  points = [];
+  isDrawing = false;
+  capturedImageData = null;
+  selectedMode = null;
+
+  // 清除 canvas
+  if (ctx && canvas.width && canvas.height) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // 隱藏所有 UI 元素
+  if (selectionInfo) selectionInfo.classList.remove("visible");
+  if (modeSelector) modeSelector.classList.add("hidden");
+  if (visionResult) visionResult.classList.add("hidden");
+
+  // 重新繪製原始截圖（如果存在）
+  if (originalScreenshot && originalLoaded && canvas.width && canvas.height) {
+    ctx.drawImage(originalScreenshot, 0, 0, canvas.width, canvas.height);
+  }
+}
+
+// 開啟 Google Lens 以圖搜圖
+function openGoogleLens(imageDataUrl) {
+  // 將 base64 圖片上傳到 Google Lens
+  // Google Lens 支援透過 URL 參數傳遞圖片
+  const base64Data = imageDataUrl.split(",")[1];
+
+  // 方法 1: 使用 Google Lens 的圖片 URL
+  // 注意：這需要將圖片轉換為可公開訪問的 URL
+  // 由於無法直接上傳 base64，我們使用 Google Images 搜尋作為替代
+
+  // 方法 2: 儲存到臨時檔案並通知主進程開啟
+  window.electronAPI.openGoogleLens(imageDataUrl);
+}
 
 ctx.imageSmoothingEnabled = false;
 
@@ -127,6 +204,25 @@ window.electronAPI.onVisionResult((text) => {
 
 window.electronAPI.onSetScreenSource(async (sourceId) => {
   try {
+    // 在載入新截圖前，先完全清除舊的狀態
+    points = [];
+    isDrawing = false;
+    capturedImageData = null;
+    selectedMode = null;
+    originalScreenshot = null;
+    originalLoaded = false;
+
+    // 隱藏所有 UI 元素
+    if (selectionInfo) selectionInfo.classList.remove("visible");
+    if (modeSelector) modeSelector.classList.add("hidden");
+    if (visionResult) visionResult.classList.add("hidden");
+    if (hint) hint.classList.add("hidden");
+
+    // 清除 canvas
+    if (ctx && canvas.width && canvas.height) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
     const constraints = {
       audio: false,
       video: {
@@ -152,10 +248,19 @@ window.electronAPI.onSetScreenSource(async (sourceId) => {
     canvas.style.width = "100%";
     canvas.style.height = "100%";
 
+    // 清除 canvas 並繪製新截圖
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
     originalScreenshot = new Image();
-    originalScreenshot.onload = () => (originalLoaded = true);
-    originalScreenshot.onerror = () => (originalLoaded = false);
+    originalScreenshot.onload = () => {
+      originalLoaded = true;
+      console.log("New screenshot loaded successfully");
+    };
+    originalScreenshot.onerror = () => {
+      originalLoaded = false;
+      console.error("Failed to load screenshot");
+    };
     originalScreenshot.src = canvas.toDataURL();
 
     stream.getTracks().forEach((t) => t.stop());
@@ -167,7 +272,10 @@ window.electronAPI.onSetScreenSource(async (sourceId) => {
 });
 
 window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") window.electronAPI.closeCaptureWindow();
+  if (e.key === "Escape") {
+    resetCanvas();
+    window.electronAPI.closeCaptureWindow();
+  }
 });
 
 // mouse events for lasso
@@ -240,24 +348,12 @@ canvas.addEventListener("mouseup", (e) => {
     cropCtx.drawImage(originalScreenshot, minX, minY, w, h, 0, 0, w, h);
     const imageData = cropCanvas.toDataURL("image/png");
 
-    // 顯示預覽對話框
-    visionResult.classList.remove("hidden");
-    resultText.textContent =
-      "Analyzing image with Google Vision API...\n\nImage Size: " +
-      w +
-      " × " +
-      h +
-      " pixels" +
-      "   - User Interface\n\n" +
-      "This is a test preview, demonstrating the dialog's appearance and functionality. The actual Vision Agent analysis will be shown when integrated.";
-
-    window.electronAPI.sendSelectionComplete(imageData);
-    // 因為要展示對話框，所以不立即關閉視窗
-    // setTimeout(() => window.electronAPI.closeCaptureWindow(), 200);
+    // 儲存截圖數據並顯示模式選擇器
+    capturedImageData = imageData;
+    modeSelector.classList.remove("hidden");
   } catch (err) {
     console.error("Error drawing lasso cropped image:", err);
     window.electronAPI.closeCaptureWindow();
     return;
   }
 });
-
