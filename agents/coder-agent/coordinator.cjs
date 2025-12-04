@@ -433,7 +433,8 @@ class Coordinator {
               path: file.path,
               language: file.language,
               description: file.description || '',
-              requirements: file.requirements || []
+              requirements: file.requirements || [],
+              template: file.template || null // ← 🔥 CRITICAL: 傳遞 template 給 Worker Agents
             }
           };
 
