@@ -339,13 +339,61 @@ body {
   padding: 15px 20px;
   /* padding-bottom: 25px; - Removed */
   border-radius: 20px;
+
+  /* [Modified] Bubble Effect Base - Reverted surface shine */
   background: var(--color-bg);
   box-shadow: var(--shadow-convex);
+
   color: var(--color-text);
   word-wrap: break-word;
   width: fit-content;
   max-width: 100%;
   transition: all 0.2s ease-in-out;
+  overflow: hidden;
+  z-index: 1;
+}
+
+/* [New] 泡泡膜反光動畫 (波光粼粼) */
+.message-bubble::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 20px;
+  /* Match parent */
+  padding: 2px;
+  /* Border width */
+
+  /* 虹彩漸層 (Iridescent Gradient) */
+  /* 水波紋漸層 (Water Ripple Gradient) */
+  background: linear-gradient(125deg,
+      rgba(255, 255, 255, 0) 30%,
+      rgba(255, 255, 255, 0.4) 35%,
+      /* 第一道細波紋 */
+      rgba(255, 255, 255, 0) 40%,
+      rgba(255, 255, 255, 0.8) 50%,
+      /* 主波紋 (強光) */
+      rgba(255, 255, 255, 0) 60%,
+      rgba(255, 255, 255, 0.3) 65%,
+      /* 尾韻波紋 */
+      rgba(255, 255, 255, 0) 70%);
+
+  background-size: 200% 200%;
+  opacity: 0.9;
+  /* 稍微降低整體不透明度讓波紋更柔和 */
+  mix-blend-mode: normal;
+  pointer-events: none;
+  /* 4s ease-in-out: 頻率更像水流呼吸，忽快忽慢 */
+  animation: shimmer 4s ease-in-out infinite;
+
+  /* Masking to create border effect */
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
 }
 
 /* User 氣泡靠右 */
@@ -572,6 +620,16 @@ body {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 200%;
+  }
+
+  100% {
+    background-position: -200% -200%;
   }
 }
 

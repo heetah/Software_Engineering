@@ -20,6 +20,8 @@ const settingsButton = document.getElementById('settings-button');
 const historyList = document.getElementById('history-list');
 const pageChat = document.getElementById('page-chat');
 const pageSettings = document.getElementById('page-settings');
+const helpButton = document.getElementById('help-button');
+const pageHelp = document.getElementById('page-help');
 
 // 設定頁面元素
 const dataPathDisplay = document.getElementById('data-path-display');
@@ -68,6 +70,7 @@ historyButton.addEventListener('click', () => {
 
 chatButton.addEventListener('click', () => setActivePage('page-chat'));
 settingsButton.addEventListener('click', () => setActivePage('page-settings'));
+helpButton.addEventListener('click', () => setActivePage('page-help'));
 
 if (clearHistoryButton) {
   clearHistoryButton.addEventListener('click', () => {
@@ -578,8 +581,11 @@ function updateCharCount() {
 function setActivePage(pageIdToShow) {
   pageChat.classList.remove('is-active');
   pageSettings.classList.remove('is-active');
+  pageHelp.classList.remove('is-active');
+
   chatButton.classList.remove('is-active');
   settingsButton.classList.remove('is-active');
+  helpButton.classList.remove('is-active');
 
   if (pageIdToShow === 'page-chat') {
     pageChat.classList.add('is-active');
@@ -587,6 +593,9 @@ function setActivePage(pageIdToShow) {
   } else if (pageIdToShow === 'page-settings') {
     pageSettings.classList.add('is-active');
     settingsButton.classList.add('is-active');
+  } else if (pageIdToShow === 'page-help') {
+    pageHelp.classList.add('is-active');
+    helpButton.classList.add('is-active');
   }
 }
 
