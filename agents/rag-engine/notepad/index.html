@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Notepad</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>Notes</h2>
+                <button id="add-note-btn" class="icon-btn" title="New Note">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
+            <div id="notes-list" class="notes-list">
+                <!-- Notes injected here -->
+            </div>
+        </aside>
+
+        <main class="editor">
+            <div class="editor-header">
+                <input type="text" id="note-title" placeholder="Note Title" value="Untitled Note">
+                <button id="delete-note-btn" class="icon-btn delete-btn" title="Delete Note">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+            <textarea id="note-body" placeholder="Start typing your note here..."></textarea>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
