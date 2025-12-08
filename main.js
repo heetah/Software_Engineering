@@ -45,6 +45,39 @@ let mainWindow = null;
 let captureWindow = null;
 let isCapturing = false;
 
+async function zipWorkspaceDirectory(directoryPath) {
+  const resolvedDir = path.resolve(directoryPath);
+  if (!fs.existsSync(resolvedDir) || !fs.lstatSync(resolvedDir).isDirectory()) {
+    throw new Error(`Workspace directory not found: ${resolvedDir}`);
+  }
+
+  const zipName = `${path.basename(resolvedDir)}.zip`;
+  const zipPath = path.join(path.dirname(resolvedDir), zipName);
+
+  try {
+    if (fs.existsSync(zipPath)) {
+      fs.unlinkSync(zipPath);
+    }
+  } catch (error) {
+    console.warn("Unable to remove existing zip file:", error.message);
+  }
+
+  // 需要確認 archiver 是否已安裝，若無則需要處理
+  const archiver = (await import("archiver")).default;
+
+  return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(zipPath);
+    const archive = archiver("zip", { zlib: { level: 9 } });
+
+    output.on("close", () => resolve(zipPath));
+    archive.on("error", (err) => reject(err));
+
+    archive.pipe(output);
+    archive.directory(resolvedDir, path.basename(resolvedDir));
+    archive.finalize();
+  });
+}
+
 // --- HEAD: Database Functions ---
 async function normalizeSessions() {
   // Re-sequence sessions to be contiguous and refresh titles (Session 001, 002, ...)
@@ -77,7 +110,7 @@ async function normalizeSessions() {
     }
     await run("COMMIT");
   } catch (error) {
-    await run("ROLLBACK").catch(() => {});
+    await run("ROLLBACK").catch(() => { });
     throw error;
   }
 
@@ -265,6 +298,28 @@ function registerHistoryHandlers() {
       return { ok: false, error: error.message };
     }
   });
+
+  // 下載 ZIP 檔案的處理器
+  ipcMain.handle("download:save-zip", async (event, { zipPath, defaultName }) => {
+    try {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      const { canceled, filePath } = await dialog.showSaveDialog(window, {
+        title: "儲存專案壓縮檔",
+        defaultPath: defaultName || "project.zip",
+        filters: [{ name: "ZIP Files", extensions: ["zip"] }],
+      });
+
+      if (canceled || !filePath) {
+        return { ok: false, cancelled: true };
+      }
+
+      fs.copyFileSync(zipPath, filePath);
+      return { ok: true, filePath };
+    } catch (error) {
+      console.error("Failed to save zip file:", error);
+      return { ok: false, error: error.message };
+    }
+  });
 }
 
 function registerSettingsHandlers() {
@@ -334,35 +389,43 @@ function registerCoordinatorBridge() {
       }
 
       let responseText = "";
+      let downloadInfo = null;
+
       if (plan) {
         // 單純問答模式：直接顯示 LLM 回覆
         if (plan.mode === "qa") {
           responseText = plan.answerText || "";
         } else {
-          // 專案生成模式：維持原本的摘要訊息
-          responseText = `Project generation completed!\n\nSession ID: ${
-            plan.id
-          }\nWorkspace: ${
-            plan.workspaceDir || "N/A"
-          }\nFile operations: Created=${
-            plan.fileOps?.created?.length || 0
-          }, Skipped=${plan.fileOps?.skipped?.length || 0}\n\n`;
+          // 專案生成模式：簡化訊息並強調下載
+          responseText = `專案生成已完成！\n\n您要求的檔案已準備就緒，請點擊下方按鈕下載完整壓縮檔。\n\nSession ID: ${plan.id
+            }\n資料夾位置: ${plan.workspaceDir || "N/A"}\n\n`;
+
           if (plan.output?.plan) {
-            responseText += `📋 Plan title: ${
-              plan.output.plan.title
-            }\n📝 Plan summary: ${plan.output.plan.summary}\n📊 Steps: ${
-              plan.output.plan.steps?.length || 0
-            }\n\n`;
+            responseText += `📋 計劃名稱: ${plan.output.plan.title
+              }\n📝 計劃摘要: ${plan.output.plan.summary}\n\n`;
           }
-          if (plan.fileOps?.created?.length > 0) {
-            responseText += `Generated files:\n`;
-            plan.fileOps.created.slice(0, 10).forEach((file) => {
-              responseText += `  • ${file}\n`;
-            });
-            if (plan.fileOps.created.length > 10) {
-              responseText += `  ... and ${
-                plan.fileOps.created.length - 10
-              } more files\n`;
+
+          const resolvedWorkspaceDir = plan.workspaceDir
+            ? path.isAbsolute(plan.workspaceDir)
+              ? plan.workspaceDir
+              : path.join(__dirname, plan.workspaceDir)
+            : null;
+
+          if (resolvedWorkspaceDir) {
+            try {
+              // 確保 zipWorkspaceDirectory 函式可用 (假設已定義在 main.js 上方)
+              const zipPath = await zipWorkspaceDirectory(resolvedWorkspaceDir);
+              downloadInfo = {
+                path: zipPath,
+                filename: path.basename(zipPath),
+                workspaceDir: resolvedWorkspaceDir,
+              };
+              responseText += `\n\n已準備好壓縮檔: ${zipPath}`;
+            } catch (zipError) {
+              console.error(
+                "[Coordinator Bridge] Failed to zip workspace:",
+                zipError
+              );
             }
           }
           responseText += `\nTip: Project generated in ${
@@ -374,24 +437,34 @@ function registerCoordinatorBridge() {
       }
 
       event.sender.send("message-from-agent", {
-        type: "text",
+        type: downloadInfo ? "download" : "text",
         content: responseText,
+        download: downloadInfo,
       });
+
       if (session?.id) {
+        const payloadToPersist = {
+          role: "ai",
+          content: responseText,
+          type: downloadInfo ? "download" : "text",
+        };
+        if (downloadInfo) {
+          payloadToPersist.download = downloadInfo;
+        }
+
         await run(
           "INSERT INTO messages (session_id, role, payload_json) VALUES (?, ?, ?)",
           [
             session.id,
             "ai",
-            JSON.stringify({ role: "ai", content: responseText }),
+            JSON.stringify(payloadToPersist),
           ]
         ).catch((err) => {
           console.error("Failed to write AI response to history:", err);
         });
       }
       console.log(
-        `[Coordinator Bridge] Processing completed, Session ID: ${
-          plan?.id || "N/A"
+        `[Coordinator Bridge] Processing completed, Session ID: ${plan?.id || "N/A"
         }`
       );
     } catch (error) {
@@ -837,42 +910,42 @@ function registerVisionHandlers() {
           "",
           imageInfo.text
             ? "1. 文字內容：\n" +
-              imageInfo.text
-                .split("\\n")
-                .map((t) => `   ${t}`)
-                .join("\\n")
+            imageInfo.text
+              .split("\\n")
+              .map((t) => `   ${t}`)
+              .join("\\n")
             : null,
           "",
           imageInfo.labels.length > 0
             ? "2. 主要內容：\n" +
-              imageInfo.labels
-                .map((l) => `   • ${l.name} (可信度 ${l.confidence}%)`)
-                .join("\\n")
+            imageInfo.labels
+              .map((l) => `   • ${l.name} (可信度 ${l.confidence}%)`)
+              .join("\\n")
             : null,
           "",
           imageInfo.mainColors.length > 0
             ? "3. 主要顏色：\n" +
-              imageInfo.mainColors
-                .map((c) => `   • ${c.rgb} (佔比 ${c.percentage}%)`)
-                .join("\\n")
+            imageInfo.mainColors
+              .map((c) => `   • ${c.rgb} (佔比 ${c.percentage}%)`)
+              .join("\\n")
             : null,
           "",
           imageInfo.webEntities.length > 0
             ? "4. 相關概念：\n" +
-              imageInfo.webEntities
-                .map((e) => `   • ${e.name} (相關度 ${e.confidence}%)`)
-                .join("\\n")
+            imageInfo.webEntities
+              .map((e) => `   • ${e.name} (相關度 ${e.confidence}%)`)
+              .join("\\n")
             : null,
           "",
           "這看起來是一個" +
-            (guesses || "螢幕截圖") +
-            "，" +
-            "其中包含了" +
-            (imageInfo.labels
-              .slice(0, 3)
-              .map((l) => l.name)
-              .join("、") || "各種元素") +
-            "。",
+          (guesses || "螢幕截圖") +
+          "，" +
+          "其中包含了" +
+          (imageInfo.labels
+            .slice(0, 3)
+            .map((l) => l.name)
+            .join("、") || "各種元素") +
+          "。",
         ]
           .filter(Boolean)
           .join("\\n");
