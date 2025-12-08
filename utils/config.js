@@ -14,9 +14,10 @@ export class Config {
     this.api = {
       baseUrl: process.env.OPENAI_BASE_URL || process.env.BASE_URL || "https://api.openai.com/v1",
       apiKey: process.env.OPENAI_API_KEY || process.env.API_KEY,
-      timeout: parseInt(process.env.API_TIMEOUT) || 30000,
-      maxRetries: parseInt(process.env.API_MAX_RETRIES) || 3,
-      retryDelay: parseInt(process.env.API_RETRY_DELAY) || 1000
+      // 優化超時：OpenAI 通常較快，減少超時時間以提高響應速度
+      timeout: parseInt(process.env.API_TIMEOUT) || 20000, // 從 30 秒減少到 20 秒
+      maxRetries: parseInt(process.env.API_MAX_RETRIES) || 2, // 從 3 次減少到 2 次
+      retryDelay: parseInt(process.env.API_RETRY_DELAY) || 500 // 從 1000ms 減少到 500ms
     };
 
     // Agent 配置

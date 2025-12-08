@@ -8,6 +8,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import ArchitectAgent from "./agents/architect-agent.js";
+import VerifierAgent from "./agents/verifier-agent.js";
 import TesterAgent from "./agents/tester-agent.js";
 // 將 Coder 產出的 Markdown 生成專案
 import { writeProjectFromMarkdown } from "./agents/project-writer.js";
@@ -44,6 +45,7 @@ export function initializeAgents(force = false) {
   
   agentCache = {
     architect: new ArchitectAgent(),
+    verifier: new VerifierAgent(),
     tester: new TesterAgent(),
     // Coder 功能由 agents/coder-agent/coordinator.js 負責
     // 使用時動態創建 Coordinator 實例
@@ -57,12 +59,21 @@ export function initializeAgents(force = false) {
  * 獲取或創建 Coder Coordinator 實例
  */
 export function getCoderCoordinator(config = {}) {
-  if (!agentCache || !agentCache.coderCoordinator) {
-    agentCache = agentCache || initializeAgents(true);
-    agentCache.coderCoordinator = new CoderCoordinator({
-      useMockApi: config.useMockApi || false
-    });
+  if (!agentCache) {
+    agentCache = initializeAgents(true);
   }
+
+  const requestedProvider = (config.llmProvider || "auto").toLowerCase();
+  const apiKeys = config.apiKeys || {};
+
+  // 每次依據目前設定建立新的 CoderCoordinator，確保 API Key / Provider 最新
+  agentCache.coderCoordinator = new CoderCoordinator({
+    useMockApi: config.useMockApi || false,
+    llmProvider: requestedProvider,
+    geminiApiKey: apiKeys.gemini || null,
+    openaiApiKey: apiKeys.openai || null,
+  });
+
   return agentCache.coderCoordinator;
 }
 
@@ -88,8 +99,12 @@ async function main() {
  * 使用 InstructionService 的流程
  * 可被外部調用來處理使用者輸入
  */
-export async function runWithInstructionService(userInput, agents) {
-  const { architect, tester } = agents;
+export async function runWithInstructionService(
+  userInput,
+  agents,
+  options = {}
+) {
+  const { architect, verifier, tester } = agents;
 
   try {
     // 初始化 InstructionService（Architect Agent 會直接處理用戶需求）
@@ -99,7 +114,7 @@ export async function runWithInstructionService(userInput, agents) {
       { userInput }
     );
 
-    // Architect Agent 直接處理用戶需求並生成計劃
+    // Architect Agent 直接處理用戶需求並生成計劃或單純問答回覆
     // （不再需要 Requirement Agent，Architect Agent 會同時處理需求分析和架構設計）
     const plan = await withErrorHandling(
       'InstructionService.createPlan',
@@ -112,13 +127,19 @@ export async function runWithInstructionService(userInput, agents) {
       { userInput }
     );
 
+    // 如果是「單純問答模式」，直接回傳，不觸發後續 coder / verifier / tester
+    if (plan && plan.mode === 'qa') {
+      console.log("\nInstructionService QA mode: skip project generation / verifier / tester");
+      return plan;
+    }
+
     console.log(`\nPlan created, Session ID: ${plan.id}`);
     console.log(`Workspace directory: ${plan.workspaceDir || 'N/A'}`);
     console.log(`File operations: Created=${plan.fileOps.created.length}, Skipped=${plan.fileOps.skipped.length}, Errors=${plan.fileOps.errors.length}`);
 
     // Display Token usage statistics
     const tokenStats = tokenTracker.getStats();
-    console.log(`\n📊 Token usage: ${tokenStats.total} (Remaining: ${tokenStats.remaining}, ${tokenStats.percentage})`);
+    console.log(`\nToken usage: ${tokenStats.total} (Remaining: ${tokenStats.remaining}, ${tokenStats.percentage})`);
 
     // Display plan summary
     if (plan.output?.plan) {
@@ -152,16 +173,20 @@ export async function runWithInstructionService(userInput, agents) {
           
           if (parsed.coder_instructions) {
             coderInstructions = parsed.coder_instructions;
-            console.log("  ✓ Extracted coder_instructions from markdown");
+            console.log("  Extracted coder_instructions from markdown");
           }
         }
       } catch (e) {
-        console.warn("  ⚠ Failed to extract coder_instructions from markdown:", e.message);
+        console.warn(" Failed to extract coder_instructions from markdown:", e.message);
       }
     }
     
     if (coderInstructions) {
-      const coderCoordinator = getCoderCoordinator({ useMockApi: false });
+      const coderCoordinator = getCoderCoordinator({
+        useMockApi: false,
+        llmProvider: options.llmProvider || "auto",
+        apiKeys: options.apiKeys || {},
+      });
       const requestId = `coordinator-${plan.id}`;
       
       // 構建 Coordinator 需要的 payload 格式
@@ -186,11 +211,11 @@ export async function runWithInstructionService(userInput, agents) {
           ),
           { workspaceDir: plan.workspaceDir }
         );
-        console.log(`\n✅ Project generated at ${result.outDir}`);
-        console.log(`📁 Total files: ${result.files.length}`);
+        console.log(`\nProject generated at ${result.outDir}`);
+        console.log(`Total files: ${result.files.length}`);
         console.log(`\nGenerated files:`);
         result.files.forEach(file => {
-          console.log(`  ✓ ${file}`);
+          console.log(`  ${file}`);
         });
       } catch (e) {
         errorLogger.warn("Failed to generate project", { error: e.message, workspaceDir: plan.workspaceDir });
@@ -214,7 +239,93 @@ export async function runWithInstructionService(userInput, agents) {
       }
     }
 
-    console.log("\n✅ InstructionService process completed!");
+    // ===== Verifier Agent: 生成測試計劃 =====
+    console.log("\n" + "=".repeat(60));
+    console.log("Verifier Agent: Generate test plan");
+    console.log("=".repeat(60));
+    
+    let testPlan = null;
+    try {
+      const verifierResult = await withErrorHandling(
+        'VerifierAgent.runVerifierAgent',
+        () => verifier.runVerifierAgent(plan.id),
+        { sessionId: plan.id }
+      );
+      testPlan = verifierResult.plan;
+      console.log(`Test Plan generated: ${verifierResult.path}`);
+      console.log(`Test files: ${testPlan?.testFiles?.length || 0}`);
+      
+      if (testPlan?.testFiles && testPlan.testFiles.length > 0) {
+        testPlan.testFiles.forEach(tf => {
+          console.log(`  - ${tf.filename} (${tf.testLevel}, ${tf.inputsType})`);
+        });
+      }
+    } catch (err) {
+      errorLogger.warn("Verifier Agent 執行失敗", { 
+        error: err.message, 
+        sessionId: plan.id 
+      });
+      console.warn(`\nVerifier Agent execution failed: ${err.message}`);
+      console.warn("   Test Plan generation skipped, but project generation completed");
+    }
+
+    // ===== Tester Agent: 生成測試碼並執行測試 =====
+    if (testPlan && testPlan.testFiles && testPlan.testFiles.length > 0) {
+      console.log("\n" + "=".repeat(60));
+      console.log("Tester Agent: Generate test code and execute tests");
+      console.log("=".repeat(60));
+      
+      try {
+        const testResult = await withErrorHandling(
+          'TesterAgent.runTesterAgent',
+          () => tester.runTesterAgent(plan.id),
+          { sessionId: plan.id }
+        );
+        
+        const { testReport, errorReport } = testResult;
+        console.log(`\nTests executed successfully!`);
+        console.log(`Test statistics:`);
+        console.log(`   - Test files: ${testReport.totals.files}`);
+        console.log(`   - Total tests: ${testReport.totals.tests}`);
+        console.log(`   - Passed: ${testReport.totals.passed}`);
+        console.log(`   - Failed: ${testReport.totals.failed} ${testReport.totals.failed > 0 ? '' : ''}`);
+        
+        if (testReport.totals.failed > 0) {
+          console.log(`\nThere are ${testReport.totals.failed} failed tests`);
+          if (errorReport.failures && errorReport.failures.length > 0) {
+            console.log(`\nFailed case details:`);
+            errorReport.failures.slice(0, 5).forEach((failure, idx) => {
+              console.log(`  ${idx + 1}. ${failure.title}`);
+              console.log(`     File: ${failure.filename}`);
+              if (failure.failureMessages && failure.failureMessages[0]) {
+                const msg = failure.failureMessages[0].substring(0, 100);
+                console.log(`     Error: ${msg}${failure.failureMessages[0].length > 100 ? '...' : ''}`);
+              }
+            });
+            if (errorReport.failures.length > 5) {
+              console.log(`  ... There are ${errorReport.failures.length - 5} more failed cases`);
+            }
+          }
+        } else {
+          console.log(`\nAll tests passed!`);
+        }
+        
+        // 將測試結果添加到 plan 中
+        plan.testReport = testReport;
+        plan.errorReport = errorReport;
+      } catch (err) {
+        errorLogger.warn("Tester Agent execution failed", { 
+          error: err.message, 
+          sessionId: plan.id 
+        });
+        console.warn(`\nTester Agent execution failed: ${err.message}`);
+        console.warn("   Test execution skipped, but project and test plan generated");
+      }
+    } else {
+      console.log("\nSkipped Tester Agent: No test files available");
+    }
+
+    console.log("\nInstructionService process completed!");
     console.log(`\nTip: Use the following commands to view session details:`);
     console.log(`  const service = new InstructionService();`);
     console.log(`  const session = service.getSession('${plan.id}');`);
@@ -308,10 +419,10 @@ function writeProjectDirectly(result, outDir = "./output/generated_project") {
  * 將 Coder Coordinator 的結果格式化為 Markdown
  */
 function formatCoderResultAsMarkdown(result) {
-  let markdown = "# 生成的專案檔案\n\n";
+  let markdown = "# Generated project files\n\n";
   
   if (result.notes && result.notes.length > 0) {
-    markdown += "## 說明\n\n";
+    markdown += "## Description\n\n";
     result.notes.forEach(note => {
       markdown += `- ${note}\n`;
     });

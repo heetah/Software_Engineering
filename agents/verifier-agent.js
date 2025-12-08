@@ -37,11 +37,45 @@ const __dirname = path.dirname(__filename);
 // ===== VerifierAgent Class =====
 export default class VerifierAgent extends BaseAgent {
   constructor() {
+    // 支援 OPENAI_API_KEY, API_KEY (舊版), CLOUD_API_KEY (fallback)
+    const apiKey = process.env.OPENAI_API_KEY || process.env.API_KEY || process.env.CLOUD_API_KEY;
+    const baseUrl = process.env.OPENAI_BASE_URL || process.env.BASE_URL || 
+                   (process.env.CLOUD_API_ENDPOINT ? this._detectBaseUrl(process.env.CLOUD_API_ENDPOINT) : "https://api.openai.com/v1");
+    
     super("Verifier Agent", "JSON", "verifier", {
-      baseUrl: process.env.OPENAI_BASE_URL || process.env.BASE_URL || "https://api.openai.com/v1",
-      apiKey: process.env.OPENAI_API_KEY || process.env.API_KEY
+      baseUrl,
+      apiKey
     });
     this.temperature = 0.1;
+  }
+
+  _detectBaseUrl(endpoint) {
+    if (endpoint.includes('generativelanguage.googleapis.com')) {
+      return 'https://generativelanguage.googleapis.com/v1beta';
+    }
+    return endpoint;
+  }
+
+  /**
+   * 執行 Verifier Agent 主流程（實例方法）
+   * @param {string} sessionId
+   * @returns {Promise<{path:string, plan:object}>}
+   */
+  async runVerifierAgent(sessionId) {
+    if (!sessionId) throw new Error("缺少 sessionId");
+    try {
+      const architectureData = await loadArchitecture(sessionId);
+      const templateText = await loadTemplates();
+      const prompt = buildLLMPrompt(architectureData, templateText, sessionId);
+      const raw = await callLLM(prompt, this);
+      const testPlan = validateTestPlan(raw, sessionId);
+      const pathWritten = await writeTestPlan(sessionId, testPlan);
+      console.log(`test-plan.json has been generated: ${pathWritten}`);
+      return { path: pathWritten, plan: testPlan };
+    } catch (err) {
+      console.error(`Verifier Agent failed: ${err.message}`);
+      throw err;
+    }
   }
 }
 

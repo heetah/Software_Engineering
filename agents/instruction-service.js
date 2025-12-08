@@ -116,6 +116,22 @@ export default class InstructionService {
   }
 
   async createPlan({ prompt, context }) {
+    // 先讓 ArchitectAgent 判斷意圖：專案生成 or 單純問答
+    const intent = await this.agent.detectIntent({ prompt, context });
+
+    // 單純問答模式：不產生 architecture.json，也不觸發後續 coder / verifier / tester
+    if (intent === 'qa') {
+      const answer = await this.agent.answerQuestion({ prompt, context });
+      return {
+        mode: 'qa',
+        prompt,
+        context: context || null,
+        answerText: answer.answerText,
+        usage: answer.usage || null
+      };
+    }
+
+    // ===== 專案生成模式 =====
     // 生成會話 ID
     const id = randomUUID();
     // 生成計劃

@@ -11,11 +11,23 @@ dotenv.config();
 
 export default class ArchitectAgent extends BaseAgent {
   constructor() {
-    // 使用 OpenAI API（從環境變數讀取）
+    // 使用 OpenAI API（從環境變數讀取），支援 CLOUD_API 作為 fallback
+    const apiKey = process.env.OPENAI_API_KEY || process.env.CLOUD_API_KEY;
+    const baseUrl = process.env.OPENAI_BASE_URL || 
+                   (process.env.CLOUD_API_ENDPOINT ? this._detectBaseUrl(process.env.CLOUD_API_ENDPOINT) : "https://api.openai.com/v1");
+    
     super("Architect Agent", "JSON", "architect", {
-      baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-      apiKey: process.env.OPENAI_API_KEY
+      baseUrl,
+      apiKey
     });
+  }
+
+  _detectBaseUrl(endpoint) {
+    // 如果是 Gemini API endpoint，需要轉換成適合 BaseAgent 的格式
+    if (endpoint.includes('generativelanguage.googleapis.com')) {
+      return 'https://generativelanguage.googleapis.com/v1beta';
+    }
+    return endpoint;
   }
 
   prompt(requirementOutput) {
@@ -31,6 +43,113 @@ Output JSON with:
   "tech_stack": [],
   "integration_points": []
 }`;
+  }
+
+  /**
+   * 簡單意圖判斷：區分「專案生成」與「單純問答」
+   * @param {Object} options
+   * @param {string} options.prompt - 使用者輸入
+   * @param {Object} [options.context] - 目前上下文
+   * @returns {Promise<"project"|"qa">}
+   */
+  async detectIntent({ prompt, context }) {
+    const systemPrompt = `You are an intent classifier for a multi-agent coding assistant.
+
+Your task:
+- Decide whether the user wants to GENERATE / MODIFY a software project ("project" mode),
+  or is ONLY asking a general question / explanation ("qa" mode).
+
+Output rules:
+- Output EXACTLY one lowercase word: "project" or "qa".
+- "project": user clearly asks to build/create/modify an app, website, system, codebase, or tests.
+- "qa": user mainly wants explanation, debugging help, code review, or conceptual Q&A,
+  without asking to generate a full multi-file project.
+`;
+
+    const payload = {
+      temperature: 0,
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: JSON.stringify({
+            user_input: prompt,
+            context: context || null
+          })
+        }
+      ]
+    };
+
+    try {
+      const res = await this._executeAPI(payload);
+      const usage = res?.data?.usage;
+      if (usage) {
+        tokenTracker.record(`${this.role}-intent`, usage);
+        console.log(
+          `  Intent detection token usage: Input=${usage.prompt_tokens}, Output=${usage.completion_tokens}, Total=${usage.total_tokens}`
+        );
+      }
+
+      const content = res?.data?.choices?.[0]?.message?.content?.trim().toLowerCase();
+      if (!content) {
+        throw new Error("Intent classifier returned empty content");
+      }
+
+      if (content.includes("qa")) return "qa";
+      if (content.includes("project")) return "project";
+
+      // 預設走「專案生成」比較安全
+      return "project";
+    } catch (err) {
+      console.warn(`  ${this.role} intent detection failed, fallback to project mode: ${err.message}`);
+      return "project";
+    }
+  }
+
+  /**
+   * 單純問答模式：直接請 LLM 產生回覆，不觸發專案生成流程
+   * @param {Object} options
+   * @param {string} options.prompt
+   * @param {Object} [options.context]
+   * @returns {Promise<{ answerText: string, usage: any }>}
+   */
+  async answerQuestion({ prompt, context }) {
+    const systemPrompt = `You are a helpful programming assistant.
+- If the user is asking a question (not clearly asking to generate a full project), answer directly.
+- Use the same language as the user when possible (e.g. Traditional Chinese).
+- Do NOT describe or mention any internal agents, architecture.json, or test-plan.json.
+- Focus on giving a clear, concise, and practical answer.
+`;
+
+    const payload = {
+      temperature: 0.5,
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: JSON.stringify({
+            user_input: prompt,
+            context: context || null
+          })
+        }
+      ]
+    };
+
+    const res = await this._executeAPI(payload);
+    const usage = res?.data?.usage;
+    if (usage) {
+      tokenTracker.record(`${this.role}-qa`, usage);
+      console.log(
+        `  QA answer token usage: Input=${usage.prompt_tokens}, Output=${usage.completion_tokens}, Total=${usage.total_tokens}`
+      );
+    }
+
+    const content = res?.data?.choices?.[0]?.message?.content?.trim();
+    if (!content) {
+      throw new Error("QA answer LLM 回傳無內容");
+    }
+
+    return { answerText: content, usage: usage || null };
   }
 
   /**
