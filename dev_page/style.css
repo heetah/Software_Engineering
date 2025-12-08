@@ -392,8 +392,14 @@ body {
   -webkit-mask:
     linear-gradient(#fff 0 0) content-box,
     linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
+
+  /* Ensure shimmer is behind text but above background */
+  z-index: -1;
 }
 
 /* User 氣泡靠右 */
