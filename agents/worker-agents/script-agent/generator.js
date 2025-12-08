@@ -51,7 +51,13 @@ class ScriptGenerator {
         // Dynamically import the ESM module
         const { default: ragEngine } = await import('../../rag-engine/index.js');
 
-        // Ingest known files to RAG Engine (demo purpose: real-time ingest)
+        // 0. Initialize with current config (API Keys)
+        ragEngine.init(this.config);
+
+        // 1. Ingest Knowledge Base (Static Example Code)
+        await ragEngine.ingestKnowledgeBase();
+
+        // 2. Ingest known files to RAG Engine (demo purpose: real-time ingest)
         for (const file of context.allFiles) {
           if (file.content) {
             await ragEngine.ingestFile(file.path, file.content);
@@ -455,11 +461,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     prompt += `- If HTML uses specific symbols/strings, your logic must handle those exact values\n\n`;
 
-    prompt += `📦 EXPORT MANDATE (CRITICAL - CommonJS):\n`;
-    prompt += `At the very end of the file, you MUST export ALL functions/classes defined in this file using CommonJS syntax.\n`;
-    prompt += `Format: module.exports = { functionName1, functionName2, ... };\n`;
-    prompt += `If the file is a Class, export it directly: module.exports = ClassName;\n`;
-    prompt += `DO NOT use 'export default' or 'export const'. Use 'module.exports'.\n\n`;
+    prompt += `📦 EXPORT MANDATE (CRITICAL - Universal):\n`;
+    prompt += `At the very end of the file, check if 'module' exists before exporting (to support both Browser and Node.js testing).\n`;
+    prompt += `Pattern:\n`;
+    prompt += `if (typeof module !== 'undefined' && module.exports) {\n`;
+    prompt += `    module.exports = { functionName1, functionName2, ... };\n`;
+    prompt += `}\n`;
+    prompt += `DO NOT use 'export default' or 'export const'. This ensures the code is testable without breaking the browser.\n\n`;
 
     prompt += `Return ONLY the code, no markdown.`;
 
