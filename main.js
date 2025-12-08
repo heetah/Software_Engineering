@@ -428,9 +428,12 @@ function registerCoordinatorBridge() {
               );
             }
           }
+          responseText += `\nTip: Project generated in ${
+            plan.workspaceDir || "output/" + plan.id
+          } directory`;
         }
       } else {
-        responseText = "處理完成，但未返回計劃資訊";
+        responseText = "Processing completed, but no plan information returned";
       }
 
       event.sender.send("message-from-agent", {

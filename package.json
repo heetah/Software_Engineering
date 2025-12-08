@@ -13,8 +13,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@langchain/core": "^1.1.4",
     "axios": "^1.12.2",
     "dotenv": "^17.2.3",
+    "langchain": "^1.1.5",
+    "llamaindex": "^0.12.1",
     "node-fetch": "^2.7.0",
     "sqlite3": "^5.1.7"
   },

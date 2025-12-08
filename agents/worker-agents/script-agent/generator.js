@@ -5,18 +5,19 @@
 const path = require('path');
 const { callCloudAPI } = require('../api-adapter.cjs');
 const API_STANDARDS = require('../../shared/api-standards.cjs');
+// const ragEngine = require('../../rag-engine/index.js'); // REMOVED: Using dynamic import to avoid ESM error
 
 class ScriptGenerator {
   constructor(config = {}) {
     // API 配置優先順序：1. config 參數 2. CLOUD_API 3. OPENAI_API
-    this.cloudApiEndpoint = config.cloudApiEndpoint || 
-                           process.env.CLOUD_API_ENDPOINT || 
-                           process.env.OPENAI_BASE_URL;
-    this.cloudApiKey = config.cloudApiKey || 
-                      process.env.CLOUD_API_KEY || 
-                      process.env.OPENAI_API_KEY;
+    this.cloudApiEndpoint = config.cloudApiEndpoint ||
+      process.env.CLOUD_API_ENDPOINT ||
+      process.env.OPENAI_BASE_URL;
+    this.cloudApiKey = config.cloudApiKey ||
+      process.env.CLOUD_API_KEY ||
+      process.env.OPENAI_API_KEY;
     this.useMockApi = !this.cloudApiEndpoint;
-    
+
     // 🔍 Debug: 記錄 Worker Generator 初始化
     console.log('[ScriptGenerator] Initialized:', {
       hasConfigEndpoint: !!config.cloudApiEndpoint,
@@ -33,7 +34,7 @@ class ScriptGenerator {
 
   async generate({ skeleton, fileSpec, context }) {
     console.log(`[Generator] Processing ${fileSpec.path}`);
-    
+
     // 優先級 1: 使用 template（Architect 提供的完整代碼）
     if (fileSpec.template && fileSpec.template.trim()) {
       console.log(`[Generator] ✅ Using template (${fileSpec.template.length} chars)`);
@@ -43,28 +44,59 @@ class ScriptGenerator {
         method: 'template'
       };
     }
-    
+
+    // 🔥 Advanced RAG Integration (LlamaIndex / LangChain)
+    try {
+      if (context.allFiles && context.allFiles.length > 0) {
+        // Dynamically import the ESM module
+        const { default: ragEngine } = await import('../../rag-engine/index.js');
+
+        // 0. Initialize with current config (API Keys)
+        ragEngine.init(this.config);
+
+        // 1. Ingest Knowledge Base (Static Example Code)
+        await ragEngine.ingestKnowledgeBase();
+
+        // 2. Ingest known files to RAG Engine (demo purpose: real-time ingest)
+        for (const file of context.allFiles) {
+          if (file.content) {
+            await ragEngine.ingestFile(file.path, file.content);
+          }
+        }
+        await ragEngine.buildIndex();
+
+        // Query Semantic Context
+        const query = `${fileSpec.description || ''} ${fileSpec.path}`;
+        context.semanticContext = await ragEngine.query(query);
+        if (context.semanticContext) {
+          console.log(`[Generator] 🧠 Retrieved Semantic Context (${context.semanticContext.length} chars)`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Generator] RAG Engine warning: ${err.message}`);
+    }
+
     // 優先級 2: 使用 contracts 結構（example2 格式）
     const hasContracts = context.contracts && (
       (context.contracts.dom && context.contracts.dom.length > 0) ||
       (context.contracts.api && context.contracts.api.length > 0)
     );
-    
+
     if (hasContracts) {
       console.log(`[Generator] ✓ Using contracts-based generation`);
       console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
-      
+
       if (this.useMockApi) {
         return this.generateWithMock({ skeleton, fileSpec, context });
       } else {
         return this.generateWithCloudAPI({ skeleton, fileSpec, context });
       }
     }
-    
+
     // 優先級 3: AI 生成（無 contracts 也無 template）
     console.log(`[Generator] ⚠ No contracts or template - using AI generation`);
     console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
-    
+
     if (this.useMockApi) {
       return this.generateWithMock({ skeleton, fileSpec, context });
     } else {
@@ -74,39 +106,43 @@ class ScriptGenerator {
 
   async generateWithCloudAPI({ skeleton, fileSpec, context }) {
     const prompt = this.buildPrompt({ skeleton, fileSpec, context });
-    
+
+    // 從 context 獲取 modelTier (由 Coordinator 決定)
+    const modelTier = context.modelTier || 'strong';
+
     try {
       const { content, tokensUsed } = await callCloudAPI({
         endpoint: this.cloudApiEndpoint,
         apiKey: this.cloudApiKey,
         systemPrompt: 'You are an expert JavaScript developer. Generate clean, modern JavaScript code following best practices. Output only the code.',
         userPrompt: prompt,
-        maxTokens: 16384  // Increased from 8192 to prevent truncation
+        maxTokens: 16384,  // Increased from 8192 to prevent truncation
+        modelTier: modelTier // Pass tier to adapter
       });
-      
+
       if (!content || content.trim() === '') {
         console.warn('[Generator] API returned empty content despite consuming tokens:', tokensUsed);
         throw new Error('API returned empty content (possibly blocked by safety filters)');
       }
-      
+
       const cleanContent = content
         .replace(/^```javascript\n/, '')
         .replace(/^```js\n/, '')
         .replace(/^```\n/, '')
         .replace(/\n```$/, '')
         .trim();
-      
+
       if (!cleanContent) {
         console.warn('[Generator] Content became empty after cleaning. Original length:', content.length);
         throw new Error('Content became empty after markdown removal');
       }
-      
+
       return {
         content: cleanContent,
         tokensUsed,
         method: 'cloud-api'
       };
-      
+
     } catch (error) {
       console.error('[Generator] API error:', error.message);
       console.log('[Generator] Falling back to mock...');
@@ -116,7 +152,7 @@ class ScriptGenerator {
 
   async generateWithMock({ skeleton, fileSpec, context }) {
     const { description } = fileSpec;
-    
+
     const content = `// Mock fallback - Configure CLOUD_API_ENDPOINT for real generation
 // ${description || 'JavaScript code'}
 
@@ -125,7 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('Configure CLOUD_API_ENDPOINT for full functionality');
 });
 `;
-    
+
     return {
       content,
       tokensUsed: Math.ceil(content.length / 4),
@@ -138,16 +174,43 @@ document.addEventListener('DOMContentLoaded', () => {
     const completedFiles = context.completedFiles || [];
     const allFiles = context.allFiles || [];
     const contracts = context.contracts || null;
-    
+
     let prompt = `Generate JavaScript for: ${filePath}\n\n`;
-    
+
     if (description) {
       prompt += `Description: ${description}\n\n`;
     }
-    
+
+    // ========== RAG Knowledge Base (Context Injection) ==========
+    const dependencies = context.dependencies || [];
+    if (dependencies.length > 0) {
+      prompt += `\n📚 RAG KNOWLEDGE BASE (Dependency Context)\n`;
+      prompt += `You have access to the following 'Reference Library'. \n`;
+      prompt += `BEFORE writing any code, RETRIEVE the function signatures from this library to ensure 100% correct usage.\n\n`;
+
+      dependencies.forEach(dep => {
+        prompt += `### Reference: ${path.basename(dep.path)}\n`;
+        // 🔥 Use Interface Extraction instead of raw code
+        let contentToInject = dep.content
+          ? this.extractInterface(dep.content)
+          : '// Content not available';
+
+        if (contentToInject.length > 3000) {
+          contentToInject = contentToInject.substring(0, 3000) + '\n// ... (truncated)';
+        }
+        prompt += `\`\`\`${dep.language || 'javascript'}\n${contentToInject}\n\`\`\`\n\n`;
+      });
+
+      prompt += `USAGE RULES:\n`;
+      prompt += `1. SEARCH for any function you intend to call in the Reference above.\n`;
+      prompt += `2. VERIFY the number of arguments and their types.\n`;
+      prompt += `3. CALL the function exactly as defined.\n`;
+      prompt += `4. If an imported function is NOT in the reference, do NOT invent it. Use available alternatives or mock it.\n\n`;
+    }
+
     // ========== 自動檢測：window.APP_CONFIG 使用規範 ==========
     const hasConfigJs = allFiles.some(f => f.path === 'config.js' || f.path.endsWith('/config.js'));
-    
+
     if (hasConfigJs) {
       prompt += `🔴 MANDATORY: API CONFIGURATION PATTERN\n`;
       prompt += `You MUST read API base URL from window.APP_CONFIG:\n\n`;
@@ -161,11 +224,11 @@ document.addEventListener('DOMContentLoaded', () => {
       prompt += `❌ FORBIDDEN: Do NOT use fetch('http://...') with absolute URLs\n`;
       prompt += `✅ CORRECT: Use relative paths or API_BASE_URL variable\n\n`;
     }
-    
+
     // ========== 自動檢測：過濾器處理規範 ==========
     const hasFilterDropdown = skeleton && skeleton.includes('option value="all"');
     const isFilterRelated = description && description.toLowerCase().includes('filter');
-    
+
     if (hasFilterDropdown || isFilterRelated) {
       prompt += `🔴 FILTER HANDLING STANDARD:\n`;
       prompt += `When building filter query parameters:\n`;
@@ -182,7 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
       prompt += `}\n`;
       prompt += `// Then pass to API: fetchData(filters)\n\n`;
     }
-    
+
     // ========== DOM 查詢防禦性編程（總是應用）==========
     prompt += `🔴 DOM ELEMENT ACCESS STANDARD:\n`;
     prompt += `ALWAYS add null checks after querySelector/getElementById:\n\n`;
@@ -192,11 +255,11 @@ document.addEventListener('DOMContentLoaded', () => {
     prompt += `  return;  // or handle gracefully\n`;
     prompt += `}\n`;
     prompt += `// Now safe to use element\n\n`;
-    
+
     // ========== 自動檢測：Modal 顯示規範 ==========
     const hasModal = skeleton && skeleton.toLowerCase().includes('modal');
     const isModalRelated = description && description.toLowerCase().includes('modal');
-    
+
     if (hasModal || isModalRelated) {
       prompt += `🔴 MODAL DISPLAY STANDARD:\n`;
       prompt += `Use consistent class and attribute toggling:\n\n`;
@@ -210,35 +273,35 @@ document.addEventListener('DOMContentLoaded', () => {
       prompt += `}\n\n`;
       prompt += `The CSS must use: #modal-id.is-active { display: flex; }\n\n`;
     }
-    
+
     if (requirements.length > 0) {
       prompt += `Additional Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
     }
-    
+
     // ← 新增：如果有 contracts，優先顯示
     if (contracts) {
       prompt += `=== CONTRACTS (MUST FOLLOW EXACTLY) ===\n`;
-      
+
       // ✨ DOM contracts - JavaScript 必須遵守的 DOM 查詢規則
       if (contracts.dom && contracts.dom.length > 0) {
         const relevantDom = contracts.dom.filter(dom => {
           const consumers = dom.consumers || dom.accessedBy || [];
           return consumers.includes(filePath);
         });
-        
+
         if (relevantDom.length > 0) {
           prompt += `\n⚠️ CRITICAL: DOM ELEMENTS GUARANTEED BY HTML ⚠️\n`;
           prompt += `These elements are GUARANTEED to exist in the HTML:\n\n`;
-          
+
           relevantDom.forEach((dom, idx) => {
             prompt += `DOM Contract #${idx + 1}: ${dom.description || dom.purpose || `Element: ${dom.id}`}\n`;
-            
+
             // Support simple format: { id, type, purpose, accessedBy }
             if (dom.id) {
               prompt += `  Element ID: #${dom.id}\n`;
               prompt += `  Element Type: <${dom.type}>\n`;
             }
-            
+
             // Support complex format: { templateId, containerId, requiredElements }
             if (dom.templateId) {
               prompt += `  Template: #${dom.templateId}\n`;
@@ -246,7 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (dom.containerId) {
               prompt += `  Container: #${dom.containerId}\n`;
             }
-            
+
             if (dom.requiredElements && dom.requiredElements.length > 0) {
               prompt += `  Available Elements:\n`;
               dom.requiredElements.forEach(elem => {
@@ -258,7 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             prompt += `\n`;
           });
-          
+
           prompt += `DEFENSIVE PROGRAMMING RULES:\n`;
           prompt += `1. ALWAYS add null checks after querySelector:\n`;
           prompt += `   const elem = container.querySelector('.status-badge');\n`;
@@ -271,7 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
           prompt += `4. Never assume elements exist without checking\n\n`;
         }
       }
-      
+
       // ============ API 強制規範 (簡潔版) ============
       prompt += `\n🔒 CRITICAL API RULES - MANDATORY:\n`;
       prompt += `${API_STANDARDS.STANDARD_JS_HEADER}\n`;
@@ -283,23 +346,23 @@ document.addEventListener('DOMContentLoaded', () => {
       prompt += `   - const API_BASE_URL = window.APP_CONFIG?.API_BASE_URL || '/api';\n`;
       prompt += `   - fetch(\`\${API_BASE_URL}/weather?city=\${encodeURIComponent(city)}\`)  // Use query params\n`;
       prompt += `   - Always check if endpoint uses query params (?) or path params (/)\n\n`;
-      
+
       // API contracts - 增強格式說明
       if (contracts.api && contracts.api.length > 0) {
-        const relevantApis = contracts.api.filter(api => 
+        const relevantApis = contracts.api.filter(api =>
           api.consumers.includes(filePath) || api.producers.includes(filePath)
         );
-        
+
         if (relevantApis.length > 0) {
           prompt += `📝 API Contract (MUST follow exactly):\n`;
           relevantApis.forEach(api => {
             prompt += `\n  Endpoint: ${api.endpoint}\n`;
             prompt += `  Description: ${api.description}\n`;
-            
+
             // 分析 endpoint 格式
             const hasQueryParams = api.request && api.request.query;
             const hasPathParams = api.endpoint.includes(':') || api.endpoint.includes('<');
-            
+
             if (hasQueryParams) {
               prompt += `  ⚠️  Uses QUERY PARAMETERS (e.g., /api/weather?city=Tokyo)\n`;
               prompt += `  Request Query:\n`;
@@ -308,12 +371,12 @@ document.addEventListener('DOMContentLoaded', () => {
               });
               prompt += `  Example: fetch(\`\${API_BASE_URL}/weather?city=\${encodeURIComponent(cityName)}\`)\n`;
             }
-            
+
             if (hasPathParams) {
               prompt += `  ⚠️  Uses PATH PARAMETERS (e.g., /api/weather/:city)\n`;
               prompt += `  Example: fetch(\`\${API_BASE_URL}/weather/\${encodeURIComponent(cityName)}\`)\n`;
             }
-            
+
             if (api.response) {
               prompt += `  Response Fields (use EXACT names):\n`;
               const responseStr = JSON.stringify(api.response, null, 4);
@@ -323,14 +386,14 @@ document.addEventListener('DOMContentLoaded', () => {
           prompt += `\n⚠️  CRITICAL: Use exact field names from contract. Wrong field = app breaks!\n\n`;
         }
       }
-      
+
       // Event contracts
       if (contracts.events && contracts.events.length > 0) {
         const relevantEvents = contracts.events.filter(evt =>
-          evt.emitters.some(e => e.includes(filePath)) || 
+          evt.emitters.some(e => e.includes(filePath)) ||
           evt.listeners.some(l => l.includes(filePath))
         );
-        
+
         if (relevantEvents.length > 0) {
           prompt += `Custom Events:\n`;
           relevantEvents.forEach(evt => {
@@ -339,14 +402,14 @@ document.addEventListener('DOMContentLoaded', () => {
           prompt += `\n`;
         }
       }
-      
+
       // Storage contracts
       if (contracts.storage && contracts.storage.length > 0) {
         const relevantStorage = contracts.storage.filter(store =>
           store.readers.some(r => r.includes(filePath)) ||
           store.writers.some(w => w.includes(filePath))
         );
-        
+
         if (relevantStorage.length > 0) {
           prompt += `Storage:\n`;
           relevantStorage.forEach(store => {
@@ -355,13 +418,13 @@ document.addEventListener('DOMContentLoaded', () => {
           prompt += `\n`;
         }
       }
-      
+
       // Module contracts
       if (contracts.modules && contracts.modules.length > 0) {
         const relevantModules = contracts.modules.filter(mod =>
           mod.importers.includes(filePath)
         );
-        
+
         if (relevantModules.length > 0) {
           prompt += `Imported Modules:\n`;
           relevantModules.forEach(mod => {
@@ -371,20 +434,20 @@ document.addEventListener('DOMContentLoaded', () => {
           prompt += `\n`;
         }
       }
-      
+
       prompt += `=== END CONTRACTS ===\n\n`;
     }
-    
+
     // Include HTML structure if available
     const htmlFiles = completedFiles.filter(f => f.language === 'html');
     if (htmlFiles.length > 0) {
       prompt += `HTML files exist - write JavaScript to interact with their DOM elements\n\n`;
     }
-    
+
     if (skeleton) {
       prompt += `Skeleton:\n\`\`\`javascript\n${skeleton}\n\`\`\`\n\n`;
     }
-    
+
     prompt += `Generate complete, production-ready JavaScript with:\n`;
     prompt += `- Modern ES6+ syntax\n`;
     prompt += `- Event listeners matching HTML structure\n`;
@@ -397,9 +460,52 @@ document.addEventListener('DOMContentLoaded', () => {
       prompt += `- CRITICAL: Follow contract structures EXACTLY - no field name changes allowed\n`;
     }
     prompt += `- If HTML uses specific symbols/strings, your logic must handle those exact values\n\n`;
+
+    prompt += `📦 EXPORT MANDATE (CRITICAL - Universal):\n`;
+    prompt += `At the very end of the file, check if 'module' exists before exporting (to support both Browser and Node.js testing).\n`;
+    prompt += `Pattern:\n`;
+    prompt += `if (typeof module !== 'undefined' && module.exports) {\n`;
+    prompt += `    module.exports = { functionName1, functionName2, ... };\n`;
+    prompt += `}\n`;
+    prompt += `DO NOT use 'export default' or 'export const'. This ensures the code is testable without breaking the browser.\n\n`;
+
     prompt += `Return ONLY the code, no markdown.`;
-    
+
     return prompt;
+  }
+
+  /**
+   * RAG Optimization: Extract code interface (signatures + comments)
+   * Drastically reduces token usage and removes implementation noise.
+   */
+  extractInterface(code) {
+    if (!code) return '';
+
+    // Simple regex-based interface extractor
+    // 1. Preserve exports, classes, functions, and comments
+    // 2. Hide function bodies { ... }
+
+    let interfaceCode = code;
+
+    // Replace function bodies with comments
+    // Note: Accurate parsing requires AST, here we use robust heuristics for speed
+
+    // Remove implementation inside { ... } which are indented (likely method bodies)
+    // This is a conservative heuristic to separate methods from class definitions
+
+    // 1. Remove obvious function bodies
+    interfaceCode = interfaceCode.replace(/(\) \s*\{)[\s\S]*?(\n\})/g, '$1 /* implementation hidden */ }');
+
+    // 2. Truncate very long lines (likely data or compressed code)
+    interfaceCode = interfaceCode.split('\n').map(line => {
+      if (line.length > 200) return line.substring(0, 200) + '...';
+      return line;
+    }).join('\n');
+
+    // 3. Keep imports/exports/JSDoc/Comments
+    // (Already kept by default unless replaced)
+
+    return interfaceCode;
   }
 }
 
