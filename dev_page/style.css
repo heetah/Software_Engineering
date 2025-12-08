@@ -439,6 +439,8 @@ body {
 
 /* User 按鈕靠右 */
 .message-group--user .message-actions {
+  padding-left: 0px;
+  padding-right: 0px;
   justify-content: flex-end;
   /* margin-right 已經在上方設定 */
   width: 100%;
