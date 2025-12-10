@@ -251,13 +251,14 @@ export async function runWithInstructionService(
         () => verifier.runVerifierAgent(plan.id),
         { sessionId: plan.id }
       );
-      testPlan = verifierResult.plan;
-      console.log(`Test Plan generated: ${verifierResult.path}`);
-      console.log(`Test files: ${testPlan?.testFiles?.length || 0}`);
+      testPlan = verifierResult; // 直接使用整個結果物件
+      console.log(`\n✓ Verification complete`);
+      console.log(`  Report: ${verifierResult.reportPath}`);
+      console.log(`  Test plans: ${testPlan?.testPlans?.length || 0}`);
       
-      if (testPlan?.testFiles && testPlan.testFiles.length > 0) {
-        testPlan.testFiles.forEach(tf => {
-          console.log(`  - ${tf.filename} (${tf.testLevel}, ${tf.inputsType})`);
+      if (testPlan?.testPlans && testPlan.testPlans.length > 0) {
+        testPlan.testPlans.forEach(tp => {
+          console.log(`  - ${tp.file} -> ${tp.testPlanPath}`);
         });
       }
     } catch (err) {
@@ -270,9 +271,10 @@ export async function runWithInstructionService(
     }
 
     // ===== Tester Agent: 生成測試碼並執行測試 =====
-    if (testPlan && testPlan.testFiles && testPlan.testFiles.length > 0) {
+    if (testPlan && testPlan.testPlans && testPlan.testPlans.length > 0) {
       console.log("\n" + "=".repeat(60));
-      console.log("Tester Agent: Generate test code and execute tests");
+      console.log("Tester Agent: Smart patching, syntax fix, and testing");
+      console.log("Features: Phase 2 (Syntax fix, Deps) + Phase 3 (Smart exports)");
       console.log("=".repeat(60));
       
       try {
@@ -282,37 +284,74 @@ export async function runWithInstructionService(
           { sessionId: plan.id }
         );
         
-        const { testReport, errorReport } = testResult;
-        console.log(`\nTests executed successfully!`);
-        console.log(`Test statistics:`);
-        console.log(`   - Test files: ${testReport.totals.files}`);
-        console.log(`   - Total tests: ${testReport.totals.tests}`);
-        console.log(`   - Passed: ${testReport.totals.passed}`);
-        console.log(`   - Failed: ${testReport.totals.failed} ${testReport.totals.failed > 0 ? '' : ''}`);
+        // 適配 Tester Agent 的返回結構
+        const { reportPath, jestResults } = testResult;
         
-        if (testReport.totals.failed > 0) {
-          console.log(`\nThere are ${testReport.totals.failed} failed tests`);
-          if (errorReport.failures && errorReport.failures.length > 0) {
-            console.log(`\nFailed case details:`);
-            errorReport.failures.slice(0, 5).forEach((failure, idx) => {
-              console.log(`  ${idx + 1}. ${failure.title}`);
-              console.log(`     File: ${failure.filename}`);
-              if (failure.failureMessages && failure.failureMessages[0]) {
-                const msg = failure.failureMessages[0].substring(0, 100);
-                console.log(`     Error: ${msg}${failure.failureMessages[0].length > 100 ? '...' : ''}`);
-              }
-            });
-            if (errorReport.failures.length > 5) {
-              console.log(`  ... There are ${errorReport.failures.length - 5} more failed cases`);
-            }
-          }
+        // 檢查 jestResults 是否有效
+        if (!jestResults || !jestResults.results) {
+          console.log(`\n⚠️  測試執行失敗或無結果`);
+          console.log(`   報告已產生：${reportPath}`);
         } else {
-          console.log(`\nAll tests passed!`);
+          const results = jestResults.results;
+          
+          console.log(`\n✓ Tests executed successfully!`);
+          console.log(`Test statistics:`);
+          console.log(`   - Test files: ${results.numTotalTestSuites || 0}`);
+          console.log(`   - Total tests: ${results.numTotalTests || 0}`);
+          console.log(`   - Passed: ${results.numPassedTests || 0} ✓`);
+          console.log(`   - Failed: ${results.numFailedTests || 0}${results.numFailedTests > 0 ? ' ✗' : ''}`);
+          
+          if (results.numFailedTests > 0) {
+            console.log(`\nThere are ${results.numFailedTests} failed tests`);
+            
+            // 提取失敗的測試
+            const failures = [];
+            if (results.testResults) {
+              results.testResults.forEach(testFile => {
+                if (testFile.assertionResults) {
+                  testFile.assertionResults
+                    .filter(test => test.status === 'failed')
+                    .forEach(test => {
+                      failures.push({
+                        title: test.title,
+                        filename: path.basename(testFile.name || testFile.testFilePath || 'unknown'),
+                        failureMessages: test.failureMessages
+                      });
+                    });
+                }
+              });
+            }
+            
+            if (failures.length > 0) {
+              console.log(`\nFailed case details:`);
+              failures.slice(0, 5).forEach((failure, idx) => {
+                console.log(`  ${idx + 1}. ${failure.title}`);
+                console.log(`     File: ${failure.filename}`);
+                if (failure.failureMessages && failure.failureMessages[0]) {
+                  const msg = failure.failureMessages[0].substring(0, 100);
+                  console.log(`     Error: ${msg}${failure.failureMessages[0].length > 100 ? '...' : ''}`);
+                }
+              });
+              
+              if (failures.length > 5) {
+                console.log(`  ... There are ${failures.length - 5} more failed cases`);
+              }
+            }
+          } else {
+            console.log(`\nAll tests passed! 🎉`);
+          }
+          
+          // 將測試結果添加到 plan 中（轉換為原格式）
+          plan.testReport = {
+            totals: {
+              files: results.numTotalTestSuites || 0,
+              tests: results.numTotalTests || 0,
+              passed: results.numPassedTests || 0,
+              failed: results.numFailedTests || 0
+            }
+          };
+          plan.errorReport = { failures: failures || [] };
         }
-        
-        // 將測試結果添加到 plan 中
-        plan.testReport = testReport;
-        plan.errorReport = errorReport;
       } catch (err) {
         errorLogger.warn("Tester Agent execution failed", { 
           error: err.message, 
