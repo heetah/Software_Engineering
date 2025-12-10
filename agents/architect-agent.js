@@ -32,6 +32,8 @@ export default class ArchitectAgent extends BaseAgent {
     super("Architect Agent", "JSON", "architect", {
       baseUrl,
       apiKey,
+      llmProvider: options.llmProvider, // 接收並傳遞 llmProvider
+      model: options.model || 'strong', // Default to Stronger Model (will be resolved by ProviderManager)
       ...options
     });
   }

@@ -26,6 +26,10 @@ async function callCloudAPI({ endpoint, apiKey, systemPrompt, userPrompt, maxTok
       // 嘗試使用 Flash 模型 (速度更快，成本更低 - 類比量化模型)
       apiUrl = apiUrl.replace(/\/models\/[^:]+:/, '/models/gemini-1.5-flash:');
       console.log(`[API Adapter] ⚡ Using FAST model (Gemini Flash)`);
+    } else if (modelTier === 'strong' && endpoint.includes('/models/')) {
+      // Enforce Pro model for strong tier
+      apiUrl = apiUrl.replace(/\/models\/[^:]+:/, '/models/gemini-1.5-pro:');
+      console.log(`[API Adapter] 🧠 Using STRONG model (Gemini Pro)`);
     }
 
     headers = { 'Content-Type': 'application/json' };

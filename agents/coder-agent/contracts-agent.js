@@ -16,11 +16,20 @@ const fetch = global.fetch || require('node-fetch');
 class ContractsAgent {
     constructor(options = {}) {
         // 優先使用 Gemini API（已經在 .env 中配置）
-        this.aiApiUrl = options.aiApiUrl || process.env.CLOUD_API_ENDPOINT || 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent';
+        const model = options.model || 'gemini-1.5-flash';
+        this.aiApiUrl = options.aiApiUrl || process.env.CLOUD_API_ENDPOINT || `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
         this.aiApiKey = options.aiApiKey || process.env.CLOUD_API_KEY;
-        this.apiType = this.aiApiUrl.includes('generativelanguage.googleapis.com') ? 'gemini' : 'anthropic';
+
+        if (this.aiApiUrl.includes('generativelanguage.googleapis.com')) {
+            this.apiType = 'gemini';
+        } else if (this.aiApiUrl.includes('anthropic.com')) {
+            this.apiType = 'anthropic';
+        } else {
+            this.apiType = 'openai'; // Default to OpenAI standard if not Gemini/Anthropic
+        }
+
         this.useAI = options.useAI !== false && !!this.aiApiKey;
-        
+
         if (!this.useAI) {
             console.log('⚠️  ContractsAgent: AI disabled (no API key or explicitly disabled)');
             console.log('    Will pass through payloads without enhancement');
@@ -34,14 +43,14 @@ class ContractsAgent {
      */
     async processPayload(originalPayload) {
         console.log('\n🔍 ContractsAgent: Processing payload...');
-        
+
         const payload = JSON.parse(JSON.stringify(originalPayload)); // Deep clone
-        
+
         if (!this.useAI) {
             console.log('📋 AI disabled - passing through unchanged');
             return this.addPreprocessingMetadata(payload, false);
         }
-        
+
         try {
             const enhanced = await this.enhanceWithAI(payload);
             console.log('✅ AI enhancement successful');
@@ -52,69 +61,71 @@ class ContractsAgent {
             return this.addPreprocessingMetadata(payload, false);
         }
     }
-    
+
     /**
      * 使用 AI 增強 payload
      */
     async enhanceWithAI(payload) {
         console.log(`🤖 Calling ${this.apiType} API for payload enhancement...`);
-        
+
         // 保存原始 files 的 template 欄位
         const originalTemplates = this.extractTemplates(payload);
-        
+
         let enhanced;
         if (this.apiType === 'gemini') {
             enhanced = await this.enhanceWithGemini(payload);
-        } else {
+        } else if (this.apiType === 'anthropic') {
             enhanced = await this.enhanceWithAnthropic(payload);
+        } else {
+            enhanced = await this.enhanceWithOpenAI(payload);
         }
-        
+
         // 恢復 template 欄位到增強後的 payload
         this.restoreTemplates(enhanced, originalTemplates);
-        
+
         return enhanced;
     }
-    
+
     /**
      * 提取所有檔案的 template
      */
     extractTemplates(payload) {
         const files = payload.output?.coder_instructions?.files || [];
         const templates = {};
-        
+
         files.forEach(file => {
             if (file.template) {
                 templates[file.path] = file.template;
             }
         });
-        
+
         console.log(`📋 Extracted ${Object.keys(templates).length} templates before AI processing`);
         return templates;
     }
-    
+
     /**
      * 恢復 template 欄位到增強後的檔案
      */
     restoreTemplates(payload, templates) {
         const files = payload.output?.coder_instructions?.files || [];
         let restored = 0;
-        
+
         files.forEach(file => {
             if (templates[file.path]) {
                 file.template = templates[file.path];
                 restored++;
             }
         });
-        
+
         console.log(`✅ Restored ${restored} templates after AI processing`);
     }
-    
+
     /**
      * 使用 Gemini API
      */
     async enhanceWithGemini(payload) {
         const url = `${this.aiApiUrl}?key=${this.aiApiKey}`;
-        
+
         const response = await fetch(url, {
             method: 'POST',
             headers: {
@@ -133,36 +144,36 @@ class ContractsAgent {
                 }
             })
         });
-        
+
         if (!response.ok) {
             const errorText = await response.text();
             throw new Error(`Gemini API error: ${response.status} ${errorText}`);
         }
-        
+
         const result = await response.json();
-        
+
         // 檢查是否有阻擋或安全問題
         if (!result.candidates || result.candidates.length === 0) {
             throw new Error('Gemini API returned no candidates (possible content filter block)');
         }
-        
+
         const aiResponse = result.candidates[0].content.parts[0].text;
         console.log('📦 AI response length:', aiResponse.length);
-        
+
         // 嘗試多種方式提取 JSON
         let jsonStr = aiResponse;
-        
+
         // 1. 移除 markdown code blocks
         const codeBlockMatch = aiResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
         if (codeBlockMatch) {
             jsonStr = codeBlockMatch[1];
         }
-        
+
         // 2. 清理可能的控制字符
         jsonStr = jsonStr.trim()
             .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // 移除控制字符
             .replace(/\r\n/g, '\n'); // 統一換行符
-        
+
         // 3. 如果不是以 { 開頭，嘗試找到第一個 {
         if (!jsonStr.startsWith('{')) {
             const firstBrace = jsonStr.indexOf('{');
@@ -170,7 +181,7 @@ class ContractsAgent {
                 jsonStr = jsonStr.substring(firstBrace);
             }
         }
-        
+
         // 4. 如果不是以 } 結尾，嘗試找到最後一個 }
         if (!jsonStr.endsWith('}')) {
             const lastBrace = jsonStr.lastIndexOf('}');
@@ -178,7 +189,7 @@ class ContractsAgent {
                 jsonStr = jsonStr.substring(0, lastBrace + 1);
             }
         }
-        
+
         try {
             return JSON.parse(jsonStr);
         } catch (parseError) {
@@ -190,7 +201,47 @@ class ContractsAgent {
             throw new Error(`Failed to parse AI response as JSON: ${parseError.message}`);
         }
     }
-    
+
+    /**
+     * 使用 Anthropic API（備用）
+     */
+    /**
+     * 使用 OpenAI API
+     */
+    async enhanceWithOpenAI(payload) {
+        const url = this.aiApiUrl.includes('generateContent') ? 'https://api.openai.com/v1/chat/completions' : this.aiApiUrl;
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.aiApiKey}`
+            },
+            body: JSON.stringify({
+                model: 'gpt-4o', // Default to strong model for contracts
+                messages: [{
+                    role: 'user',
+                    content: this.buildPrompt(payload)
+                }],
+                temperature: 0.1
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+        }
+
+        const result = await response.json();
+        const aiResponse = result.choices[0].message.content;
+
+        // 提取 JSON
+        const jsonMatch = aiResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        const jsonStr = jsonMatch ? jsonMatch[1] : aiResponse;
+
+        return JSON.parse(jsonStr);
+    }
+
     /**
      * 使用 Anthropic API（備用）
      */
@@ -212,21 +263,21 @@ class ContractsAgent {
                 }]
             })
         });
-        
+
         if (!response.ok) {
             throw new Error(`Anthropic API error: ${response.status}`);
         }
-        
+
         const result = await response.json();
         const aiResponse = result.content[0].text;
-        
+
         // 提取 JSON
         const jsonMatch = aiResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
         const jsonStr = jsonMatch ? jsonMatch[1] : aiResponse;
-        
+
         return JSON.parse(jsonStr);
     }
-    
+
     /**
      * 構建 AI prompt
      */
@@ -236,7 +287,7 @@ class ContractsAgent {
         const contracts = payload.output?.coder_instructions?.contracts || {};
         const projectConfig = payload.output?.coder_instructions?.projectConfig || {};
         const backendPort = projectConfig.backend?.port || projectConfig.runtime?.backend_port;
-        
+
         return `Fix critical issues in this code generation payload.
 
 INPUT PAYLOAD (JSON):
@@ -278,7 +329,7 @@ OUTPUT FORMAT (copy entire payload structure):
   }
 }`;
     }
-    
+
     /**
      * 添加預處理元數據
      */

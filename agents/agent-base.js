@@ -23,11 +23,13 @@ export default class BaseAgent {
     this.logicalName = logicalName; // 邏輯模型
     this.temperature = 0.3; // 控制參數
     this.maxTokens = undefined; // 可用的最大 tokens，由子類設定
-    
+    this.model = options.model; // Explicit model selection
+
     // 支援自定義 API 端點和 Key（用於使用不同的 API 服務）
     this.baseUrl = options.baseUrl || BASE_URL;
     this.apiKey = options.apiKey || API_KEY;
-    
+    this.llmProvider = options.llmProvider; // 儲存 provider 選擇
+
     // 重試配置
     this.maxRetries = options.maxRetries || config.api.maxRetries;
     this.retryDelay = options.retryDelay || config.api.retryDelay;
@@ -54,7 +56,10 @@ export default class BaseAgent {
       try {
         const res = await apiProviderManager.executeAPI(payload, {
           temperature: payload.temperature || this.temperature,
-          maxTokens: payload.max_tokens || this.maxTokens
+          maxTokens: payload.max_tokens || this.maxTokens,
+          apiKey: this.apiKey !== process.env.API_KEY ? this.apiKey : undefined, // 只有當 apiKey 被覆蓋時才傳遞
+          provider: this.llmProvider, // 傳遞指定的 provider (e.g. 'gemini')
+          model: this.model // Pass explicit model
         });
         return res;
       } catch (err) {
@@ -67,28 +72,28 @@ export default class BaseAgent {
             const fallbackBase = this.baseUrl.replace(/\/v1.*$/, '');
             return providerBase === fallbackBase;
           });
-          
+
           // 如果找到匹配的提供者且它被標記為 rate limited，不要重試
           if (matchingProvider && !matchingProvider.isReady()) {
-            const timeSince429 = matchingProvider.last429Time 
-              ? Date.now() - matchingProvider.last429Time 
+            const timeSince429 = matchingProvider.last429Time
+              ? Date.now() - matchingProvider.last429Time
               : 0;
             const waitTime = Math.ceil((60000 - timeSince429) / 1000);
-            
+
             throw new Error(
               `All API providers are unavailable. ` +
               `${matchingProvider.name} is rate limited. ` +
               (waitTime > 0 ? `Please wait ${waitTime} seconds and try again.` : 'Please try again later.')
             );
           }
-          
+
           console.warn(`  ${this.role} All multi-API providers failed, trying fallback API...`);
           return await this._executeAPIFallback(payload, retries);
         }
         throw err;
       }
     }
-    
+
     // 如果沒有配置多 API 提供者，使用傳統方法
     return await this._executeAPIFallback(payload, retries);
   }
@@ -101,8 +106,9 @@ export default class BaseAgent {
    */
   async _executeAPIFallback(payload, retries = this.maxRetries) {
     // 確保 payload 包含 model 參數（OpenAI API 必需）
-    const model = payload.model || process.env.OPENAI_MODEL || process.env.MODEL || 'gpt-4o-mini';
-    
+    // Prioritize explicit model in payload, then agent instance model, then env var
+    const model = payload.model || this.model || process.env.OPENAI_MODEL || process.env.MODEL || 'gpt-4o';
+
     // 構建完整的請求負載
     const requestPayload = {
       model: model,
@@ -111,7 +117,7 @@ export default class BaseAgent {
       ...(payload.max_tokens ? { max_tokens: payload.max_tokens } : {}),
       ...(this.maxTokens ? { max_tokens: this.maxTokens } : {})
     };
-    
+
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const res = await axios.post(
@@ -130,7 +136,7 @@ export default class BaseAgent {
       } catch (err) {
         const statusCode = err?.response?.status;
         const responseHeaders = err?.response?.headers || {};
-        
+
         // 如果是最後一次嘗試，拋出錯誤
         if (attempt === retries) {
           throw handleAPIError(err, this.role);
@@ -141,7 +147,7 @@ export default class BaseAgent {
           // 檢查是否有 Retry-After 頭（秒數）
           const retryAfter = responseHeaders['retry-after'] || responseHeaders['Retry-After'];
           let delay;
-          
+
           if (retryAfter) {
             // 使用 API 建議的等待時間（轉換為毫秒）
             // 對於 429 錯誤，至少等待 60 秒
@@ -152,9 +158,9 @@ export default class BaseAgent {
             // 沒有 Retry-After 頭時，使用更長的延遲時間
             // 對於 429 錯誤，建議等待至少 60 秒，並使用更激進的指數退避
             delay = Math.max(60000, this.retryDelay * Math.pow(2, attempt + 2));
-            console.warn(`  ${this.role} Rate limited (429), waiting ${Math.ceil(delay/1000)} seconds before retry (${attempt + 1}/${retries})...`);
+            console.warn(`  ${this.role} Rate limited (429), waiting ${Math.ceil(delay / 1000)} seconds before retry (${attempt + 1}/${retries})...`);
           }
-          
+
           await this._wait(delay);
           continue;
         }
@@ -239,12 +245,12 @@ export default class BaseAgent {
     } catch (err) {
       // 使用統一的錯誤處理
       errorLogger.log(err, { role: this.role, input: input.substring(0, 100) });
-      
+
       // 如果是自定義錯誤，直接拋出
       if (err instanceof AgentError || err instanceof Error) {
         throw err;
       }
-      
+
       // 否則包裝為 AgentError
       throw new AgentError(
         this.role,
