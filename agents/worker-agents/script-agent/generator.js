@@ -116,7 +116,7 @@ class ScriptGenerator {
         apiKey: this.cloudApiKey,
         systemPrompt: 'You are an expert JavaScript developer. Generate clean, modern JavaScript code following best practices. Output only the code.',
         userPrompt: prompt,
-        maxTokens: 16384,  // Increased from 8192 to prevent truncation
+        maxTokens: 80000,  // Increased to 80k as requested
         modelTier: modelTier // Pass tier to adapter
       });
 
