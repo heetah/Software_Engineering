@@ -10,15 +10,29 @@ import { tokenTracker } from "../utils/token-tracker.js";
 dotenv.config();
 
 export default class ArchitectAgent extends BaseAgent {
-  constructor() {
+  constructor(options = {}) {
     // 使用 OpenAI API（從環境變數讀取），支援 CLOUD_API 作為 fallback
-    const apiKey = process.env.OPENAI_API_KEY || process.env.CLOUD_API_KEY;
-    const baseUrl = process.env.OPENAI_BASE_URL || 
-                   (process.env.CLOUD_API_ENDPOINT ? this._detectBaseUrl(process.env.CLOUD_API_ENDPOINT) : "https://api.openai.com/v1");
-    
+    let apiKey = process.env.OPENAI_API_KEY || process.env.CLOUD_API_KEY;
+
+    // 如果傳入 options 中有 apiKeys，優先使用
+    if (options.apiKeys?.openai) {
+      apiKey = options.apiKeys.openai;
+    }
+
+    let baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+
+    if (!process.env.OPENAI_BASE_URL && process.env.CLOUD_API_ENDPOINT) {
+      if (process.env.CLOUD_API_ENDPOINT.includes('generativelanguage.googleapis.com')) {
+        baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+      } else {
+        baseUrl = process.env.CLOUD_API_ENDPOINT;
+      }
+    }
+
     super("Architect Agent", "JSON", "architect", {
       baseUrl,
-      apiKey
+      apiKey,
+      ...options
     });
   }
 
@@ -281,7 +295,7 @@ Rules:
         // 嘗試從可能的 markdown code block 中提取 JSON
         // 優先匹配 ```json 或 ``` 包裹的 JSON
         let jsonStr = content;
-        
+
         // 嘗試提取最外層的 JSON 對象
         const jsonBlockMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
         if (jsonBlockMatch) {
@@ -293,14 +307,14 @@ Rules:
             jsonStr = jsonObjectMatch[0];
           }
         }
-        
+
         // 清理可能的轉義字符和額外內容
         jsonStr = jsonStr.trim();
         // 移除可能的 markdown 標記
         jsonStr = jsonStr.replace(/^```json\s*/i, '').replace(/```\s*$/, '');
-        
+
         parsed = JSON.parse(jsonStr);
-        
+
         // 驗證解析結果是否包含必要的結構
         if (!parsed.coder_instructions && !parsed.plan) {
           throw new Error('Parsed JSON does not contain required fields');
@@ -308,17 +322,17 @@ Rules:
       } catch (e) {
         console.warn(`  ${this.role} JSON parsing failed: ${e.message}`);
         console.warn(`  Attempting to extract JSON from content...`);
-        
+
         // 更積極的 JSON 提取策略
         try {
           // 嘗試找到第一個 { 到最後一個 } 之間的內容
           const firstBrace = content.indexOf('{');
           const lastBrace = content.lastIndexOf('}');
-          
+
           if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
             const extractedJson = content.substring(firstBrace, lastBrace + 1);
             parsed = JSON.parse(extractedJson);
-            
+
             if (!parsed.coder_instructions && !parsed.plan) {
               throw new Error('Extracted JSON does not contain required fields');
             }
@@ -433,8 +447,8 @@ Rules:
 
       let parsed;
       try {
-        const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || 
-                         content.match(/\{[\s\S]*\}/);
+        const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) ||
+          content.match(/\{[\s\S]*\}/);
         const jsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : content;
         parsed = JSON.parse(jsonStr.trim());
       } catch (e) {

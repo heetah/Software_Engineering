@@ -64,10 +64,29 @@ const __dirname = path.dirname(__filename);
  * 不負責：產生 Jest 測試檔案或執行測試
  */
 export default class VerifierAgent extends BaseAgent {
-  constructor() {
-    super("Verifier Agent", "Markdown", "verifier", {
-      baseUrl: process.env.OPENAI_BASE_URL || process.env.BASE_URL || "https://api.openai.com/v1",
-      apiKey: process.env.OPENAI_API_KEY || process.env.API_KEY
+  constructor(options = {}) {
+    // 支援 OPENAI_API_KEY, API_KEY (舊版), CLOUD_API_KEY (fallback)
+    let apiKey = process.env.OPENAI_API_KEY || process.env.API_KEY || process.env.CLOUD_API_KEY;
+
+    // 如果傳入 options 中有 apiKeys，優先使用
+    if (options.apiKeys?.openai) {
+      apiKey = options.apiKeys.openai;
+    }
+
+    let baseUrl = process.env.OPENAI_BASE_URL || process.env.BASE_URL || "https://api.openai.com/v1";
+
+    if (!process.env.OPENAI_BASE_URL && !process.env.BASE_URL && process.env.CLOUD_API_ENDPOINT) {
+      if (process.env.CLOUD_API_ENDPOINT.includes('generativelanguage.googleapis.com')) {
+        baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+      } else {
+        baseUrl = process.env.CLOUD_API_ENDPOINT;
+      }
+    }
+
+    super("Verifier Agent", "JSON", "verifier", {
+      baseUrl,
+      apiKey,
+      ...options
     });
     this.temperature = 0.3;
   }

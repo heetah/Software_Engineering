@@ -373,6 +373,7 @@ function registerCoordinatorBridge() {
           {
             llmProvider: llmProvider || "auto",
             apiKeys: apiKeys || {},
+            baseDir: app.getPath("userData"),
           }
         );
       } catch (processError) {
@@ -428,9 +429,8 @@ function registerCoordinatorBridge() {
               );
             }
           }
-          responseText += `\nTip: Project generated in ${
-            plan.workspaceDir || "output/" + plan.id
-          } directory`;
+          responseText += `\nTip: Project generated in ${plan.workspaceDir || "output/" + plan.id
+            } directory`;
         }
       } else {
         responseText = "Processing completed, but no plan information returned";

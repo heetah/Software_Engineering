@@ -179,10 +179,29 @@ const __dirname = path.dirname(__filename);
  * - 產生測試報告
  */
 export default class TesterAgent extends BaseAgent {
-  constructor() {
-    super("Tester Agent", "JavaScript", "tester", {
-      baseUrl: process.env.OPENAI_BASE_URL || process.env.BASE_URL || "https://api.openai.com/v1",
-      apiKey: process.env.OPENAI_API_KEY || process.env.API_KEY
+  constructor(options = {}) {
+    // 支援 OPENAI_API_KEY, API_KEY (舊版), CLOUD_API_KEY (fallback)
+    let apiKey = process.env.OPENAI_API_KEY || process.env.API_KEY || process.env.CLOUD_API_KEY;
+
+    // 如果傳入 options 中有 apiKeys，優先使用
+    if (options.apiKeys?.openai) {
+      apiKey = options.apiKeys.openai;
+    }
+
+    let baseUrl = process.env.OPENAI_BASE_URL || process.env.BASE_URL || "https://api.openai.com/v1";
+
+    if (!process.env.OPENAI_BASE_URL && !process.env.BASE_URL && process.env.CLOUD_API_ENDPOINT) {
+      if (process.env.CLOUD_API_ENDPOINT.includes('generativelanguage.googleapis.com')) {
+        baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+      } else {
+        baseUrl = process.env.CLOUD_API_ENDPOINT;
+      }
+    }
+
+    super("Tester Agent", "Markdown code", "tester", {
+      baseUrl,
+      apiKey,
+      ...options
     });
     this.temperature = 0.2;
   }
