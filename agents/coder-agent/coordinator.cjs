@@ -841,7 +841,14 @@ ${setup.dependencies.go.map(dep => `\t${dep}`).join('\n')}
 
     // 真實 API 呼叫（目前不會到達這裡，因為 Phase 2 用 Worker Agents）
     try {
-      const response = await fetch(this.CLOUD_API_ENDPOINT, {
+      const apiUrl = this._getChatCompletionUrl(this.CLOUD_API_ENDPOINT);
+
+      logger.info('Calling Cloud API', requestId, {
+        url: apiUrl,
+        model: 'gpt-4o' // Default assumption, adapter may override
+      });
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -862,6 +869,33 @@ ${setup.dependencies.go.map(dep => `\t${dep}`).join('\n')}
       logger.error('Cloud API call failed', requestId, { error: error.message });
       throw error;
     }
+  }
+
+  /**
+   * Helper: Normalize and construct the Chat Completion URL
+   * This handles various formats of OPENAI_BASE_URL to avoid 404s
+   */
+  _getChatCompletionUrl(baseUrl) {
+    if (!baseUrl) return 'https://api.openai.com/v1/chat/completions';
+
+    let url = baseUrl.trim();
+    // Remove trailing slash
+    if (url.endsWith('/')) {
+      url = url.slice(0, -1);
+    }
+
+    // Case 1: Base URL already includes the full endpoint (e.g. from some proxies)
+    if (url.endsWith('/chat/completions')) {
+      return url;
+    }
+
+    // Case 2: Base URL ends with /v1
+    if (url.endsWith('/v1')) {
+      return `${url}/chat/completions`;
+    }
+
+    // Case 3: Just the domain or base path (e.g. https://api.openai.com)
+    return `${url}/v1/chat/completions`;
   }
 
   /**
@@ -1141,7 +1175,8 @@ Return ONLY the JSON array, no markdown or explanation.`;
           'Authorization': `Bearer ${this.CLOUD_API_KEY}`
         };
 
-        const response = await fetch(this.CLOUD_API_ENDPOINT, {
+        const apiUrl = this._getChatCompletionUrl(this.CLOUD_API_ENDPOINT);
+        const response = await fetch(apiUrl, {
           method: 'POST',
           headers: headers,
           body: JSON.stringify(requestBody)
