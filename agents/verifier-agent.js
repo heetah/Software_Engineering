@@ -36,15 +36,29 @@ const __dirname = path.dirname(__filename);
 // Verifier Agent 主類別
 // ===== VerifierAgent Class =====
 export default class VerifierAgent extends BaseAgent {
-  constructor() {
+  constructor(options = {}) {
     // 支援 OPENAI_API_KEY, API_KEY (舊版), CLOUD_API_KEY (fallback)
-    const apiKey = process.env.OPENAI_API_KEY || process.env.API_KEY || process.env.CLOUD_API_KEY;
-    const baseUrl = process.env.OPENAI_BASE_URL || process.env.BASE_URL || 
-                   (process.env.CLOUD_API_ENDPOINT ? this._detectBaseUrl(process.env.CLOUD_API_ENDPOINT) : "https://api.openai.com/v1");
-    
+    let apiKey = process.env.OPENAI_API_KEY || process.env.API_KEY || process.env.CLOUD_API_KEY;
+
+    // 如果傳入 options 中有 apiKeys，優先使用
+    if (options.apiKeys?.openai) {
+      apiKey = options.apiKeys.openai;
+    }
+
+    let baseUrl = process.env.OPENAI_BASE_URL || process.env.BASE_URL || "https://api.openai.com/v1";
+
+    if (!process.env.OPENAI_BASE_URL && !process.env.BASE_URL && process.env.CLOUD_API_ENDPOINT) {
+      if (process.env.CLOUD_API_ENDPOINT.includes('generativelanguage.googleapis.com')) {
+        baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+      } else {
+        baseUrl = process.env.CLOUD_API_ENDPOINT;
+      }
+    }
+
     super("Verifier Agent", "JSON", "verifier", {
       baseUrl,
-      apiKey
+      apiKey,
+      ...options
     });
     this.temperature = 0.1;
   }

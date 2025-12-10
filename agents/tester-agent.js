@@ -46,15 +46,29 @@ const __dirname = path.dirname(__filename);
 // Tester Agent 主類別
 // ===== TesterAgent Class =====
 export default class TesterAgent extends BaseAgent {
-  constructor() {
+  constructor(options = {}) {
     // 支援 OPENAI_API_KEY, API_KEY (舊版), CLOUD_API_KEY (fallback)
-    const apiKey = process.env.OPENAI_API_KEY || process.env.API_KEY || process.env.CLOUD_API_KEY;
-    const baseUrl = process.env.OPENAI_BASE_URL || process.env.BASE_URL || 
-                   (process.env.CLOUD_API_ENDPOINT ? this._detectBaseUrl(process.env.CLOUD_API_ENDPOINT) : "https://api.openai.com/v1");
-    
+    let apiKey = process.env.OPENAI_API_KEY || process.env.API_KEY || process.env.CLOUD_API_KEY;
+
+    // 如果傳入 options 中有 apiKeys，優先使用
+    if (options.apiKeys?.openai) {
+      apiKey = options.apiKeys.openai;
+    }
+
+    let baseUrl = process.env.OPENAI_BASE_URL || process.env.BASE_URL || "https://api.openai.com/v1";
+
+    if (!process.env.OPENAI_BASE_URL && !process.env.BASE_URL && process.env.CLOUD_API_ENDPOINT) {
+      if (process.env.CLOUD_API_ENDPOINT.includes('generativelanguage.googleapis.com')) {
+        baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+      } else {
+        baseUrl = process.env.CLOUD_API_ENDPOINT;
+      }
+    }
+
     super("Tester Agent", "Markdown code", "tester", {
       baseUrl,
-      apiKey
+      apiKey,
+      ...options
     });
     this.temperature = 0.1;
   }
@@ -203,7 +217,7 @@ export default class TesterAgent extends BaseAgent {
   // 對失敗案例進行原因分析並補充建議
   // 針對失敗案例用 TESTER_ERROR_ANALYSIS_TEMPLATE 取得 suggestedCause
   // 若 LLM 失敗則略過該案例
-  
+
   async enrichFailuresWithSuggestions(failures) {
     const enriched = [];
     for (const f of failures) {
