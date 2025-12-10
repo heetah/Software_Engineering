@@ -20,6 +20,8 @@ const settingsButton = document.getElementById('settings-button');
 const historyList = document.getElementById('history-list');
 const pageChat = document.getElementById('page-chat');
 const pageSettings = document.getElementById('page-settings');
+const helpButton = document.getElementById('help-button');
+const pageHelp = document.getElementById('page-help');
 
 // 設定頁面元素
 const dataPathDisplay = document.getElementById('data-path-display');
@@ -68,6 +70,7 @@ historyButton.addEventListener('click', () => {
 
 chatButton.addEventListener('click', () => setActivePage('page-chat'));
 settingsButton.addEventListener('click', () => setActivePage('page-settings'));
+helpButton.addEventListener('click', () => setActivePage('page-help'));
 
 if (clearHistoryButton) {
   clearHistoryButton.addEventListener('click', () => {
@@ -101,7 +104,7 @@ if (llmProviderAuto && llmProviderGemini && llmProviderOpenAI) {
       currentLlmProvider = 'auto';
     }
   };
-  
+
   initLlmProvider();
 
   const handleLlmProviderChange = (provider) => {
@@ -116,19 +119,19 @@ if (llmProviderAuto && llmProviderGemini && llmProviderOpenAI) {
       handleLlmProviderChange('auto');
     }
   });
-  
+
   llmProviderGemini.addEventListener('change', (e) => {
     if (e.target.checked) {
       handleLlmProviderChange('gemini');
     }
   });
-  
+
   llmProviderOpenAI.addEventListener('change', (e) => {
     if (e.target.checked) {
       handleLlmProviderChange('openai');
     }
   });
-  
+
   // 確保點擊整個 label 區域都能觸發 radio
   const toggleOptions = document.querySelectorAll('.settings-toggle-option');
   toggleOptions.forEach((option) => {
@@ -168,7 +171,7 @@ if (saveApiKeysButton) {
       currentOpenAIApiKey = openaiApiKeyInput.value.trim();
       localStorage.setItem('openaiApiKey', currentOpenAIApiKey);
     }
-    
+
     // 顯示儲存成功提示
     const originalText = saveApiKeysButton.textContent;
     saveApiKeysButton.textContent = '已儲存';
@@ -217,7 +220,7 @@ function createHistoryItem(session) {
 
 async function bootstrapHistory() {
   const sessions = await refreshSessionList(undefined, { normalize: true });
-  
+
   if (sessions.length === 0) {
     await createAndActivateSession();
   } else {
@@ -229,7 +232,7 @@ async function bootstrapHistory() {
       await createAndActivateSession();
     }
   }
-  
+
   updateCharCount();
   autoResizeTextarea();
   loadSettingsInfo();
@@ -281,9 +284,16 @@ async function loadMessages(sessionId) {
     const messages = await ipcRenderer.invoke('history:get-messages', sessionId);
     chatDisplay.innerHTML = '';
     messages.forEach((message) => {
-      const text = message?.payload?.content || '';
-      if (!text) return;
-      appendMessage(text, message.role, 'text');
+      const payload = message?.payload || {};
+      const text = payload?.content || '';
+      const type = payload?.type || 'text';
+      const downloadInfo = payload?.download;
+
+      if (!text && type !== 'download') return;
+      appendMessage(text, message.role, type, {
+        filePath: downloadInfo?.path,
+        fileName: downloadInfo?.filename
+      });
     });
     showGreetingIfEmpty();
   } catch (error) {
@@ -297,17 +307,17 @@ async function sendMessage() {
   if (messageText === '') return;
 
   const session = await ensureSession();
-  
+
   appendMessage(messageText, 'user', 'text');
-  
+
   textInput.value = '';
   autoResizeTextarea();
   updateCharCount();
 
   persistMessage(session.id, 'user', messageText);
-  
+
   if (thinkingBubbleElement) {
-    thinkingBubbleElement.remove(); 
+    thinkingBubbleElement.remove();
   }
   thinkingBubbleElement = appendMessage('', 'ai', 'thinking');
 
@@ -321,7 +331,7 @@ async function sendMessage() {
       openai: currentOpenAIApiKey || null
     }
   });
-  
+
   setActivePage('page-chat');
 }
 
@@ -335,7 +345,7 @@ async function handleFileUpload(event) {
   appendMessage(notice, 'user', 'text');
 
   persistMessage(session.id, 'user', notice);
-  
+
   if (thinkingBubbleElement) {
     thinkingBubbleElement.remove();
   }
@@ -357,9 +367,9 @@ async function handleFileUpload(event) {
 
 /**
  * 在聊天視窗中追加一條訊息。
- * (已修改：將 Copy 按鈕一律放入氣泡內)
+ * (已修改：支援 Download 按鈕與 Copy 按鈕平行)
  */
-function appendMessage(text, sender, messageType = 'text') {
+function appendMessage(text, sender, messageType = 'text', options = {}) {
   const messageGroup = document.createElement('div');
   messageGroup.classList.add('message-group', `message-group--${sender}`);
 
@@ -379,9 +389,9 @@ function appendMessage(text, sender, messageType = 'text') {
 
   const copyButton = document.createElement('button');
   copyButton.classList.add('action-button');
-  
+
   // [修改點 1] 將圖示改為文字
-  copyButton.textContent = '複製'; 
+  copyButton.textContent = '複製';
   // copyButton.setAttribute('title', '複製內容'); // 文字按鈕本身就很直觀，這行可留可不留
 
   copyButton.addEventListener('click', () => {
@@ -389,7 +399,7 @@ function appendMessage(text, sender, messageType = 'text') {
     navigator.clipboard.writeText(textToCopy).then(() => {
       // [修改點 2] 複製後的回饋文字
       copyButton.textContent = '已複製';
-      
+
       // 這裡可以選擇不變色，或者稍微變深一點點表示狀態
       // copyButton.style.color = 'var(--color-text)'; 
 
@@ -404,6 +414,7 @@ function appendMessage(text, sender, messageType = 'text') {
   // 將按鈕放入容器
   messageActions.appendChild(copyButton);
 
+
   if (messageType === 'thinking') {
     messageBubble.classList.add('message-bubble--thinking');
     messageBubble.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
@@ -411,16 +422,64 @@ function appendMessage(text, sender, messageType = 'text') {
   } else if (messageType === 'code') {
     messageBubble.classList.add('message-bubble--code');
     messageBubble.textContent = text;
-    // 加入 Copy 按鈕 (在氣泡內)
-    messageBubble.appendChild(messageActions);
+    // Copy 按鈕移至 bubble 外
+  } else if (messageType === 'download') {
+    messageBubble.classList.add('message-bubble--download');
+
+    const description = document.createElement('div');
+    description.textContent = text || '輸出已準備好，點擊下載 zip。';
+    messageBubble.appendChild(description);
+
+    // 創建下載按鈕 (Pill Style)
+    const downloadButton = document.createElement('button');
+    downloadButton.classList.add('action-button', 'action-button--pill');
+    // 使用更好的 Icon + 文字
+    downloadButton.innerHTML = '下載';
+    downloadButton.addEventListener('click', async () => {
+      if (!options.filePath) return;
+
+      const originalContent = downloadButton.innerHTML;
+      downloadButton.innerHTML = '⏳ 處理中...';
+      downloadButton.disabled = true;
+
+      try {
+        const result = await ipcRenderer.invoke('download:save-zip', {
+          zipPath: options.filePath,
+          defaultName: options.fileName || undefined
+        });
+        if (result?.ok) {
+          downloadButton.innerHTML = '✅ 已下載';
+        } else if (result?.cancelled) {
+          downloadButton.innerHTML = '❌ 已取消';
+        } else {
+          downloadButton.innerHTML = '⚠️ 失敗';
+        }
+      } catch (err) {
+        console.error('Failed to download zip', err);
+        downloadButton.innerHTML = '⚠️ 錯誤';
+      }
+
+      setTimeout(() => {
+        downloadButton.innerHTML = originalContent;
+        downloadButton.disabled = false;
+      }, 2000);
+    });
+
+    // 將下載按鈕加入到 messageActions (與 Copy 平行)
+    messageActions.insertBefore(downloadButton, copyButton);
+
   } else {
     // 一般文字
     messageBubble.textContent = text;
-    // 加入 Copy 按鈕 (在氣泡內 - 這是新邏輯)
-    messageBubble.appendChild(messageActions);
   }
 
   messageContent.appendChild(messageBubble);
+
+  // 將按鈕區塊加入到 messageContent (在 Bubble 之後)
+  if (messageType !== 'thinking') {
+    messageContent.appendChild(messageActions);
+  }
+
   messageGroup.appendChild(messageAvatar);
   messageGroup.appendChild(messageContent);
   chatDisplay.appendChild(messageGroup);
@@ -438,22 +497,31 @@ ipcRenderer.on('message-from-agent', (_event, response) => {
 
   const type = response?.type || 'text';
   const content = typeof response === 'string' ? response : response?.content || '';
-  
+  const downloadInfo = response?.download;
+
   if (response?.type === 'error') {
     appendMessage(`Error: ${content}`, 'ai', 'text');
     return;
   }
 
-  if (!content && type !== 'thinking') return;
+  const messageType = type === 'download' ? 'download' : type;
 
-  appendMessage(content, 'ai', type === 'text' ? 'text' : type);
+  if (!content && messageType !== 'thinking' && messageType !== 'download') return;
+
+  appendMessage(content, 'ai', messageType, {
+    filePath: downloadInfo?.path,
+    fileName: downloadInfo?.filename
+  });
 
   if (!currentSession) {
     console.warn('AI response received without an active session; skipping persistence.');
     return;
   }
 
-  persistMessage(currentSession.id, 'ai', content);
+  persistMessage(currentSession.id, 'ai', content, {
+    type: messageType,
+    download: downloadInfo
+  });
 });
 
 /* 設定頁面功能 */
@@ -475,7 +543,7 @@ async function clearAllHistory() {
     const result = await ipcRenderer.invoke('history:clear-all');
     if (result.ok) {
       console.log('History cleared successfully.');
-      await bootstrapHistory(); 
+      await bootstrapHistory();
       const clearBtn = document.getElementById('clear-history-button');
       if (clearBtn) {
         const originalText = clearBtn.textContent;
@@ -513,8 +581,11 @@ function updateCharCount() {
 function setActivePage(pageIdToShow) {
   pageChat.classList.remove('is-active');
   pageSettings.classList.remove('is-active');
+  pageHelp.classList.remove('is-active');
+
   chatButton.classList.remove('is-active');
   settingsButton.classList.remove('is-active');
+  helpButton.classList.remove('is-active');
 
   if (pageIdToShow === 'page-chat') {
     pageChat.classList.add('is-active');
@@ -522,6 +593,9 @@ function setActivePage(pageIdToShow) {
   } else if (pageIdToShow === 'page-settings') {
     pageSettings.classList.add('is-active');
     settingsButton.classList.add('is-active');
+  } else if (pageIdToShow === 'page-help') {
+    pageHelp.classList.add('is-active');
+    helpButton.classList.add('is-active');
   }
 }
 
@@ -534,9 +608,19 @@ function getSessionEnvelope(session) {
   };
 }
 
-function persistMessage(sessionId, role, content) {
+function persistMessage(sessionId, role, content, options = {}) {
+  const payload = {
+    role,
+    content,
+    type: options.type || 'text',
+  };
+
+  if (options.download) {
+    payload.download = options.download;
+  }
+
   ipcRenderer
-    .invoke('history:add-message', { sessionId, role, content })
+    .invoke('history:add-message', { sessionId, role, content, payload })
     .catch((error) => console.error('Unable to persist message', error));
 }
 

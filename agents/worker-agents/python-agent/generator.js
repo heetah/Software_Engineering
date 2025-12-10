@@ -4,14 +4,14 @@ const { callCloudAPI } = require('../api-adapter.cjs');
 class PythonGenerator {
   constructor(config = {}) {
     // API 配置優先順序：1. config 參數 2. CLOUD_API 3. OPENAI_API
-    this.cloudApiEndpoint = config.cloudApiEndpoint || 
-                           process.env.CLOUD_API_ENDPOINT || 
-                           process.env.OPENAI_BASE_URL;
-    this.cloudApiKey = config.cloudApiKey || 
-                      process.env.CLOUD_API_KEY || 
-                      process.env.OPENAI_API_KEY;
+    this.cloudApiEndpoint = config.cloudApiEndpoint ||
+      process.env.CLOUD_API_ENDPOINT ||
+      process.env.OPENAI_BASE_URL;
+    this.cloudApiKey = config.cloudApiKey ||
+      process.env.CLOUD_API_KEY ||
+      process.env.OPENAI_API_KEY;
     this.useMockApi = !this.cloudApiEndpoint;
-    
+
     // 🔍 Debug: 記錄配置
     console.log('[PythonGenerator] Initialized:', {
       hasConfigEndpoint: !!config.cloudApiEndpoint,
@@ -25,8 +25,29 @@ class PythonGenerator {
 
   async generate({ skeleton, fileSpec, context }) {
     console.log(`[Generator] Processing ${fileSpec.path}`);
+
+    // 優先級 1: 使用 template（Architect 提供的完整代碼）
+    if (fileSpec.template && fileSpec.template.trim()) {
+      console.log(`[Generator] ✅ Using template (${fileSpec.template.length} chars)`);
+      return {
+        content: fileSpec.template,
+        tokensUsed: 0,
+        method: 'template'
+      };
+    }
+
+    // 優先級 2: 使用 contracts 結構（example2 格式）
+    const hasContracts = context.contracts && (
+      (context.contracts.dom && context.contracts.dom.length > 0) ||
+      (context.contracts.api && context.contracts.api.length > 0)
+    );
+
+    if (hasContracts) {
+      console.log(`[Generator] ✓ Using contracts-based generation`);
+    }
+
     console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
-    
+
     if (this.useMockApi) {
       return this.generateWithMock({ skeleton, fileSpec, context });
     } else {
@@ -36,38 +57,38 @@ class PythonGenerator {
 
   async generateWithCloudAPI({ skeleton, fileSpec, context }) {
     const prompt = this.buildPrompt({ skeleton, fileSpec, context });
-    
+
     try {
       const { content, tokensUsed } = await callCloudAPI({
         endpoint: this.cloudApiEndpoint,
         apiKey: this.cloudApiKey,
         systemPrompt: 'You are an expert Python developer. Generate clean, production-ready Python code following PEP 8 standards. Include proper error handling, type hints, and docstrings. Output only the code.',
         userPrompt: prompt,
-        maxTokens: 16384  // Increased from 8192 to prevent truncation
+        maxTokens: 80000  // Increased to 80k as requested
       });
-      
+
       if (!content || content.trim() === '') {
         console.warn('[Generator] API returned empty content despite consuming tokens:', tokensUsed);
         throw new Error('API returned empty content (possibly blocked by safety filters)');
       }
-      
+
       const cleanContent = content
         .replace(/^```python\n/, '')
         .replace(/^```\n/, '')
         .replace(/\n```$/, '')
         .trim();
-      
+
       if (!cleanContent) {
         console.warn('[Generator] Content became empty after cleaning. Original length:', content.length);
         throw new Error('Content became empty after markdown removal');
       }
-      
+
       return {
         content: cleanContent,
         tokensUsed,
         method: 'cloud-api'
       };
-      
+
     } catch (error) {
       console.error('[Generator] API error:', error.message);
       return this.generateWithMock({ skeleton, fileSpec, context });
@@ -77,7 +98,7 @@ class PythonGenerator {
   async generateWithMock({ skeleton, fileSpec, context }) {
     const { description } = fileSpec;
     const fileName = path.basename(fileSpec.path, '.py');
-    
+
     const content = `"""${fileName}.py
 Mock fallback - Configure CLOUD_API_ENDPOINT for real generation
 ${description || 'Python module'}
@@ -94,7 +115,7 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 `;
-    
+
     return {
       content,
       tokensUsed: Math.ceil(content.length / 4),
@@ -106,37 +127,37 @@ if __name__ == "__main__":
     const { path: filePath, description, requirements = [] } = fileSpec;
     const completedFiles = context.completedFiles || [];
     const contracts = context.contracts || null;
-    
+
     let prompt = `Generate Python code for: ${filePath}\n\n`;
-    
+
     if (description) {
       prompt += `Description: ${description}\n\n`;
     }
-    
+
     if (requirements.length > 0) {
       prompt += `Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
     }
-    
+
     // ← 新增：如果有 contracts，優先顯示
     if (contracts) {
       prompt += `=== CONTRACTS (MUST FOLLOW EXACTLY) ===\n`;
-      
+
       // API contracts - Python 通常是 producer
       if (contracts.api && contracts.api.length > 0) {
-        const relevantApis = contracts.api.filter(api => 
+        const relevantApis = contracts.api.filter(api =>
           api.producers.includes(filePath)
         );
-        
+
         if (relevantApis.length > 0) {
           prompt += `\nAPI Endpoints to implement:\n`;
           relevantApis.forEach(api => {
             prompt += `\n  ${api.endpoint} - ${api.description}\n`;
-            
+
             // 分析 endpoint 格式
             const endpoint = api.endpoint.split(' ')[1] || api.endpoint; // "GET /api/weather" -> "/api/weather"
             const hasQueryParams = api.request && api.request.query;
             const hasPathParams = endpoint.includes('<') || endpoint.includes(':');
-            
+
             if (hasQueryParams) {
               prompt += `  ⚠️  Uses QUERY PARAMETERS:\n`;
               Object.entries(api.request.query).forEach(([key, value]) => {
@@ -145,14 +166,14 @@ if __name__ == "__main__":
               prompt += `  Example: city = request.args.get('city')\n`;
               prompt += `  Flask route: @app.route('${endpoint}')\n`;
             }
-            
+
             if (hasPathParams) {
               prompt += `  ⚠️  Uses PATH PARAMETERS:\n`;
               const flaskRoute = endpoint.replace(/:(\w+)/g, '<$1>');
               prompt += `  Flask route: @app.route('${flaskRoute}')\n`;
               prompt += `  Example: def endpoint(city: str):\n`;
             }
-            
+
             if (api.request) {
               prompt += `  Request schema:\n${JSON.stringify(api.request, null, 4).split('\n').map(l => '    ' + l).join('\n')}\n`;
             }
@@ -170,13 +191,13 @@ if __name__ == "__main__":
           prompt += `  - Return 400 error if required params missing\n\n`;
         }
       }
-      
+
       // Class contracts
       if (contracts.classes && contracts.classes.length > 0) {
-        const relevantClasses = contracts.classes.filter(cls => 
+        const relevantClasses = contracts.classes.filter(cls =>
           cls.file === filePath
         );
-        
+
         if (relevantClasses.length > 0) {
           prompt += `Classes to define:\n`;
           relevantClasses.forEach(cls => {
@@ -189,10 +210,10 @@ if __name__ == "__main__":
           prompt += `\n`;
         }
       }
-      
+
       prompt += `=== END CONTRACTS ===\n\n`;
     }
-    
+
     // Include context from other files
     if (completedFiles.length > 0) {
       prompt += `Related files:\n`;
@@ -201,11 +222,11 @@ if __name__ == "__main__":
       });
       prompt += '\n';
     }
-    
+
     if (skeleton) {
       prompt += `Skeleton:\n\`\`\`python\n${skeleton}\n\`\`\`\n\n`;
     }
-    
+
     prompt += `Generate complete, production-ready Python with:\n`;
     prompt += `- PEP 8 compliance (proper naming, spacing, structure)\n`;
     prompt += `- Type hints for all function signatures\n`;
@@ -216,7 +237,7 @@ if __name__ == "__main__":
     prompt += `- CRITICAL: Function names and class definitions must match skeleton signatures\n`;
     prompt += `- CRITICAL: Data models/schemas must match frontend expectations (field names, types)\n\n`;
     prompt += `Return ONLY the code, no markdown.`;
-    
+
     return prompt;
   }
 }
