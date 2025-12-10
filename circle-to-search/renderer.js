@@ -2,6 +2,8 @@
 //   renderer.js (lasso 任意形狀選取 + Soft UI 預覽)
 // ===================================================================
 
+console.log("🔴 RENDERER.JS VERSION 2.0 已載入");
+
 let isDrawing = false;
 let startPoint = null; // lasso 起點
 let currentPoint = null; // 當前滑鼠點
@@ -48,12 +50,14 @@ document.querySelector(".cancel-btn").addEventListener("click", () => {
 // 處理模式選擇
 function handleModeSelection(mode, imageData) {
   if (mode === "lens") {
+    console.log("[Renderer] Activating Google Lens mode");
     // Google 智慧鏡頭：開啟 Google Lens 搜圖
     openGoogleLens(imageData);
     // 清除 canvas 並關閉視窗
     resetCanvas();
     window.electronAPI.closeCaptureWindow();
   } else if (mode === "ai") {
+    console.log("[Renderer] Activating AI Analysis mode");
     // AI 智能分析：使用原本的 Vision API
     visionResult.classList.remove("hidden");
     resultText.textContent = "正在使用 AI 分析圖片...";
@@ -280,6 +284,8 @@ window.addEventListener("keydown", (e) => {
 
 // mouse events for lasso
 canvas.addEventListener("mousedown", (e) => {
+  alert("🟢 Mousedown 事件觸發！開始畫圈");
+  console.log("[Renderer] Mousedown event triggered");
   if (!originalScreenshot || !originalLoaded) return;
   const p = toCanvasCoords(e);
   points = [p];
@@ -308,7 +314,9 @@ canvas.addEventListener("mousemove", (e) => {
   drawLassoPreview(points);
 });
 
-canvas.addEventListener("mouseup", (e) => {
+canvas.addEventListener("mouseup", async (e) => {
+  alert("🔴 Mouseup 事件觸發！");
+  console.log("[Renderer] Mouseup event triggered");
   if (!isDrawing) return;
   isDrawing = false;
   if (points.length < 3) {
@@ -348,9 +356,32 @@ canvas.addEventListener("mouseup", (e) => {
     cropCtx.drawImage(originalScreenshot, minX, minY, w, h, 0, 0, w, h);
     const imageData = cropCanvas.toDataURL("image/png");
 
-    // 儲存截圖數據並顯示模式選擇器
+    // 儲存截圖數據
     capturedImageData = imageData;
-    modeSelector.classList.remove("hidden");
+
+    // 檢查預設搜尋模式
+    console.log("[Renderer] About to fetch search mode...");
+    try {
+      const mode = await window.electronAPI.invoke('settings:get-search-mode');
+      console.log("[Renderer] Fetched Search Mode:", mode, "Type:", typeof mode);
+      alert(`調試訊息：\n當前模式是 '${mode}'\n類型: ${typeof mode}`); 
+      
+      if (mode === 'lens') {
+        console.log("[Renderer] Mode matched 'lens', calling handleModeSelection");
+        handleModeSelection('lens', capturedImageData);
+      } else if (mode === 'ai') {
+        console.log("[Renderer] Mode matched 'ai', calling handleModeSelection");
+        handleModeSelection('ai', capturedImageData);
+      } else {
+        console.log("[Renderer] Mode is 'ask' or unknown, showing mode selector");
+        // 預設 'ask' 或其他情況，顯示選擇器
+        modeSelector.classList.remove("hidden");
+      }
+    } catch (err) {
+      console.error("[Renderer] Failed to get search mode:", err);
+      alert(`錯誤：無法獲取搜尋模式\n${err.message}`);
+      modeSelector.classList.remove("hidden");
+    }
   } catch (err) {
     console.error("Error drawing lasso cropped image:", err);
     window.electronAPI.closeCaptureWindow();

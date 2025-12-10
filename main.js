@@ -44,6 +44,17 @@ app.commandLine.appendSwitch("disable-features", "AutoResizeOutputDevice");
 let mainWindow = null;
 let captureWindow = null;
 let isCapturing = false;
+let currentSearchMode = "ask"; // 'ask', 'lens', 'ai'
+
+// --- IPC Handlers for Search Mode ---
+ipcMain.handle("settings:set-search-mode", (event, mode) => {
+  currentSearchMode = mode;
+  console.log("Search mode updated to:", mode);
+});
+
+ipcMain.handle("settings:get-search-mode", () => {
+  return currentSearchMode;
+});
 
 async function zipWorkspaceDirectory(directoryPath) {
   const resolvedDir = path.resolve(directoryPath);
@@ -1088,9 +1099,11 @@ function createCaptureWindow() {
     captureWindow.loadFile(
       path.join(__dirname, "circle-to-search", "index.html")
     );
-    if (process.argv.includes("--debug")) {
-      captureWindow.webContents.openDevTools();
-    }
+    // 暫時開啟 DevTools 以便調試
+    captureWindow.webContents.openDevTools();
+    // if (process.argv.includes("--debug")) {
+    //   captureWindow.webContents.openDevTools();
+    // }
     captureWindow.on("closed", () => {
       captureWindow = null;
     });

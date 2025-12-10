@@ -40,6 +40,7 @@ let thinkingBubbleElement = null;
 let currentLlmProvider = (localStorage.getItem('llmProvider') || 'auto');
 let currentGeminiApiKey = localStorage.getItem('geminiApiKey') || '';
 let currentOpenAIApiKey = localStorage.getItem('openaiApiKey') || '';
+let currentSearchMode = localStorage.getItem('searchMode') || 'ask';
 
 /* 綁定事件監聽器 */
 sendButton.addEventListener('click', () => {
@@ -129,20 +130,65 @@ if (llmProviderAuto && llmProviderGemini && llmProviderOpenAI) {
   llmProviderOpenAI.addEventListener('change', (e) => {
     if (e.target.checked) {
       handleLlmProviderChange('openai');
+
     }
   });
+}
 
-  // 確保點擊整個 label 區域都能觸發 radio
-  const toggleOptions = document.querySelectorAll('.settings-toggle-option');
-  toggleOptions.forEach((option) => {
-    option.addEventListener('click', (e) => {
-      // 如果點擊的不是 input 本身，確保觸發 input
-      const input = option.querySelector('.toggle-switch__input');
-      if (input && e.target !== input) {
-        input.checked = true;
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-    });
+
+// 確保所有 settings-toggle-option 都能正確觸發點擊
+document.querySelectorAll('.settings-toggle-option').forEach((option) => {
+  option.addEventListener('click', (e) => {
+    // 如果點擊的不是 input 本身，確保觸發 input
+    const input = option.querySelector('.toggle-switch__input');
+    if (input && e.target !== input) {
+      input.checked = true;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  });
+});
+
+// 搜尋模式選擇
+const searchModeAsk = document.getElementById('search-mode-ask');
+const searchModeLens = document.getElementById('search-mode-lens');
+const searchModeAi = document.getElementById('search-mode-ai');
+
+if (searchModeAsk && searchModeLens && searchModeAi) {
+  // 初始化選中狀態
+  const initSearchMode = () => {
+    if (currentSearchMode === 'lens') {
+      searchModeLens.checked = true;
+    } else if (currentSearchMode === 'ai') {
+      searchModeAi.checked = true;
+    } else {
+      searchModeAsk.checked = true;
+      currentSearchMode = 'ask';
+    }
+    // 同步到 Main process
+    ipcRenderer.invoke('settings:set-search-mode', currentSearchMode);
+  };
+
+  initSearchMode();
+
+  const handleSearchModeChange = (mode) => {
+    currentSearchMode = mode;
+    localStorage.setItem('searchMode', mode);
+    ipcRenderer.invoke('settings:set-search-mode', mode);
+    console.log('Search Mode changed to:', mode);
+    // Add visual feedback or log
+    console.log(`[UI] Syncing search mode ${mode} to Main.`);
+  };
+
+  searchModeAsk.addEventListener('change', (e) => {
+    if (e.target.checked) handleSearchModeChange('ask');
+  });
+
+  searchModeLens.addEventListener('change', (e) => {
+    if (e.target.checked) handleSearchModeChange('lens');
+  });
+
+  searchModeAi.addEventListener('change', (e) => {
+    if (e.target.checked) handleSearchModeChange('ai');
   });
 }
 
