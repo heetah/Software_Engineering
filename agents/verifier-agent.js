@@ -86,6 +86,7 @@ export default class VerifierAgent extends BaseAgent {
     super("Verifier Agent", "JSON", "verifier", {
       baseUrl,
       apiKey,
+      model: options.model || 'fast', // Default to Fast/Quantized Model
       ...options
     });
     this.temperature = 0.3;
@@ -102,12 +103,12 @@ export default class VerifierAgent extends BaseAgent {
       console.log('\n' + '='.repeat(60));
       console.log('Verifier Agent 流程啟動');
       console.log('='.repeat(60));
-      
+
       // 步驟 1: 讀取架構資料
       console.log('\n[步驟 1/4] 讀取架構資料...');
       const architectureData = await loadArchitecture(sessionId);
       console.log(`  ✓ 已載入 architecture.json`);
-      
+
       // 步驟 2: 驗證檔案完整性
       console.log('\n[步驟 2/4] 驗證檔案完整性...');
       const verification = await verifyFiles(sessionId, architectureData);
@@ -116,23 +117,23 @@ export default class VerifierAgent extends BaseAgent {
         console.log(`  ✗ 缺失：${verification.missing.length} 個檔案`);
       }
       console.log(`  ✓ JS 檔案：${verification.jsFiles.length} 個`);
-      
+
       // 步驟 3: 生成測試計畫 (使用 LLM)
       console.log('\n[步驟 3/4] 生成測試計畫...');
       console.log('  提示：測試計畫品質取決於 LLM，後續會自動修正');
       const testPlans = await generateTestPlans(sessionId, verification.jsFiles, this);
       console.log(`  ✓ 已生成 ${testPlans.length} 個測試計畫`);
-      
+
       // 步驟 4: 生成驗證報告
       console.log('\n[步驟 4/4] 生成驗證報告...');
       const reportPath = await writeVerificationReport(sessionId, verification, testPlans);
       console.log(`  ✓ 報告已產生：${reportPath}`);
-      
+
       console.log('\n' + '='.repeat(60));
       console.log('Verifier Agent 流程完成');
       console.log('提示：即使測試計畫有誤，Tester Agent 會自動修正');
       console.log('='.repeat(60) + '\n');
-      
+
       return { reportPath, testPlans };
     } catch (err) {
       console.error(`\n[ERROR] Verifier Agent 失敗: ${err.message}`);
@@ -200,7 +201,7 @@ export async function verifyFiles(sessionId, architectureData) {
   const outputDir = path.resolve(__dirname, `../output/${sessionId}`);
   // 從正確的路徑讀取檔案清單
   const requiredFiles = architectureData.output?.coder_instructions?.files || architectureData.files || [];
-  
+
   const existing = [];
   const missing = [];
   const jsFiles = [];
@@ -241,11 +242,11 @@ export function analyzeJavaScriptFile(sourceCode) {
     needsJSDOM: false,             // 是否需要 JSDOM
     needsExports: false            // 是否需要加 exports
   };
-  
+
   // 1. 檢測函式定義並分析其內部是否有 DOM 操作
   // 匹配: function functionName() { ... }
   const functionMatches = [...sourceCode.matchAll(/function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\([^)]*\)\s*\{/g)];
-  
+
   // Phase 1 改進：提取 DOM 偵測為共用函式
   const checkDOMInFunctionBody = (functionBody) => {
     const domInFunctionPatterns = [
@@ -262,11 +263,11 @@ export function analyzeJavaScriptFile(sourceCode) {
     ];
     return domInFunctionPatterns.some(pattern => pattern.test(functionBody));
   };
-  
+
   for (const match of functionMatches) {
     const functionName = match[1];
     const functionStart = match.index;
-    
+
     // 找到函式的結束位置（簡化版：找到對應的右大括號）
     let braceCount = 0;
     let functionEnd = functionStart;
@@ -280,23 +281,23 @@ export function analyzeJavaScriptFile(sourceCode) {
         }
       }
     }
-    
+
     const functionBody = sourceCode.substring(functionStart, functionEnd + 1);
     const hasDOMInFunction = checkDOMInFunctionBody(functionBody);
-    
+
     analysis.functions.push(functionName);
     if (!hasDOMInFunction && functionName !== 'initializeEventListeners') {
       analysis.pureFunctions.push(functionName);
     }
     analysis.hasFunctions = true;
   }
-  
+
   // 匹配: const functionName = function() {} 或 const functionName = () => {}
   const arrowMatches = [...sourceCode.matchAll(/(?:const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*(?:function\s*\([^)]*\)\s*\{|(?:\([^)]*\)|[a-zA-Z_$][a-zA-Z0-9_$]*)\s*=>\s*\{)/g)];
   for (const match of arrowMatches) {
     const functionName = match[1];
     const functionStart = match.index;
-    
+
     // 找到函式的結束位置
     let braceCount = 0;
     let functionEnd = functionStart;
@@ -314,21 +315,21 @@ export function analyzeJavaScriptFile(sourceCode) {
         }
       }
     }
-    
+
     const functionBody = sourceCode.substring(functionStart, functionEnd + 1);
     const hasDOMInFunction = checkDOMInFunctionBody(functionBody);  // 使用共用函式
-    
+
     analysis.functions.push(functionName);
     if (!hasDOMInFunction && functionName !== 'initializeEventListeners') {
       analysis.pureFunctions.push(functionName);
     }
     analysis.hasFunctions = true;
   }
-  
+
   // 去重
   analysis.functions = [...new Set(analysis.functions)];
   analysis.pureFunctions = [...new Set(analysis.pureFunctions)];
-  
+
   // 2. 檢測 DOM 操作（Phase 1 改進：擴展 DOM 偵測模式）
   const domPatterns = [
     // Document 方法
@@ -336,7 +337,7 @@ export function analyzeJavaScriptFile(sourceCode) {
     /document\.(createTextNode|createDocumentFragment|createComment|importNode|adoptNode)/,
     /document\.(getElementsByClassName|getElementsByTagName|getElementsByName)/,
     /document\.(write|writeln|open|close|execCommand)/,
-    
+
     // 元素屬性與方法
     /\.(innerHTML|outerHTML|innerText|textContent)\s*=/,
     /\.(style|classList|className|attributes|dataset)\./,
@@ -348,42 +349,42 @@ export function analyzeJavaScriptFile(sourceCode) {
     /\.(parentNode|parentElement|childNodes|children|firstChild|lastChild|nextSibling|previousSibling)/,
     /\.(insertAdjacentHTML|insertAdjacentElement|insertAdjacentText)/,
     /\.(append|prepend|before|after|remove|replaceWith)/,
-    
+
     // Window 對象
     /window\.(location|alert|confirm|prompt|open|close|print)/,
     /window\.(localStorage|sessionStorage|history|navigator|screen)/,
     /window\.(innerWidth|innerHeight|outerWidth|outerHeight|scrollX|scrollY)/,
     /window\.(requestAnimationFrame|cancelAnimationFrame|setTimeout|setInterval)/,
     /window\.(getComputedStyle|matchMedia|getSelection)/,
-    
+
     // DOM 事件相關
     /\.(addEventListener|removeEventListener|dispatchEvent)/,
     /\.(onclick|onload|onchange|onsubmit|oninput|onkeydown|onkeyup|onmouseover|onmouseout)/,
-    
+
     // 表單相關
     /\.(value|checked|selected|disabled|required|placeholder)\s*=/,
     /\.(options|selectedIndex|selectedOptions)/,
-    
+
     // Canvas 和媒體
     /\.getContext\s*\(/,
     /\.(play|pause|load|currentTime|duration|volume)\s*[=\(]/,
-    
+
     // 其他常見 DOM 操作
     /new\s+(Image|Audio|Video|Option|FormData|XMLHttpRequest|DOMParser)/,
     /fetch\s*\(/
   ];
   analysis.hasDOMOperations = domPatterns.some(pattern => pattern.test(sourceCode));
-  
+
   // 3. 檢測事件綁定
   analysis.hasEventListeners = /addEventListener/.test(sourceCode);
-  
+
   // 4. 檢測是否已有 exports
   analysis.needsExports = !/module\.exports|exports\.[a-zA-Z_$]/.test(sourceCode);
-  
+
   // 5. 決定測試策略（更精確）
   if (analysis.hasDOMOperations || analysis.hasEventListeners) {
     analysis.needsJSDOM = true;
-    
+
     // 只有當存在純邏輯函式時才是 hybrid
     // 如果所有函式都包含 DOM 操作，則只做 integration
     if (analysis.pureFunctions.length > 0) {
@@ -394,7 +395,7 @@ export function analyzeJavaScriptFile(sourceCode) {
   } else if (analysis.hasFunctions) {
     analysis.testStrategy = 'unit';
   }
-  
+
   return analysis;
 }
 
@@ -407,11 +408,11 @@ export function analyzeJavaScriptFile(sourceCode) {
  */
 export async function generateTestPlans(sessionId, jsFiles, agent) {
   const results = [];
-  
+
   for (const file of jsFiles) {
     try {
       const sourceCode = await fs.promises.readFile(file.fullPath, 'utf-8');
-      
+
       // [新增] 分析檔案特徵
       const analysis = analyzeJavaScriptFile(sourceCode);
       console.log(`[ANALYSIS] ${file.path}:`);
@@ -422,12 +423,12 @@ export async function generateTestPlans(sessionId, jsFiles, agent) {
       if (analysis.functions.length > 0) {
         console.log(`  - 函式列表: ${analysis.functions.join(', ')}`);
       }
-      
+
       // 生成測試計劃（傳入分析結果）
       const testPlan = await generateSingleTestPlan(file, sourceCode, analysis, agent);
       const basename = path.basename(file.path, '.js');
       const testPlanPath = await saveTestPlan(sessionId, basename, testPlan);
-      
+
       results.push({
         file: file.path,
         success: true,
@@ -444,7 +445,7 @@ export async function generateTestPlans(sessionId, jsFiles, agent) {
       console.error(`[ERROR] 產生測試計劃失敗：${file.path} - ${err.message}`);
     }
   }
-  
+
   return results;
 }
 
@@ -535,10 +536,10 @@ Generate the test plan following this structure.`;
 export async function saveTestPlan(sessionId, basename, testPlanContent) {
   const dataDir = path.resolve(__dirname, `../data/sessions/${sessionId}`);
   fs.mkdirSync(dataDir, { recursive: true });
-  
+
   const testPlanPath = path.join(dataDir, `${basename}_testplan.md`);
   await fs.promises.writeFile(testPlanPath, testPlanContent, 'utf-8');
-  
+
   return testPlanPath;
 }
 
@@ -552,42 +553,42 @@ export async function saveTestPlan(sessionId, basename, testPlanContent) {
 export async function writeVerificationReport(sessionId, verification, testPlans) {
   const dataDir = path.resolve(__dirname, `../data/sessions/${sessionId}`);
   fs.mkdirSync(dataDir, { recursive: true });
-  
+
   const reportPath = path.join(dataDir, 'verify_report.md');
-  
+
   let report = `# Verification Report\n\n`;
   report += `**Session ID:** ${sessionId}\n`;
   report += `**Generated At:** ${new Date().toISOString()}\n\n`;
-  
+
   report += `## File Verification\n\n`;
   report += `### Existing Files (${verification.existing.length})\n`;
   verification.existing.forEach(f => {
     report += `- [EXISTS] ${f}\n`;
   });
-  
+
   if (verification.missing.length > 0) {
     report += `\n### Missing Files (${verification.missing.length})\n`;
     verification.missing.forEach(f => {
       report += `- [MISSING] ${f}\n`;
     });
   }
-  
+
   report += `\n## Test Plan Generation\n\n`;
   report += `### JavaScript Files Processed (${verification.jsFiles.length})\n\n`;
-  
+
   const successful = testPlans.filter(t => t.success);
   const failed = testPlans.filter(t => !t.success);
-  
+
   report += `**Successful:** ${successful.length}\n`;
   report += `**Failed:** ${failed.length}\n\n`;
-  
+
   if (successful.length > 0) {
     report += `#### Successfully Generated Test Plans\n`;
     successful.forEach(t => {
       report += `- [SUCCESS] ${t.file} -> ${path.basename(t.testPlanPath)}\n`;
     });
   }
-  
+
   if (failed.length > 0) {
     report += `\n#### Failed Test Plan Generation\n`;
     failed.forEach(t => {
@@ -595,13 +596,13 @@ export async function writeVerificationReport(sessionId, verification, testPlans
       report += `  - Error: ${t.error}\n`;
     });
   }
-  
+
   report += `\n## Summary\n\n`;
   report += `- Total files in architecture: ${verification.existing.length + verification.missing.length}\n`;
   report += `- Files verified: ${verification.existing.length}\n`;
   report += `- JavaScript files found: ${verification.jsFiles.length}\n`;
   report += `- Test plans generated: ${successful.length}\n`;
-  
+
   await fs.promises.writeFile(reportPath, report, 'utf-8');
   return reportPath;
 }
@@ -613,27 +614,27 @@ export async function writeVerificationReport(sessionId, verification, testPlans
  */
 export async function runVerifierAgent(sessionId) {
   if (!sessionId) throw new Error("缺少 sessionId");
-  
+
   const agent = new VerifierAgent();
   try {
     console.log(`\n🔍 開始驗證 session: ${sessionId}`);
-    
+
     // 1. 讀取 architecture.json
     const architectureData = await loadArchitecture(sessionId);
     console.log(`[SUCCESS] 已載入 architecture.json (${architectureData.files?.length || 0} 個檔案)`);
-    
+
     // 2. 驗證檔案是否存在
     const verification = await verifyFiles(sessionId, architectureData);
     console.log(`[SUCCESS] 檔案驗證完成: ${verification.existing.length} 存在, ${verification.missing.length} 缺失, ${verification.jsFiles.length} JS 檔案`);
-    
+
     // 3. 為每個 .js 檔案產生測試計劃
     const testPlans = await generateTestPlans(sessionId, verification.jsFiles, agent);
     console.log(`[SUCCESS] 測試計劃產生完成: ${testPlans.filter(t => t.success).length}/${testPlans.length} 成功`);
-    
+
     // 4. 產生驗證報告
     const reportPath = await writeVerificationReport(sessionId, verification, testPlans);
     console.log(`[SUCCESS] 驗證報告已產生：${reportPath}`);
-    
+
     return { reportPath, testPlans };
   } catch (err) {
     console.error(`[ERROR] Verifier Agent 失敗: ${err.message}`);
@@ -653,11 +654,11 @@ const isMainModule = () => {
   // 方法1: 使用 process.argv[1] 比對
   const scriptPath = fileURLToPath(import.meta.url);
   const executedPath = process.argv[1];
-  
+
   // 正規化路徑以進行比較（處理不同的斜線格式）
   const normalizedScript = path.resolve(scriptPath);
   const normalizedExecuted = path.resolve(executedPath);
-  
+
   return normalizedScript === normalizedExecuted;
 };
 

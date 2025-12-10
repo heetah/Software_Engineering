@@ -119,7 +119,8 @@ export async function runWithInstructionService(
       'InstructionService',
       () => Promise.resolve(new InstructionService({
         baseDir: options.baseDir,
-        apiKeys: options.apiKeys
+        apiKeys: options.apiKeys,
+        llmProvider: options.llmProvider // 傳遞用戶選擇的 Provider
       })),
       { userInput }
     );
@@ -265,7 +266,7 @@ export async function runWithInstructionService(
       console.log(`\n✓ Verification complete`);
       console.log(`  Report: ${verifierResult.reportPath}`);
       console.log(`  Test plans: ${testPlan?.testPlans?.length || 0}`);
-      
+
       if (testPlan?.testPlans && testPlan.testPlans.length > 0) {
         testPlan.testPlans.forEach(tp => {
           console.log(`  - ${tp.file} -> ${tp.testPlanPath}`);
@@ -293,27 +294,27 @@ export async function runWithInstructionService(
           () => tester.runTesterAgent(plan.id),
           { sessionId: plan.id }
         );
-        
+
         // 適配 Tester Agent 的返回結構
         const { reportPath, jestResults } = testResult;
-        
+
         // 檢查 jestResults 是否有效
         if (!jestResults || !jestResults.results) {
           console.log(`\n⚠️  測試執行失敗或無結果`);
           console.log(`   報告已產生：${reportPath}`);
         } else {
           const results = jestResults.results;
-          
+
           console.log(`\n✓ Tests executed successfully!`);
           console.log(`Test statistics:`);
           console.log(`   - Test files: ${results.numTotalTestSuites || 0}`);
           console.log(`   - Total tests: ${results.numTotalTests || 0}`);
           console.log(`   - Passed: ${results.numPassedTests || 0} ✓`);
           console.log(`   - Failed: ${results.numFailedTests || 0}${results.numFailedTests > 0 ? ' ✗' : ''}`);
-          
+
           if (results.numFailedTests > 0) {
             console.log(`\nThere are ${results.numFailedTests} failed tests`);
-            
+
             // 提取失敗的測試
             const failures = [];
             if (results.testResults) {
@@ -331,7 +332,7 @@ export async function runWithInstructionService(
                 }
               });
             }
-            
+
             if (failures.length > 0) {
               console.log(`\nFailed case details:`);
               failures.slice(0, 5).forEach((failure, idx) => {
@@ -342,7 +343,7 @@ export async function runWithInstructionService(
                   console.log(`     Error: ${msg}${failure.failureMessages[0].length > 100 ? '...' : ''}`);
                 }
               });
-              
+
               if (failures.length > 5) {
                 console.log(`  ... There are ${failures.length - 5} more failed cases`);
               }
@@ -350,7 +351,7 @@ export async function runWithInstructionService(
           } else {
             console.log(`\nAll tests passed! 🎉`);
           }
-          
+
           // 將測試結果添加到 plan 中（轉換為原格式）
           plan.testReport = {
             totals: {

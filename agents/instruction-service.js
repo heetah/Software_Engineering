@@ -63,8 +63,11 @@ function materializeFiles(files = [], sessionDir) {
 
 export default class InstructionService {
   constructor(options = {}) {
-    // 創建架構代理
-    this.agent = new ArchitectAgent(options);
+    // 傳遞 llmProvider 到 ArchitectAgent
+    this.agent = new ArchitectAgent({
+      ...options,
+      llmProvider: options.llmProvider
+    });
 
     // 設定基礎目錄，默認為 process.cwd()
     this.baseDir = options.baseDir || process.cwd();
