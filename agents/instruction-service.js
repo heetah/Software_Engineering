@@ -97,13 +97,41 @@ export default class InstructionService {
     ensureDirs();
   }
 
-  // 獲取會話路徑
+  // 獲取會話目錄路徑
+  sessionDir(id) {
+    // 返回會話目錄路徑
+    return path.join(SESSIONS_DIR, id);
+  }
+
+  // 獲取 architecture.json 路徑
+  architectureJsonPath(id) {
+    // 返回 architecture.json 的完整路徑
+    return path.join(this.sessionDir(id), 'architecture.json');
+  }
+
+  // 獲取會話路徑（向後兼容，現在返回目錄路徑）
   sessionPath(id) {
-    // 返回會話路徑
-    return path.join(SESSIONS_DIR, `${id}.json`);
+    // 返回會話目錄路徑（向後兼容）
+    return this.sessionDir(id);
   }
 
   async createPlan({ prompt, context }) {
+    // 先讓 ArchitectAgent 判斷意圖：專案生成 or 單純問答
+    const intent = await this.agent.detectIntent({ prompt, context });
+
+    // 單純問答模式：不產生 architecture.json，也不觸發後續 coder / verifier / tester
+    if (intent === 'qa') {
+      const answer = await this.agent.answerQuestion({ prompt, context });
+      return {
+        mode: 'qa',
+        prompt,
+        context: context || null,
+        answerText: answer.answerText,
+        usage: answer.usage || null
+      };
+    }
+
+    // ===== 專案生成模式 =====
     // 生成會話 ID
     const id = randomUUID();
     // 生成計劃
@@ -114,7 +142,7 @@ export default class InstructionService {
     // 創建文件操作
     const fileOps = materializeFiles(generated?.coder_instructions?.files, sessionWorkspace);
 
-    // 創建負載
+    // 創建負載（architecture.json 的內容）
     const payload = {
       id,
       createdAt: new Date().toISOString(),
@@ -124,16 +152,34 @@ export default class InstructionService {
       fileOps,
       workspaceDir: sessionWorkspace ? path.relative(process.cwd(), sessionWorkspace) : null,
     };
-    fs.writeFileSync(this.sessionPath(id), JSON.stringify(payload, null, 2), 'utf8');
+
+    // 確保會話目錄存在
+    const sessionDir = this.sessionDir(id);
+    if (!fs.existsSync(sessionDir)) {
+      fs.mkdirSync(sessionDir, { recursive: true });
+    }
+
+    // 寫入 architecture.json 到 data/sessions/<sessionId>/architecture.json
+    const architecturePath = this.architectureJsonPath(id);
+    fs.writeFileSync(architecturePath, JSON.stringify(payload, null, 2), 'utf8');
+    
     return payload;
   }
 
   getSession(id) {
-    // 獲取會話路徑
-    const p = this.sessionPath(id);
-    // 如果會話路徑不存在，則返回 null
-    if (!fs.existsSync(p)) return null;
-    const raw = fs.readFileSync(p, 'utf8');
+    // 獲取 architecture.json 路徑
+    const architecturePath = this.architectureJsonPath(id);
+    // 如果 architecture.json 不存在，嘗試從舊格式讀取（向後兼容）
+    if (!fs.existsSync(architecturePath)) {
+      // 嘗試讀取舊格式的 session JSON 檔案
+      const oldPath = path.join(SESSIONS_DIR, `${id}.json`);
+      if (fs.existsSync(oldPath)) {
+        const raw = fs.readFileSync(oldPath, 'utf8');
+        return JSON.parse(raw);
+      }
+      return null;
+    }
+    const raw = fs.readFileSync(architecturePath, 'utf8');
     // 解析會話 JSON
     return JSON.parse(raw);
   }
@@ -169,8 +215,16 @@ export default class InstructionService {
       fileOps,
       workspaceDir: sessionWorkspace ? path.relative(process.cwd(), sessionWorkspace) : null,
     };
-    // 寫入會話 JSON
-    fs.writeFileSync(this.sessionPath(id), JSON.stringify(updated, null, 2), 'utf8');
+    
+    // 確保會話目錄存在
+    const sessionDir = this.sessionDir(id);
+    if (!fs.existsSync(sessionDir)) {
+      fs.mkdirSync(sessionDir, { recursive: true });
+    }
+    
+    // 寫入 architecture.json
+    const architecturePath = this.architectureJsonPath(id);
+    fs.writeFileSync(architecturePath, JSON.stringify(updated, null, 2), 'utf8');
     // 返回更新後的會話
     return updated;
   }

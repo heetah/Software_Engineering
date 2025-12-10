@@ -59,12 +59,21 @@ export function initializeAgents(force = false) {
  * 獲取或創建 Coder Coordinator 實例
  */
 export function getCoderCoordinator(config = {}) {
-  if (!agentCache || !agentCache.coderCoordinator) {
-    agentCache = agentCache || initializeAgents(true);
-    agentCache.coderCoordinator = new CoderCoordinator({
-      useMockApi: config.useMockApi || false
-    });
+  if (!agentCache) {
+    agentCache = initializeAgents(true);
   }
+
+  const requestedProvider = (config.llmProvider || "auto").toLowerCase();
+  const apiKeys = config.apiKeys || {};
+
+  // 每次依據目前設定建立新的 CoderCoordinator，確保 API Key / Provider 最新
+  agentCache.coderCoordinator = new CoderCoordinator({
+    useMockApi: config.useMockApi || false,
+    llmProvider: requestedProvider,
+    geminiApiKey: apiKeys.gemini || null,
+    openaiApiKey: apiKeys.openai || null,
+  });
+
   return agentCache.coderCoordinator;
 }
 
@@ -90,7 +99,11 @@ async function main() {
  * 使用 InstructionService 的流程
  * 可被外部調用來處理使用者輸入
  */
-export async function runWithInstructionService(userInput, agents) {
+export async function runWithInstructionService(
+  userInput,
+  agents,
+  options = {}
+) {
   const { architect, verifier, tester } = agents;
 
   try {
@@ -101,7 +114,7 @@ export async function runWithInstructionService(userInput, agents) {
       { userInput }
     );
 
-    // Architect Agent 直接處理用戶需求並生成計劃
+    // Architect Agent 直接處理用戶需求並生成計劃或單純問答回覆
     // （不再需要 Requirement Agent，Architect Agent 會同時處理需求分析和架構設計）
     const plan = await withErrorHandling(
       'InstructionService.createPlan',
@@ -113,6 +126,12 @@ export async function runWithInstructionService(userInput, agents) {
       }),
       { userInput }
     );
+
+    // 如果是「單純問答模式」，直接回傳，不觸發後續 coder / verifier / tester
+    if (plan && plan.mode === 'qa') {
+      console.log("\nInstructionService QA mode: skip project generation / verifier / tester");
+      return plan;
+    }
 
     console.log(`\nPlan created, Session ID: ${plan.id}`);
     console.log(`Workspace directory: ${plan.workspaceDir || 'N/A'}`);
@@ -163,7 +182,11 @@ export async function runWithInstructionService(userInput, agents) {
     }
     
     if (coderInstructions) {
-      const coderCoordinator = getCoderCoordinator({ useMockApi: false });
+      const coderCoordinator = getCoderCoordinator({
+        useMockApi: false,
+        llmProvider: options.llmProvider || "auto",
+        apiKeys: options.apiKeys || {},
+      });
       const requestId = `coordinator-${plan.id}`;
       
       // 構建 Coordinator 需要的 payload 格式
@@ -218,7 +241,7 @@ export async function runWithInstructionService(userInput, agents) {
 
     // ===== Verifier Agent: 生成測試計劃 =====
     console.log("\n" + "=".repeat(60));
-    console.log("Verifier Agent: Verify files and generate test plans");
+    console.log("Verifier Agent: Generate test plan");
     console.log("=".repeat(60));
     
     let testPlan = null;

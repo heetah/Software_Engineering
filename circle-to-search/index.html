@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' 'unsafe-inline' data:; script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>圓形選取截圖工具</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- 主要畫布容器 -->
+    <div class="soft-ui-container">
+      <canvas id="capture-canvas"></canvas>
+      <div class="overlay"></div>
+    </div>
+
+    <!-- 選取資訊 -->
+    <div id="selection-info">
+      <div class="info-item">
+        <span class="info-label">尺寸</span>
+        <span class="info-value" id="selection-size">0 x 0</span>
+      </div>
+    </div>
+
+    <!-- 模式選擇面板 -->
+    <div id="mode-selector" class="hidden">
+      <div class="mode-title">選擇搜尋模式</div>
+      <div class="mode-buttons">
+        <button class="mode-btn" data-mode="lens">
+          <svg
+            class="mode-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.35-4.35" />
+          </svg>
+          <span>Google 智慧鏡頭</span>
+          <span class="mode-desc">以圖搜圖</span>
+        </button>
+        <button class="mode-btn" data-mode="ai">
+          <svg
+            class="mode-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+          >
+            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+            <path d="M2 17l10 5 10-5" />
+            <path d="M2 12l10 5 10-5" />
+          </svg>
+          <span>AI 智能分析</span>
+          <span class="mode-desc">內容解析</span>
+        </button>
+      </div>
+      <div class="mode-footer">
+        <button class="cancel-btn">取消</button>
+      </div>
+    </div>
+
+    <!-- 操作提示 -->
+    <div id="hint">
+      <span class="hint-text">拖曳畫圓選取區域</span>
+    </div>
+
+    <!-- Vision 結果顯示區 -->
+    <div id="vision-result" class="hidden">
+      <div class="result-header">
+        <span class="result-title">分析結果</span>
+        <button class="close-button">×</button>
+      </div>
+      <div class="result-content">
+        <div id="result-text"></div>
+      </div>
+    </div>
+
+    <!-- 渲染進程腳本 -->
+    <script src="renderer.js"></script>
+  </body>
+</html>

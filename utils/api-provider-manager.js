@@ -131,36 +131,18 @@ export class APIProviderManager {
   constructor() {
     this.providers = [];
     this.currentIndex = 0; // 用於輪詢負載均衡
-    // 默認使用 failover 策略：一次只使用一個 API，優先使用 Gemini
+    // 默認使用 failover 策略：一次只使用一個 API，優先使用 OpenAI
     this.strategy = process.env.API_ROUTING_STRATEGY || 'failover'; // 'round-robin', 'failover', 'random'
   }
 
   /**
    * 初始化提供者
-   * 優先註冊 Gemini，然後是 OpenAI（確保 failover 時優先使用 Gemini）
+   * 優先註冊 OpenAI，然後是 Gemini（確保 failover 時優先使用 OpenAI）
    */
   initialize() {
     this.providers = [];
 
-    // 優先添加 Gemini 提供者（優先使用）
-    if (process.env.GEMINI_API_KEY) {
-      const geminiProvider = new APIProvider(
-        'Gemini',
-        API_PROVIDER_TYPES.GEMINI,
-        process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
-        process.env.GEMINI_API_KEY,
-        {
-          model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-          timeout: config.api.timeout,
-          maxRetries: config.api.maxRetries,
-          retryDelay: config.api.retryDelay
-        }
-      );
-      this.providers.push(geminiProvider);
-      console.log('[API Provider Manager] Gemini provider registered (primary)');
-    }
-
-    // 然後添加 OpenAI 提供者（備用）
+    // 優先添加 OpenAI 提供者（優先使用）
     if (process.env.OPENAI_API_KEY) {
       const openaiProvider = new APIProvider(
         'OpenAI',
@@ -169,13 +151,31 @@ export class APIProviderManager {
         process.env.OPENAI_API_KEY,
         {
           model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-          timeout: config.api.timeout,
+          timeout: parseInt(process.env.OPENAI_TIMEOUT) || config.api.timeout,
           maxRetries: config.api.maxRetries,
           retryDelay: config.api.retryDelay
         }
       );
       this.providers.push(openaiProvider);
-      console.log('[API Provider Manager] OpenAI provider registered (fallback)');
+      console.log('[API Provider Manager] OpenAI provider registered (primary)');
+    }
+
+    // 然後添加 Gemini 提供者（備用）
+    if (process.env.GEMINI_API_KEY) {
+      const geminiProvider = new APIProvider(
+        'Gemini',
+        API_PROVIDER_TYPES.GEMINI,
+        process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
+        process.env.GEMINI_API_KEY,
+        {
+          model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+          timeout: parseInt(process.env.GEMINI_TIMEOUT) || 60000, // Gemini 默認 60 秒
+          maxRetries: config.api.maxRetries,
+          retryDelay: config.api.retryDelay
+        }
+      );
+      this.providers.push(geminiProvider);
+      console.log('[API Provider Manager] Gemini provider registered (fallback)');
     }
 
     if (this.providers.length === 0) {
@@ -187,7 +187,7 @@ export class APIProviderManager {
 
   /**
    * 選擇下一個可用的提供者
-   * 優先使用 Gemini，如果不可用則使用 OpenAI
+   * 優先使用 OpenAI，如果不可用則使用 Gemini
    * 在 failover 模式下，一次只返回一個提供者
    */
   selectProvider(excludeProviders = []) {
@@ -195,7 +195,7 @@ export class APIProviderManager {
       throw new Error('No available API providers');
     }
 
-    // 過濾出可用的提供者（按註冊順序：Gemini 優先），排除已嘗試的
+    // 過濾出可用的提供者（按註冊順序：OpenAI 優先），排除已嘗試的
     const availableProviders = this.providers.filter(p => 
       p.isReady() && !excludeProviders.includes(p.name)
     );
@@ -209,7 +209,7 @@ export class APIProviderManager {
         throw new Error('No API providers configured or all providers already tried');
       }
       
-      // 優先返回第一個（Gemini）
+      // 優先返回第一個（OpenAI）
       return allProviders[0];
     }
 
@@ -220,7 +220,7 @@ export class APIProviderManager {
         return availableProviders[this.currentIndex];
       
       case 'failover':
-        // 總是選擇第一個可用的（Gemini 優先，因為註冊順序）
+        // 總是選擇第一個可用的（OpenAI 優先，因為註冊順序）
         // 這確保一次只使用一個 API
         return availableProviders[0];
       
@@ -228,27 +228,27 @@ export class APIProviderManager {
         return availableProviders[Math.floor(Math.random() * availableProviders.length)];
       
       case 'least-errors':
-        // 選擇錯誤最少的，但如果有多個錯誤數相同，優先選擇第一個（Gemini）
+        // 選擇錯誤最少的，但如果有多個錯誤數相同，優先選擇第一個（OpenAI）
         return availableProviders.reduce((best, current) => {
           if (current.errorCount < best.errorCount) return current;
           if (current.errorCount === best.errorCount) {
-            // 錯誤數相同時，優先選擇註冊順序靠前的（Gemini）
+            // 錯誤數相同時，優先選擇註冊順序靠前的（OpenAI）
             return this.providers.indexOf(current) < this.providers.indexOf(best) ? current : best;
           }
           return best;
         });
       
       default:
-        // 默認使用第一個可用的（Gemini 優先）
+        // 默認使用第一個可用的（OpenAI 優先）
         return availableProviders[0];
     }
   }
 
   /**
-   * 執行 API 調用（一次只使用一個 API，優先 Gemini，失敗時切換到 OpenAI）
+   * 執行 API 調用（一次只使用一個 API，優先 OpenAI，失敗時切換到 Gemini）
    */
   async executeAPI(payload, options = {}) {
-    // 一次只嘗試一個提供者，按優先順序（Gemini -> OpenAI）
+    // 一次只嘗試一個提供者，按優先順序（OpenAI -> Gemini）
     const maxProviderRetries = Math.min(options.maxProviderRetries || this.providers.length, this.providers.length);
     let lastError = null;
     const triedProviders = [];

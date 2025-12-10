@@ -1,5 +1,5 @@
 @charset "UTF-8";
-/* dev_page/scss/style.scss (重構版 - 支援深色模式) */
+/* dev_page/scss/style.scss (精簡版 - 無亮部陰影、Copy 內嵌) */
 
 /*
  * ====================================================================
@@ -8,71 +8,58 @@
  */
 
 html {
-  /* ================== 淺色 (Light) 主題 (預設) ================== */
-
-  /* 基底顏色 */
+  /* ================== 淺色 (Light) 主題 ================== */
   --color-bg: #e4e9f2;
   --color-text: #3d4a5f;
+  /* 原本是 #627aa2，改深一點增加對比 */
   --color-text-light: #99a3b5;
 
-  /* 陰影顏色 (淺色模式的陰影是 *深* 和 *亮*) */
   --color-shadow-dark: #c8d0e0;
-  --color-shadow-light: #f7fbff;
+  /* 移除亮部陰影變數的使用，但保留變數定義以防萬一，設為透明或同背景 */
+  --color-shadow-light: transparent;
 
-  /* 輔助/強調色 (藍紫色) */
   --color-accent-1: #8692fd;
   --color-accent-2: #6272f4;
   --color-accent-text: #ffffff;
   --color-accent-shadow: #c8d0e0;
 
-  /* 危險/紅色 */
   --color-danger-1: #f87a7a;
   --color-danger-2: #f46262;
   --color-danger-text: #ffffff;
   --color-danger-shadow-inset-dark: #c14b4b;
-  --color-danger-shadow-inset-light: #ff9e9e;
 
-  /* ================== 通用樣式 ================== */
+  /* ================== 樣式定義 (修改點：移除亮部陰影) ================== */
 
-  /* Neumorphism "凸起" 樣式 */
-  --shadow-convex: 6px 6px 12px var(--color-shadow-dark), -6px -6px 12px var(--color-shadow-light);
-  /* Neumorphism "凹陷" 樣式 */
-  --shadow-concave: inset 4px 4px 8px var(--color-shadow-dark), inset -4px -4px 8px var(--color-shadow-light);
+  /* 僅保留單邊深色陰影 */
+  --shadow-convex: 6px 6px 12px var(--color-shadow-dark);
+  --shadow-concave: inset 4px 4px 8px var(--color-shadow-dark);
 
-  /* 強調色 (漸層) */
   --gradient-accent: linear-gradient(135deg, var(--color-accent-1), var(--color-accent-2));
   --shadow-accent: 4px 4px 10px var(--color-accent-shadow);
 
-  /* 危險色 (漸層) */
   --gradient-danger: linear-gradient(135deg, var(--color-danger-1), var(--color-danger-2));
   --shadow-danger: 4px 4px 10px var(--color-shadow-dark);
-  --shadow-danger-inset: inset 4px 4px 8px var(--color-danger-shadow-inset-dark), inset -4px -4px 8px var(--color-danger-shadow-inset-light);
+  --shadow-danger-inset: inset 4px 4px 8px var(--color-danger-shadow-inset-dark);
 }
 
 html.dark-mode {
-  /* ================== 深色 (Dark) 主題 (黑+金) ================== */
-
-  /* 基底顏色 (使用 #2c2c2c, 純黑 #000 無法產生陰影) */
+  /* ================== 深色 (Dark) 主題 ================== */
   --color-bg: #2c2c2c;
   --color-text: #cccccc;
   --color-text-light: #888888;
 
-  /* 陰影顏色 (深色模式的陰影是 *更深* 和 *稍亮*) */
-  --color-shadow-dark: #202020;
-  --color-shadow-light: #383838;
+  --color-shadow-dark: #1a1a1a;
+  /* 加深陰影 */
 
-  /* 輔助/強調色 (金色) */
   --color-accent-1: #f0c54d;
   --color-accent-2: #d4a03a;
-  --color-accent-text: #2c2c2c; /* 金色背景上用深色文字 */
-  --color-accent-shadow: #202020;
+  --color-accent-text: #2c2c2c;
+  --color-accent-shadow: #1a1a1a;
 
-  /* 危險/紅色 (保持不變, 安全性優先) */
   --color-danger-1: #f87a7a;
   --color-danger-2: #f46262;
   --color-danger-text: #ffffff;
   --color-danger-shadow-inset-dark: #c14b4b;
-  --color-danger-shadow-inset-light: #ff9e9e;
 }
 
 
@@ -82,19 +69,19 @@ html.dark-mode {
  * ====================================================================
  */
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
   height: 100vh;
-  /* 使用 CSS 變數 */
   background-color: var(--color-bg);
   font-family: "Microsoft JhengHei UI", "Segoe UI", sans-serif;
   color: var(--color-text);
   overflow: hidden;
-  /* 加上過渡動畫，讓切換更流暢 */
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
@@ -111,15 +98,18 @@ body {
   gap: 20px;
 }
 
+/* (修改點 1：移除側邊欄大框) */
 .sidebar {
   width: 260px;
   flex-shrink: 0;
-  padding: 20px;
+  padding: 20px 10px;
+  /* 左右 padding 稍微減少 */
   display: flex;
   flex-direction: column;
-  border-radius: 20px;
-  background: var(--color-bg);
-  box-shadow: var(--shadow-convex); /* 變數 */
+  /* 移除背景和陰影，讓它融入背景 */
+  background: transparent;
+  box-shadow: none;
+  /* border-radius 也可以移除或保留 */
   transition: all 0.2s ease-in-out;
 }
 
@@ -129,8 +119,9 @@ body {
   flex-direction: column;
   padding: 20px 40px;
   border-radius: 20px;
-  background: var(--color-bg); /* 深色模式下，背景和凸起物同色 */
-  box-shadow: var(--shadow-concave); /* 變數 */
+  background: var(--color-bg);
+  box-shadow: var(--shadow-concave);
+  /* 內容區維持凹陷感 */
   transition: all 0.2s ease-in-out;
 }
 
@@ -142,12 +133,16 @@ body {
   display: flex;
   flex-direction: column;
 }
+
 .chat-display::-webkit-scrollbar {
   width: 8px;
 }
+
 .chat-display::-webkit-scrollbar-thumb {
-  background: rgba(153, 163, 181, 0.25); /* 暫時保留，或改為 var(--color-text-light) */
+  background: var(--color-text-light);
+  /* 使用變數 */
   border-radius: 4px;
+  opacity: 0.5;
 }
 
 /*
@@ -157,7 +152,8 @@ body {
  */
 
 .sidebar__menu {
-  margin-top: 40px;
+  margin-top: 20px;
+  /* 稍微上移 */
 }
 
 .menu-button {
@@ -169,30 +165,38 @@ body {
   border: none;
   font-size: 16px;
   font-weight: 600;
-  color: var(--color-text-light); /* 變數 */
+  color: var(--color-text-light);
   cursor: pointer;
   position: relative;
   border-radius: 15px;
   background: var(--color-bg);
-  box-shadow: var(--shadow-convex); /* 變數 */
+  box-shadow: var(--shadow-convex);
+  /* 按鈕保留凸起 */
   transition: all 0.2s ease-in-out;
 }
+
 .menu-button span:first-child {
   margin-right: 15px;
 }
+
 .menu-button.is-active {
-  background: var(--gradient-accent); /* 變數 */
-  color: var(--color-accent-text); /* 變數 */
-  box-shadow: var(--shadow-accent); /* 變數 */
+  background: var(--gradient-accent);
+  color: var(--color-accent-text);
+  box-shadow: var(--shadow-accent);
 }
+
 .menu-button:not(.is-active):hover {
-  color: var(--color-text); /* 變數 */
+  color: var(--color-text);
+  transform: translateY(-1px);
+  /* 微互動 */
 }
+
 .menu-button:active {
   border-radius: 13px;
-  box-shadow: var(--shadow-concave); /* 變數 */
-  transition: all 0.2s ease-in-out;
+  box-shadow: var(--shadow-concave);
+  transform: translateY(1px);
 }
+
 .menu-button .dropdown-arrow {
   position: absolute;
   right: 20px;
@@ -201,6 +205,7 @@ body {
   font-size: 10px;
   transition: transform 0.3s ease;
 }
+
 .menu-button.is-open .dropdown-arrow {
   transform: translateY(-50%) rotate(180deg);
 }
@@ -210,109 +215,301 @@ body {
   overflow: hidden;
   transition: max-height 0.15s ease-out;
   margin: -10px 0 10px 0;
+  padding-left: 10px;
+  /* 縮排 */
 }
+
 .history-list.is-open {
   max-height: 300px;
   overflow-y: auto;
 }
+
 .history-list .history-item {
-  display: block;
-  padding: 10px 20px 10px 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 10px 16px;
   font-size: 14px;
-  color: var(--color-text-light); /* 變數 */
+  color: var(--color-text-light);
   text-decoration: none;
   border-radius: 15px;
   transition: all 0.2s ease;
+  margin-bottom: 5px;
 }
+
+.history-list .history-item__title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-list .history-item__close {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  background: transparent;
+  color: var(--color-text-light);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.history-list .history-item__close:hover {
+  color: var(--color-text);
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+.history-list .history-item__close:active {
+  background-color: rgba(0, 0, 0, 0.12);
+}
+
 .history-list .history-item.is-active {
-  /* 淺色/深色模式下的 "選中" 顏色 */
-  background-color: var(--color-shadow-light); 
   color: var(--color-text);
   font-weight: 600;
+  /* 可以給一個極輕微的背景區分 */
+  background-color: rgba(0, 0, 0, 0.03);
 }
+
 .history-list .history-item:hover {
-  background-color: var(--color-shadow-light);
   color: var(--color-text);
+  background-color: rgba(0, 0, 0, 0.03);
 }
 
 /*
  * ====================================================================
- * 5. 訊息元件
+ * 5. 訊息元件 (完整修復版 - 包含頭像、氣泡、圖示按鈕)
  * ====================================================================
  */
 
+/* --- 1. 訊息群組容器 --- */
 .message-group {
   display: flex;
+  align-items: flex-start;
   margin-bottom: 25px;
+  width: 100%;
   animation: fadeInUp 0.3s ease-out;
-  /* 方案 B: 移除 width: 100% */
-}
-.message-group--ai .message-avatar {
-  color: var(--color-text-light); /* 變數 */
-  font-weight: bold;
 }
 
+/* User 的訊息方向反轉 */
 .message-group--user {
-  align-self: flex-end; /* 方案 B */
   flex-direction: row-reverse;
 }
 
-.message-group--user .message-avatar {
-  margin-left: 15px;
-  margin-right: 0;
-  border-radius: 50%;
-  background: var(--color-bg);
-  box-shadow: var(--shadow-convex); /* 變數 */
-  transition: all 0.2s ease-in-out;
-}
-.message-group--user .message-bubble {
-  border-radius: 20px;
-  background: var(--color-bg);
-  box-shadow: var(--shadow-convex); /* 變數 */
-  transition: all 0.2s ease-in-out;
-}
-
+/* --- 2. 頭像樣式 (修復消失問題) --- */
 .message-avatar {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
   margin-right: 15px;
+  margin-top: 0;
   display: flex;
   justify-content: center;
   align-items: center;
+  font-size: 12px;
+  font-weight: bold;
   border-radius: 50%;
   background: var(--color-bg);
-  box-shadow: var(--shadow-convex); /* 變數 */
-  transition: all 0.2s ease-in-out;
+  box-shadow: var(--shadow-convex);
+  color: var(--color-text-light);
 }
 
+/* User 頭像的間距調整 */
+.message-group--user .message-avatar {
+  margin-right: 0;
+  margin-left: 15px;
+  color: var(--color-text);
+}
+
+/* --- 3. 訊息內容與氣泡 --- */
 .message-content {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
 }
 
+/* 氣泡本體 */
 .message-bubble {
+  position: relative;
   padding: 15px 20px;
+  /* padding-bottom: 25px; - Removed */
   border-radius: 20px;
+
+  /* [Modified] Bubble Effect Base - Reverted surface shine */
   background: var(--color-bg);
-  box-shadow: var(--shadow-convex); /* 變數 */
+  box-shadow: var(--shadow-convex);
+
+  color: var(--color-text);
+  word-wrap: break-word;
+  width: fit-content;
+  max-width: 100%;
   transition: all 0.2s ease-in-out;
+  overflow: hidden;
+  z-index: 1;
 }
 
-.message-actions {
-  margin-top: 10px;
-  padding-left: 5px;
+/* [New] 泡泡膜反光動畫 (波光粼粼) */
+.message-bubble::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 20px;
+  /* Match parent */
+  padding: 2px;
+  /* Border width */
+
+  /* 虹彩漸層 (Iridescent Gradient) */
+  /* 水波紋漸層 (Water Ripple Gradient) */
+  background: linear-gradient(125deg,
+      rgba(255, 255, 255, 0) 30%,
+      rgba(255, 255, 255, 0.4) 35%,
+      /* 第一道細波紋 */
+      rgba(255, 255, 255, 0) 40%,
+      rgba(255, 255, 255, 0.8) 50%,
+      /* 主波紋 (強光) */
+      rgba(255, 255, 255, 0) 60%,
+      rgba(255, 255, 255, 0.3) 65%,
+      /* 尾韻波紋 */
+      rgba(255, 255, 255, 0) 70%);
+
+  background-size: 200% 200%;
+  opacity: 0.9;
+  /* 稍微降低整體不透明度讓波紋更柔和 */
+  mix-blend-mode: normal;
+  pointer-events: none;
+  /* 4s ease-in-out: 頻率更像水流呼吸，忽快忽慢 */
+  animation: shimmer 4s ease-in-out infinite;
+
+  /* Masking to create border effect */
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+
+  /* Ensure shimmer is behind text but above background */
+  z-index: -1;
 }
+
+/* User 氣泡靠右 */
+.message-group--user .message-content {
+  align-items: flex-end;
+}
+
+/* 思考中氣泡樣式 */
+.message-bubble--thinking {
+  padding: 15px 20px;
+  padding-bottom: 15px;
+  min-width: 60px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* --- 4. Copy 按鈕 (Soft UI 圖示風格) --- */
+.message-actions {
+  /* 改為相對定位，位於氣泡下方 */
+  position: relative;
+  margin-top: 6px;
+  margin-left: 5px;
+  margin-right: 5px;
+  padding: 0;
+  opacity: 0.6;
+  transition: opacity 0.3s ease;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 懸停訊息群組時按鈕變明顯 */
+.message-group:hover .message-actions {
+  opacity: 1;
+}
+
+/* AI 按鈕靠左 (預設) */
+.message-group--ai .message-actions {
+  justify-content: flex-start;
+}
+
+/* User 按鈕靠右 */
+.message-group--user .message-actions {
+  padding-left: 0px;
+  padding-right: 0px;
+  justify-content: flex-end;
+  /* margin-right 已經在上方設定 */
+  width: 100%;
+  /* 讓 flex-end 生效 */
+}
+
+/* 按鈕本體樣式 (透明文字風格) */
 .message-actions .action-button {
   border: none;
-  background: none;
-  color: var(--color-text-light); /* 變數 */
+  outline: none;
   cursor: pointer;
-  font-size: 14px;
+
+  /* [形狀修改] 改為膠囊狀，寬度自動 */
+  width: auto;
+  height: auto;
+  padding: 4px 10px;
+  /* 給文字一點呼吸空間 */
+  border-radius: 8px;
+  /* 圓角矩形 */
+
+  /* [字體修改] */
+  font-size: 11px;
+  /* 字體稍微縮小 */
+  color: var(--color-text-light);
+  /* [關鍵] 淺灰色文字 */
+  font-weight: normal;
+
+  /* [修改點] 移除背景與陰影，去除去框框感 */
+  background: transparent;
+  box-shadow: none;
+
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* 懸停狀態 */
 .message-actions .action-button:hover {
-  color: var(--color-text); /* 變數 */
+  /* 懸停時字體稍微變深，增加可讀性 */
+  color: var(--color-text);
+  transform: translateY(-1px);
+  /* 移除懸停陰影 */
+  box-shadow: none;
+  background: rgba(0, 0, 0, 0.05);
+  /* 極輕微背景提示 */
 }
+
+/* 點擊狀態 */
+.message-actions .action-button:active {
+  transform: translateY(0);
+  box-shadow: none;
+  opacity: 0.7;
+}
+
+/* 長條形文字按鈕 (Pill Shape) */
+.message-actions .action-button--pill {
+  width: auto;
+  height: 30px;
+  border-radius: 15px;
+  padding: 0 12px;
+  font-size: 13px;
+  gap: 6px;
+}
+
+
 
 /*
  * ====================================================================
@@ -327,8 +524,8 @@ body {
   display: flex;
   align-items: flex-end;
   border-radius: 20px;
-  background: var(--color-bg); /* 背景同色 */
-  box-shadow: var(--shadow-concave); /* 變數 */
+  background: var(--color-bg);
+  box-shadow: var(--shadow-concave);
   transition: all 0.2s ease-in-out;
 }
 
@@ -339,11 +536,12 @@ body {
   background: transparent;
   padding: 12px;
   font-size: 16px;
-  color: var(--color-text); /* 變數 */
+  color: var(--color-text);
   resize: none;
 }
+
 .input-field::placeholder {
-  color: var(--color-text-light); /* 變數 */
+  color: var(--color-text-light);
 }
 
 .input-actions {
@@ -354,7 +552,7 @@ body {
 
 .char-counter {
   font-size: 12px;
-  color: var(--color-text-light); /* 變數 */
+  color: var(--color-text-light);
   margin-right: 15px;
 }
 
@@ -362,40 +560,42 @@ body {
   width: 36px;
   height: 36px;
   border: none;
-  color: var(--color-text-light); /* 變數 */
+  color: var(--color-text-light);
   cursor: pointer;
   margin: 0 5px;
   border-radius: 50%;
   background: var(--color-bg);
-  box-shadow: var(--shadow-convex); /* 變數 */
+  box-shadow: var(--shadow-convex);
   transition: all 0.2s ease-in-out;
 }
+
 .action-button--icon:hover {
-  color: var(--color-text); /* 變數 */
+  color: var(--color-text);
 }
+
 .action-button--icon:active {
   border-radius: 50%;
-  box-shadow: var(--shadow-concave); /* 變數 */
-  transition: all 0.2s ease-in-out;
+  box-shadow: var(--shadow-concave);
 }
 
 .action-button--send {
   width: 48px;
   height: 36px;
   border: none;
-  color: var(--color-accent-text); /* 變數 */
+  color: var(--color-accent-text);
   cursor: pointer;
   margin-left: 5px;
   font-size: 20px;
-  background: var(--gradient-accent); /* 變數 */
+  background: var(--gradient-accent);
   border-radius: 15px;
-  box-shadow: var(--shadow-accent); /* 變數 */
+  box-shadow: var(--shadow-accent);
   transition: all 0.2s ease-in-out;
 }
+
 .action-button--send:active {
   border-radius: 15px;
-  box-shadow: var(--shadow-concave); /* 變數 */
-  transition: all 0.2s ease-in-out;
+  /* 這裡可以維持凹陷，或用變數 */
+  box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.3);
 }
 
 /*
@@ -409,17 +609,36 @@ body {
   height: 100%;
   display: none;
 }
+
 .page#page-chat {
   flex-direction: column;
 }
+
 .page.is-active {
   display: flex;
   animation: fadeInUp 0.3s ease-out;
 }
 
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 200%;
+  }
+
+  100% {
+    background-position: -200% -200%;
+  }
 }
 
 /*
@@ -435,18 +654,11 @@ body {
   padding-right: 12px;
   scrollbar-width: thin;
 }
-.page-content-wrapper::-webkit-scrollbar {
-  width: 8px;
-}
-.page-content-wrapper::-webkit-scrollbar-thumb {
-  background: rgba(153, 163, 181, 0.25);
-  border-radius: 4px;
-}
 
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: var(--color-text); /* 變數 */
+  color: var(--color-text);
   margin-bottom: 30px;
 }
 
@@ -460,22 +672,22 @@ body {
   padding: 25px;
   border-radius: 20px;
   background: var(--color-bg);
-  box-shadow: var(--shadow-convex); /* 變數 */
+  box-shadow: var(--shadow-convex);
   transition: all 0.2s ease-in-out;
 }
 
 .settings-card__title {
   font-size: 18px;
   font-weight: 600;
-  color: var(--color-text); /* 變數 */
+  color: var(--color-text);
   margin: 0 0 5px 0;
 }
 
 .settings-card__description {
   font-size: 14px;
-  color: var(--color-text-light); /* 變數 */
+  color: var(--color-text-light);
   margin: 0 0 25px 0;
-  border-bottom: 1px solid var(--color-text-light); /* 變數 */
+  border-bottom: 1px solid var(--color-text-light);
   opacity: 0.5;
   padding-bottom: 20px;
 }
@@ -483,6 +695,7 @@ body {
 .settings-action-group {
   margin-bottom: 25px;
 }
+
 .settings-action-group:last-child {
   margin-bottom: 0;
 }
@@ -491,79 +704,221 @@ body {
   display: block;
   font-size: 15px;
   font-weight: 600;
-  color: var(--color-text); /* 變數 */
+  color: var(--color-text);
   margin-bottom: 5px;
 }
 
 .settings-label-description {
   font-size: 13px;
-  color: var(--color-text-light); /* 變數 */
+  color: var(--color-text-light);
   margin: 0 0 12px 0;
+}
+
+/* LLM 選擇用單選按鈕群組 */
+.settings-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-radio-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.settings-radio-option input[type="radio"] {
+  accent-color: var(--color-accent-1);
+}
+
+/* Toggle Switch 群組（用於 LLM 選擇） */
+.settings-toggle-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-toggle-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.settings-toggle-option:hover {
+  transform: translateY(-1px);
+  box-shadow: 6px 6px 14px var(--color-shadow-dark);
+}
+
+.toggle-label {
+  font-size: 14px;
+  color: var(--color-text);
+  font-weight: 500;
+  flex: 1;
+}
+
+/* Toggle Switch 在設定頁面的樣式（用於 radio） */
+.settings-toggle-option .toggle-switch__input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+.settings-toggle-option .toggle-switch {
+  width: 50px;
+  height: 28px;
+  flex-shrink: 0;
+  position: relative;
+  display: inline-block;
+}
+
+.settings-toggle-option .toggle-switch__slider {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 28px;
+  background-color: var(--color-bg);
+  box-shadow: var(--shadow-concave);
+  transition: all 0.3s ease;
+}
+
+.settings-toggle-option .toggle-switch__slider::before {
+  content: "";
+  position: absolute;
+  height: 22px;
+  width: 22px;
+  left: 3px;
+  bottom: 3px;
+  border-radius: 50%;
+  background: var(--gradient-accent);
+  box-shadow: var(--shadow-accent);
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* 當 radio 被選中時，滑塊移動到右側 */
+.settings-toggle-option .toggle-switch__input:checked~.toggle-switch .toggle-switch__slider::before {
+  transform: translateX(22px);
+  background: var(--color-accent-text);
+  box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* 選中狀態的背景色 */
+.settings-toggle-option .toggle-switch__input:checked~.toggle-switch .toggle-switch__slider {
+  background: var(--gradient-accent);
+  box-shadow: var(--shadow-accent);
+}
+
+/* LLM API Key 輸入欄位 */
+.settings-input-group {
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+.settings-input-label {
+  display: block;
+  font-size: 13px;
+  color: var(--color-text-light);
+  margin-bottom: 4px;
+}
+
+.settings-input-field {
+  width: 100%;
+  border-radius: 10px;
+  box-shadow: var(--shadow-concave);
+  background: var(--color-bg);
 }
 
 .input-area.is-readonly {
   background: var(--color-bg);
   padding: 4px;
 }
+
 .input-area.is-readonly .input-field {
   padding: 8px 12px;
   font-size: 14px;
-  color: var(--color-text); /* 變數 */
+  color: var(--color-text);
   opacity: 0.8;
   overflow-x: auto;
   white-space: nowrap;
 }
 
-.action-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px 20px;
+/* 設定頁面的危險按鈕 (修改點 5：移除黑框) */
+.action-button--danger {
+  background: var(--gradient-danger);
+  color: var(--color-danger-text);
+  box-shadow: var(--shadow-danger);
   border: none;
-  font-size: 15px;
-  font-weight: 600;
+  outline: none;
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-size: 14px;
   cursor: pointer;
-  border-radius: 15px;
-  background: var(--color-bg);
-  box-shadow: var(--shadow-convex); /* 變數 */
-  transition: all 0.2s ease-in-out;
-  color: var(--color-text); /* 變數 */
-}
-.action-button:active {
-  border-radius: 13px;
-  box-shadow: var(--shadow-concave); /* 變數 */
-  transition: all 0.2s ease-in-out;
+  transition: all 0.2s ease;
 }
 
-.action-button--danger {
-  background: var(--gradient-danger); /* 變數 */
-  color: var(--color-danger-text); /* 變數 */
-  box-shadow: var(--shadow-danger); /* 變數 */
+/* 為了更好的無障礙體驗，focus 時改用陰影而非黑框 */
+.action-button--danger:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(248, 122, 122, 0.4), var(--shadow-danger);
 }
 
 .action-button--danger:hover {
-  /* * 我們使用一個稍微亮一點的漸層。
-   * 淺色模式下，我們也可以加深陰影，
-   * 但深色模式下，改變背景色是更可靠的反饋。
-   */
   background: linear-gradient(135deg, #ff8a8a, #f87474);
-  /* * 讓陰影也稍微加深一點，增加 "浮起" 感
-   * (注意：這在淺色模式下效果較好)
-   */
-  box-shadow: 6px 6px 16px var(--color-shadow-dark), -6px -6px 16px var(--color-shadow-light);
+  /* 單邊陰影 */
+  box-shadow: 6px 6px 16px var(--color-shadow-dark);
 }
+
 .action-button--danger:active {
-  background: var(--gradient-danger); /* 變數 */
-  box-shadow: var(--shadow-danger-inset); /* 變數 */
+  background: var(--gradient-danger);
+  box-shadow: var(--shadow-danger-inset);
+}
+
+/* 儲存按鈕樣式 */
+.action-button--save {
+  background: var(--gradient-accent);
+  color: var(--color-accent-text);
+  box-shadow: var(--shadow-accent);
+  margin-top: 15px;
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.action-button--save:hover {
+  background: linear-gradient(135deg, #9aa4ff, #7a88f8);
+  box-shadow: 6px 6px 16px var(--color-shadow-dark);
+  transform: translateY(-1px);
+}
+
+.action-button--save:active {
+  box-shadow: var(--shadow-concave);
+  transform: translateY(1px);
 }
 
 /* ====================================================================
- * 9. 新增：Soft UI 切換開關 (Toggle Switch)
- * [已更新為 "黑底金邊" 版本]
+ * 9. 切換開關 (Toggle Switch)
  * ====================================================================
  */
 
- .toggle-switch {
+.toggle-switch {
   display: inline-block;
   width: 60px;
   height: 34px;
@@ -571,16 +926,12 @@ body {
   cursor: pointer;
 }
 
-/* 隱藏預設的 checkbox */
 .toggle-switch__input {
   opacity: 0;
   width: 0;
   height: 0;
 }
 
-/* * 開關的 "軌道" (凹陷)
- * **這將一直是 "凹陷" 的黑底**
- */
 .toggle-switch__slider {
   position: absolute;
   top: 0;
@@ -589,7 +940,7 @@ body {
   bottom: 0;
   border-radius: 34px;
   background-color: var(--color-bg);
-  box-shadow: var(--shadow-concave); /* 凹陷 */
+  box-shadow: var(--shadow-concave);
   transition: all 0.3s ease;
 }
 
@@ -601,26 +952,86 @@ body {
   left: 4px;
   bottom: 4px;
   border-radius: 50%;
-  
-  /* * **修正：**
-   * 預設狀態 (淺色模式, 關閉) 
-   * var(--gradient-accent) 會解析為 "紫色"。
-   */
-  background: var(--gradient-accent); 
+  /* 預設(關閉)使用強調色 */
+  background: var(--gradient-accent);
   box-shadow: var(--shadow-accent);
-  
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-/* "選中" 狀態下，滑塊的變化 */
-.toggle-switch__input:checked + .toggle-switch__slider::before {
-  /* 1. 滑塊移動到右側 */
+/* 選中時，滑塊移動 */
+.toggle-switch__input:checked+.toggle-switch__slider::before {
   transform: translateX(26px);
-  
-  /* * 2. 滑塊的背景 "依然" 是 var(--gradient-accent),
-   * 但因為 .dark-mode class 被加上了,
-   * 這個變數現在會自動解析為 "金色"！
-   */
   background: var(--gradient-accent);
   box-shadow: var(--shadow-accent);
 }
+
+/*
+ * ====================================================================
+ * 10. Agent 回應樣式
+ * ====================================================================
+ */
+
+/* 思考中氣泡 */
+.message-bubble--thinking {
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  min-width: 60px;
+  border-radius: 20px;
+}
+
+.message-bubble--thinking .dot {
+  width: 8px;
+  height: 8px;
+  margin: 0 4px;
+  background-color: var(--color-text-light);
+  border-radius: 50%;
+  display: inline-block;
+  animation: bounce-wave 1.4s infinite ease-in-out both;
+}
+
+.message-bubble--thinking .dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.message-bubble--thinking .dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes bounce-wave {
+
+  0%,
+  80%,
+  100% {
+    transform: scale(0);
+    opacity: 0.5;
+  }
+
+  40% {
+    transform: scale(1.0);
+    opacity: 1;
+  }
+}
+
+/* 程式碼文字框 */
+.message-bubble--code {
+  background: var(--color-bg);
+  box-shadow: var(--shadow-concave);
+  padding: 20px;
+  position: relative;
+  /* 內嵌 Copy 定位 - 已移除 */
+
+  white-space: pre-wrap;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 14px;
+  color: var(--color-text);
+
+  /* 按鈕移出去了，不再需要額外底部 padding */
+  /* padding-bottom: 35px; */
+}
+
+/* 程式碼框內的 Copy 按鈕 (已移出，此區塊可移除或保留為空) */
+/* .message-bubble--code .message-actions { ... } */

@@ -1,20 +1,28 @@
 {
-  "name": "test",
+  "name": "ai-copilot-assistant",
   "version": "1.0.0",
-  "description": "",
+  "description": "A multi-agent AI copilot application.",
   "type": "module",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "nodemon main.js"
+    "dev": "nodemon main.js",
+    "build": "electron-builder"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@langchain/core": "^1.1.4",
     "axios": "^1.12.2",
     "dotenv": "^17.2.3",
-    "electron": "^39.1.0",
+    "langchain": "^1.1.5",
+    "llamaindex": "^0.12.1",
+    "node-fetch": "^2.7.0",
     "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "electron": "^29.4.6",
+    "electron-builder": "^24.6.4"
   }
 }
