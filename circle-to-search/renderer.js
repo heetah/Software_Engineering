@@ -2,6 +2,8 @@
 //   renderer.js (lasso 任意形狀選取 + Soft UI 預覽)
 // ===================================================================
 
+console.log("🔴 RENDERER.JS VERSION 2.0 已載入");
+
 let isDrawing = false;
 let startPoint = null; // lasso 起點
 let currentPoint = null; // 當前滑鼠點
@@ -48,12 +50,14 @@ document.querySelector(".cancel-btn").addEventListener("click", () => {
 // 處理模式選擇
 function handleModeSelection(mode, imageData) {
   if (mode === "lens") {
+    console.log("[Renderer] Activating Google Lens mode");
     // Google 智慧鏡頭：開啟 Google Lens 搜圖
     openGoogleLens(imageData);
     // 清除 canvas 並關閉視窗
     resetCanvas();
     window.electronAPI.closeCaptureWindow();
   } else if (mode === "ai") {
+    console.log("[Renderer] Activating AI Analysis mode");
     // AI 智能分析：使用原本的 Vision API
     visionResult.classList.remove("hidden");
     resultText.textContent = "正在使用 AI 分析圖片...";
@@ -243,19 +247,36 @@ window.electronAPI.onSetScreenSource(async (sourceId) => {
       video.onerror = reject;
     });
 
+    // Canvas設置為視窗完整尺寸
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     canvas.style.width = "100%";
     canvas.style.height = "100%";
 
-    // 清除 canvas 並繪製新截圖
+    // 清除並填充暗色背景
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // 計算90%區域的位置和大小
+    const scale = 0.90;
+    const scaledWidth = canvas.width * scale;
+    const scaledHeight = canvas.height * scale;
+    const offsetX = (canvas.width - scaledWidth) / 2;
+    const offsetY = (canvas.height - scaledHeight) / 2;
+
+    // 在中間85%區域繪製截圖
+    ctx.drawImage(
+      video,
+      0, 0, video.videoWidth, video.videoHeight,
+      offsetX, offsetY, scaledWidth, scaledHeight
+    );
+
+    // 保存完整的canvas作為原始截圖
     originalScreenshot = new Image();
     originalScreenshot.onload = () => {
       originalLoaded = true;
-      console.log("New screenshot loaded successfully");
+      console.log("New screenshot loaded successfully (85% scaled)");
     };
     originalScreenshot.onerror = () => {
       originalLoaded = false;
@@ -280,6 +301,7 @@ window.addEventListener("keydown", (e) => {
 
 // mouse events for lasso
 canvas.addEventListener("mousedown", (e) => {
+  console.log("[Renderer] Mousedown event triggered");
   if (!originalScreenshot || !originalLoaded) return;
   const p = toCanvasCoords(e);
   points = [p];
@@ -308,7 +330,8 @@ canvas.addEventListener("mousemove", (e) => {
   drawLassoPreview(points);
 });
 
-canvas.addEventListener("mouseup", (e) => {
+canvas.addEventListener("mouseup", async (e) => {
+  console.log("[Renderer] Mouseup event triggered");
   if (!isDrawing) return;
   isDrawing = false;
   if (points.length < 3) {
@@ -348,9 +371,31 @@ canvas.addEventListener("mouseup", (e) => {
     cropCtx.drawImage(originalScreenshot, minX, minY, w, h, 0, 0, w, h);
     const imageData = cropCanvas.toDataURL("image/png");
 
-    // 儲存截圖數據並顯示模式選擇器
+    // 儲存截圖數據
     capturedImageData = imageData;
-    modeSelector.classList.remove("hidden");
+
+    // 檢查預設搜尋模式
+    console.log("[Renderer] About to fetch search mode...");
+    try {
+      const mode = await window.electronAPI.invoke('settings:get-search-mode');
+      console.log("[Renderer] Fetched Search Mode:", mode, "Type:", typeof mode); 
+      
+      if (mode === 'lens') {
+        console.log("[Renderer] Mode matched 'lens', calling handleModeSelection");
+        handleModeSelection('lens', capturedImageData);
+      } else if (mode === 'ai') {
+        console.log("[Renderer] Mode matched 'ai', calling handleModeSelection");
+        handleModeSelection('ai', capturedImageData);
+      } else {
+        console.log("[Renderer] Mode is 'ask' or unknown, showing mode selector");
+        // 預設 'ask' 或其他情況，顯示選擇器
+        modeSelector.classList.remove("hidden");
+      }
+    } catch (err) {
+      console.error("[Renderer] Failed to get search mode:", err);
+      alert(`錯誤：無法獲取搜尋模式\n${err.message}`);
+      modeSelector.classList.remove("hidden");
+    }
   } catch (err) {
     console.error("Error drawing lasso cropped image:", err);
     window.electronAPI.closeCaptureWindow();

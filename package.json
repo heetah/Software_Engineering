@@ -23,6 +23,24 @@
   },
   "devDependencies": {
     "electron": "^29.4.6",
-    "electron-builder": "^24.6.4"
+    "electron-builder": "^24.6.4",
+    "node-gyp": "^12.1.0"
+  },
+  "build": {
+    "appId": "com.aicopilot.app",
+    "productName": "AI Copilot Assistant",
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "files": [
+      "**/*",
+      "!dist/*",
+      "!**/*.ts",
+      "!**/*.map"
+    ]
   }
 }

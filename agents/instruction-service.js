@@ -3,34 +3,6 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import ArchitectAgent from './architect-agent.js';
 
-// Data storage directory
-const DATA_DIR = path.join(process.cwd(), 'data');
-const SESSIONS_DIR = path.join(DATA_DIR, 'sessions');
-// Session workspace directory - changed to output/
-const OUTPUT_DIR = path.join(process.cwd(), 'output');
-const SESSION_WORKSPACES_DIR = OUTPUT_DIR;
-
-function ensureDirs() {
-  // Ensure data storage directory exists
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-  // Ensure sessions directory exists
-  if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR);
-  // Ensure output directory exists
-  if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
-  // Ensure session workspace directory exists
-  if (!fs.existsSync(SESSION_WORKSPACES_DIR)) fs.mkdirSync(SESSION_WORKSPACES_DIR);
-}
-
-function ensureSessionWorkspace(sessionId) {
-  // If no session ID, return null
-  if (!sessionId) return null;
-  // Create session workspace directory in output/
-  const sessionDir = path.join(SESSION_WORKSPACES_DIR, sessionId);
-  // Ensure session workspace directory exists
-  if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
-  return sessionDir;
-}
-
 function materializeFiles(files = [], sessionDir) {
   // 如果沒有文件或會話目錄，則返回空陣列
   if (!Array.isArray(files) || files.length === 0 || !sessionDir) {
@@ -66,7 +38,7 @@ function materializeFiles(files = [], sessionDir) {
       if (fs.existsSync(resolved)) {
         // 跳過文件
         result.skipped.push({
-          path: path.relative(process.cwd(), resolved),
+          path: file.path, // Use relative path within session
           reason: 'Already exists'
         });
         return;
@@ -75,7 +47,7 @@ function materializeFiles(files = [], sessionDir) {
       // 寫入文件
       fs.writeFileSync(resolved, content, 'utf8');
       // 添加創建的文件
-      result.created.push(path.relative(process.cwd(), resolved));
+      result.created.push(file.path);
     } catch (err) {
       // 添加錯誤
       result.errors.push({
@@ -91,16 +63,51 @@ function materializeFiles(files = [], sessionDir) {
 
 export default class InstructionService {
   constructor(options = {}) {
-    // 創建架構代理
-    this.agent = new ArchitectAgent(options);
+    // 傳遞 llmProvider 到 ArchitectAgent
+    this.agent = new ArchitectAgent({
+      ...options,
+      llmProvider: options.llmProvider
+    });
+
+    // 設定基礎目錄，默認為 process.cwd()
+    this.baseDir = options.baseDir || process.cwd();
+
+    // Data storage directory
+    this.dataDir = path.join(this.baseDir, 'data');
+    this.sessionsDir = path.join(this.dataDir, 'sessions');
+    // Session workspace directory - changed to output/
+    this.outputDir = path.join(this.baseDir, 'output');
+    this.sessionWorkspacesDir = this.outputDir;
+
     // 確保資料儲存目錄存在
-    ensureDirs();
+    this.ensureDirs();
+  }
+
+  ensureDirs() {
+    // Ensure data storage directory exists
+    if (!fs.existsSync(this.dataDir)) fs.mkdirSync(this.dataDir, { recursive: true });
+    // Ensure sessions directory exists
+    if (!fs.existsSync(this.sessionsDir)) fs.mkdirSync(this.sessionsDir, { recursive: true });
+    // Ensure output directory exists
+    if (!fs.existsSync(this.outputDir)) fs.mkdirSync(this.outputDir, { recursive: true });
+    // Ensure session workspace directory exists
+    if (!fs.existsSync(this.sessionWorkspacesDir)) fs.mkdirSync(this.sessionWorkspacesDir, { recursive: true });
+  }
+
+  ensureSessionWorkspace(sessionId) {
+    // If no session ID, return null
+    if (!sessionId) return null;
+    // Create session workspace directory in output/
+    const sessionDir = path.join(this.sessionWorkspacesDir, sessionId);
+    // Ensure session workspace directory exists
+    if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
+    return sessionDir;
   }
 
   // 獲取會話目錄路徑
   sessionDir(id) {
     // 返回會話目錄路徑
-    return path.join(SESSIONS_DIR, id);
+    return path.join(this.sessionsDir, id);
   }
 
   // 獲取 architecture.json 路徑
@@ -138,7 +145,7 @@ export default class InstructionService {
     const generated = await this.agent.generatePlan({ prompt, context });
 
     // 創建會話工作區
-    const sessionWorkspace = ensureSessionWorkspace(id);
+    const sessionWorkspace = this.ensureSessionWorkspace(id);
     // 創建文件操作
     const fileOps = materializeFiles(generated?.coder_instructions?.files, sessionWorkspace);
 
@@ -150,7 +157,7 @@ export default class InstructionService {
       context: context || null,
       output: generated,
       fileOps,
-      workspaceDir: sessionWorkspace ? path.relative(process.cwd(), sessionWorkspace) : null,
+      workspaceDir: sessionWorkspace,
     };
 
     // 確保會話目錄存在
@@ -162,7 +169,7 @@ export default class InstructionService {
     // 寫入 architecture.json 到 data/sessions/<sessionId>/architecture.json
     const architecturePath = this.architectureJsonPath(id);
     fs.writeFileSync(architecturePath, JSON.stringify(payload, null, 2), 'utf8');
-    
+
     return payload;
   }
 
@@ -172,7 +179,7 @@ export default class InstructionService {
     // 如果 architecture.json 不存在，嘗試從舊格式讀取（向後兼容）
     if (!fs.existsSync(architecturePath)) {
       // 嘗試讀取舊格式的 session JSON 檔案
-      const oldPath = path.join(SESSIONS_DIR, `${id}.json`);
+      const oldPath = path.join(this.sessionsDir, `${id}.json`);
       if (fs.existsSync(oldPath)) {
         const raw = fs.readFileSync(oldPath, 'utf8');
         return JSON.parse(raw);
@@ -192,13 +199,18 @@ export default class InstructionService {
     const previous = session.output;
     // 優化計劃
     const next = await this.agent.refinePlan({ previous, feedback });
+
     // 創建會話工作區
-    const sessionWorkspace =
-      session.workspaceDir &&
-      !session.workspaceDir.startsWith('..') &&
-      !path.isAbsolute(session.workspaceDir)
-        ? path.join(process.cwd(), session.workspaceDir)
-        : ensureSessionWorkspace(id);
+    let sessionWorkspace = session.workspaceDir;
+
+    if (sessionWorkspace && !path.isAbsolute(sessionWorkspace)) {
+      sessionWorkspace = path.join(this.baseDir, sessionWorkspace);
+    }
+
+    if (!sessionWorkspace || sessionWorkspace.startsWith('..')) {
+      sessionWorkspace = this.ensureSessionWorkspace(id);
+    }
+
     // 如果會話工作區不存在，則創建會話工作區
     if (sessionWorkspace && !fs.existsSync(sessionWorkspace)) {
       // 創建會話工作區
@@ -213,15 +225,15 @@ export default class InstructionService {
       feedback,
       output: next,
       fileOps,
-      workspaceDir: sessionWorkspace ? path.relative(process.cwd(), sessionWorkspace) : null,
+      workspaceDir: sessionWorkspace,
     };
-    
+
     // 確保會話目錄存在
     const sessionDir = this.sessionDir(id);
     if (!fs.existsSync(sessionDir)) {
       fs.mkdirSync(sessionDir, { recursive: true });
     }
-    
+
     // 寫入 architecture.json
     const architecturePath = this.architectureJsonPath(id);
     fs.writeFileSync(architecturePath, JSON.stringify(updated, null, 2), 'utf8');

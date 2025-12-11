@@ -164,6 +164,39 @@
               </div>
 
               <div class="settings-action-group">
+                <label class="settings-label">圈選搜尋模式</label>
+                <p class="settings-label-description">
+                  設定使用「圈選搜尋」功能時的預設行為。
+                </p>
+                <div class="settings-toggle-group" id="search-mode-group">
+                  <label class="settings-toggle-option">
+                    <input type="radio" name="search-mode" value="ask" id="search-mode-ask"
+                      class="toggle-switch__input">
+                    <span class="toggle-label">每次詢問</span>
+                    <span class="toggle-switch">
+                      <span class="toggle-switch__slider"></span>
+                    </span>
+                  </label>
+                  <label class="settings-toggle-option">
+                    <input type="radio" name="search-mode" value="lens" id="search-mode-lens"
+                      class="toggle-switch__input">
+                    <span class="toggle-label">Google 智慧鏡頭</span>
+                    <span class="toggle-switch">
+                      <span class="toggle-switch__slider"></span>
+                    </span>
+                  </label>
+                  <label class="settings-toggle-option">
+                    <input type="radio" name="search-mode" value="ai" id="search-mode-ai"
+                      class="toggle-switch__input">
+                    <span class="toggle-label">AI 智能分析</span>
+                    <span class="toggle-switch">
+                      <span class="toggle-switch__slider"></span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="settings-action-group">
                 <label class="settings-label">API Key 設定</label>
                 <p class="settings-label-description">
                   這些金鑰僅在本機儲存並用於呼叫對應的 LLM 服務，不會上傳到伺服器。
