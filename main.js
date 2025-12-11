@@ -44,6 +44,17 @@ app.commandLine.appendSwitch("disable-features", "AutoResizeOutputDevice");
 let mainWindow = null;
 let captureWindow = null;
 let isCapturing = false;
+let currentSearchMode = "ask"; // 'ask', 'lens', 'ai'
+
+// --- IPC Handlers for Search Mode ---
+ipcMain.handle("settings:set-search-mode", (event, mode) => {
+  currentSearchMode = mode;
+  console.log("Search mode updated to:", mode);
+});
+
+ipcMain.handle("settings:get-search-mode", () => {
+  return currentSearchMode;
+});
 
 async function zipWorkspaceDirectory(directoryPath) {
   const resolvedDir = path.resolve(directoryPath);
@@ -110,7 +121,7 @@ async function normalizeSessions() {
     }
     await run("COMMIT");
   } catch (error) {
-    await run("ROLLBACK").catch(() => { });
+    await run("ROLLBACK").catch(() => {});
     throw error;
   }
 
@@ -300,26 +311,29 @@ function registerHistoryHandlers() {
   });
 
   // 下載 ZIP 檔案的處理器
-  ipcMain.handle("download:save-zip", async (event, { zipPath, defaultName }) => {
-    try {
-      const window = BrowserWindow.fromWebContents(event.sender);
-      const { canceled, filePath } = await dialog.showSaveDialog(window, {
-        title: "儲存專案壓縮檔",
-        defaultPath: defaultName || "project.zip",
-        filters: [{ name: "ZIP Files", extensions: ["zip"] }],
-      });
+  ipcMain.handle(
+    "download:save-zip",
+    async (event, { zipPath, defaultName }) => {
+      try {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        const { canceled, filePath } = await dialog.showSaveDialog(window, {
+          title: "儲存專案壓縮檔",
+          defaultPath: defaultName || "project.zip",
+          filters: [{ name: "ZIP Files", extensions: ["zip"] }],
+        });
 
-      if (canceled || !filePath) {
-        return { ok: false, cancelled: true };
+        if (canceled || !filePath) {
+          return { ok: false, cancelled: true };
+        }
+
+        fs.copyFileSync(zipPath, filePath);
+        return { ok: true, filePath };
+      } catch (error) {
+        console.error("Failed to save zip file:", error);
+        return { ok: false, error: error.message };
       }
-
-      fs.copyFileSync(zipPath, filePath);
-      return { ok: true, filePath };
-    } catch (error) {
-      console.error("Failed to save zip file:", error);
-      return { ok: false, error: error.message };
     }
-  });
+  );
 }
 
 function registerSettingsHandlers() {
@@ -398,12 +412,12 @@ function registerCoordinatorBridge() {
           responseText = plan.answerText || "";
         } else {
           // 專案生成模式：簡化訊息並強調下載
-          responseText = `專案生成已完成！\n\n您要求的檔案已準備就緒，請點擊下方按鈕下載完整壓縮檔。\n\nSession ID: ${plan.id
-            }\n資料夾位置: ${plan.workspaceDir || "N/A"}\n\n`;
+          responseText = `專案生成已完成！\n\n您要求的檔案已準備就緒，請點擊下方按鈕下載完整壓縮檔。\n\nSession ID: ${
+            plan.id
+          }\n資料夾位置: ${plan.workspaceDir || "N/A"}\n\n`;
 
           if (plan.output?.plan) {
-            responseText += `📋 計劃名稱: ${plan.output.plan.title
-              }\n📝 計劃摘要: ${plan.output.plan.summary}\n\n`;
+            responseText += `📋 計劃名稱: ${plan.output.plan.title}\n📝 計劃摘要: ${plan.output.plan.summary}\n\n`;
           }
 
           const resolvedWorkspaceDir = plan.workspaceDir
@@ -454,17 +468,14 @@ function registerCoordinatorBridge() {
 
         await run(
           "INSERT INTO messages (session_id, role, payload_json) VALUES (?, ?, ?)",
-          [
-            session.id,
-            "ai",
-            JSON.stringify(payloadToPersist),
-          ]
+          [session.id, "ai", JSON.stringify(payloadToPersist)]
         ).catch((err) => {
           console.error("Failed to write AI response to history:", err);
         });
       }
       console.log(
-        `[Coordinator Bridge] Processing completed, Session ID: ${plan?.id || "N/A"
+        `[Coordinator Bridge] Processing completed, Session ID: ${
+          plan?.id || "N/A"
         }`
       );
     } catch (error) {
@@ -910,42 +921,42 @@ function registerVisionHandlers() {
           "",
           imageInfo.text
             ? "1. 文字內容：\n" +
-            imageInfo.text
-              .split("\\n")
-              .map((t) => `   ${t}`)
-              .join("\\n")
+              imageInfo.text
+                .split("\\n")
+                .map((t) => `   ${t}`)
+                .join("\\n")
             : null,
           "",
           imageInfo.labels.length > 0
             ? "2. 主要內容：\n" +
-            imageInfo.labels
-              .map((l) => `   • ${l.name} (可信度 ${l.confidence}%)`)
-              .join("\\n")
+              imageInfo.labels
+                .map((l) => `   • ${l.name} (可信度 ${l.confidence}%)`)
+                .join("\\n")
             : null,
           "",
           imageInfo.mainColors.length > 0
             ? "3. 主要顏色：\n" +
-            imageInfo.mainColors
-              .map((c) => `   • ${c.rgb} (佔比 ${c.percentage}%)`)
-              .join("\\n")
+              imageInfo.mainColors
+                .map((c) => `   • ${c.rgb} (佔比 ${c.percentage}%)`)
+                .join("\\n")
             : null,
           "",
           imageInfo.webEntities.length > 0
             ? "4. 相關概念：\n" +
-            imageInfo.webEntities
-              .map((e) => `   • ${e.name} (相關度 ${e.confidence}%)`)
-              .join("\\n")
+              imageInfo.webEntities
+                .map((e) => `   • ${e.name} (相關度 ${e.confidence}%)`)
+                .join("\\n")
             : null,
           "",
           "這看起來是一個" +
-          (guesses || "螢幕截圖") +
-          "，" +
-          "其中包含了" +
-          (imageInfo.labels
-            .slice(0, 3)
-            .map((l) => l.name)
-            .join("、") || "各種元素") +
-          "。",
+            (guesses || "螢幕截圖") +
+            "，" +
+            "其中包含了" +
+            (imageInfo.labels
+              .slice(0, 3)
+              .map((l) => l.name)
+              .join("、") || "各種元素") +
+            "。",
         ]
           .filter(Boolean)
           .join("\\n");
@@ -1059,20 +1070,18 @@ function createCaptureWindow() {
   try {
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width: logicalWidth, height: logicalHeight } = primaryDisplay.size;
-    const { x, y } = primaryDisplay.bounds;
+    const { x: displayX, y: displayY } = primaryDisplay.bounds;
     const scaleFactor = primaryDisplay.scaleFactor;
-    const physicalWidth = Math.round(logicalWidth * scaleFactor);
-    const physicalHeight = Math.round(logicalHeight * scaleFactor);
 
     console.log(
-      `Screen Info: Logical Size ${logicalWidth}x${logicalHeight}, Scale Factor ${scaleFactor}, Physical Size ${physicalWidth}x${physicalHeight}`
+      `Screen Info: Logical ${logicalWidth}x${logicalHeight}, Scale ${scaleFactor}`
     );
 
     captureWindow = new BrowserWindow({
-      x,
-      y,
-      width: physicalWidth,
-      height: physicalHeight,
+      x: displayX,
+      y: displayY,
+      width: logicalWidth,
+      height: logicalHeight,
       transparent: true,
       frame: false,
       alwaysOnTop: true,
@@ -1087,6 +1096,7 @@ function createCaptureWindow() {
     captureWindow.loadFile(
       path.join(__dirname, "circle-to-search", "index.html")
     );
+    // DevTools 已關閉，如需調試請使用 --debug 參數
     if (process.argv.includes("--debug")) {
       captureWindow.webContents.openDevTools();
     }
