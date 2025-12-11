@@ -247,19 +247,36 @@ window.electronAPI.onSetScreenSource(async (sourceId) => {
       video.onerror = reject;
     });
 
+    // Canvas設置為視窗完整尺寸
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     canvas.style.width = "100%";
     canvas.style.height = "100%";
 
-    // 清除 canvas 並繪製新截圖
+    // 清除並填充暗色背景
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // 計算90%區域的位置和大小
+    const scale = 0.90;
+    const scaledWidth = canvas.width * scale;
+    const scaledHeight = canvas.height * scale;
+    const offsetX = (canvas.width - scaledWidth) / 2;
+    const offsetY = (canvas.height - scaledHeight) / 2;
+
+    // 在中間85%區域繪製截圖
+    ctx.drawImage(
+      video,
+      0, 0, video.videoWidth, video.videoHeight,
+      offsetX, offsetY, scaledWidth, scaledHeight
+    );
+
+    // 保存完整的canvas作為原始截圖
     originalScreenshot = new Image();
     originalScreenshot.onload = () => {
       originalLoaded = true;
-      console.log("New screenshot loaded successfully");
+      console.log("New screenshot loaded successfully (85% scaled)");
     };
     originalScreenshot.onerror = () => {
       originalLoaded = false;
@@ -284,7 +301,6 @@ window.addEventListener("keydown", (e) => {
 
 // mouse events for lasso
 canvas.addEventListener("mousedown", (e) => {
-  alert("🟢 Mousedown 事件觸發！開始畫圈");
   console.log("[Renderer] Mousedown event triggered");
   if (!originalScreenshot || !originalLoaded) return;
   const p = toCanvasCoords(e);
@@ -315,7 +331,6 @@ canvas.addEventListener("mousemove", (e) => {
 });
 
 canvas.addEventListener("mouseup", async (e) => {
-  alert("🔴 Mouseup 事件觸發！");
   console.log("[Renderer] Mouseup event triggered");
   if (!isDrawing) return;
   isDrawing = false;
@@ -363,8 +378,7 @@ canvas.addEventListener("mouseup", async (e) => {
     console.log("[Renderer] About to fetch search mode...");
     try {
       const mode = await window.electronAPI.invoke('settings:get-search-mode');
-      console.log("[Renderer] Fetched Search Mode:", mode, "Type:", typeof mode);
-      alert(`調試訊息：\n當前模式是 '${mode}'\n類型: ${typeof mode}`); 
+      console.log("[Renderer] Fetched Search Mode:", mode, "Type:", typeof mode); 
       
       if (mode === 'lens') {
         console.log("[Renderer] Mode matched 'lens', calling handleModeSelection");

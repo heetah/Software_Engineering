@@ -1071,20 +1071,18 @@ function createCaptureWindow() {
   try {
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width: logicalWidth, height: logicalHeight } = primaryDisplay.size;
-    const { x, y } = primaryDisplay.bounds;
+    const { x: displayX, y: displayY } = primaryDisplay.bounds;
     const scaleFactor = primaryDisplay.scaleFactor;
-    const physicalWidth = Math.round(logicalWidth * scaleFactor);
-    const physicalHeight = Math.round(logicalHeight * scaleFactor);
 
     console.log(
-      `Screen Info: Logical Size ${logicalWidth}x${logicalHeight}, Scale Factor ${scaleFactor}, Physical Size ${physicalWidth}x${physicalHeight}`
+      `Screen Info: Logical ${logicalWidth}x${logicalHeight}, Scale ${scaleFactor}`
     );
 
     captureWindow = new BrowserWindow({
-      x,
-      y,
-      width: physicalWidth,
-      height: physicalHeight,
+      x: displayX,
+      y: displayY,
+      width: logicalWidth,
+      height: logicalHeight,
       transparent: true,
       frame: false,
       alwaysOnTop: true,
@@ -1099,11 +1097,10 @@ function createCaptureWindow() {
     captureWindow.loadFile(
       path.join(__dirname, "circle-to-search", "index.html")
     );
-    // 暫時開啟 DevTools 以便調試
-    captureWindow.webContents.openDevTools();
-    // if (process.argv.includes("--debug")) {
-    //   captureWindow.webContents.openDevTools();
-    // }
+    // DevTools 已關閉，如需調試請使用 --debug 參數
+    if (process.argv.includes("--debug")) {
+      captureWindow.webContents.openDevTools();
+    }
     captureWindow.on("closed", () => {
       captureWindow = null;
     });
