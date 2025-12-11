@@ -42,7 +42,7 @@ export function initializeAgents(force = false) {
   if (!force && agentCache) {
     return agentCache;
   }
-  
+
   agentCache = {
     architect: new ArchitectAgent(),
     verifier: new VerifierAgent(),
@@ -51,7 +51,7 @@ export function initializeAgents(force = false) {
     // 使用時動態創建 Coordinator 實例
     coderCoordinator: null
   };
-  
+
   return agentCache;
 }
 
@@ -105,6 +105,22 @@ export async function runWithInstructionService(
   options = {}
 ) {
   const { architect, verifier, tester } = agents;
+  // Options may contain onLog callback
+  const { onLog } = options;
+
+  // Helper for logging to both console and external callback
+  // Helper for logging to both console and external callback
+  const logFlow = (msg) => {
+    console.log(msg);
+    if (typeof onLog === 'function') {
+      onLog(msg);
+    }
+  };
+
+  // Helper for logging to console only (Debug)
+  const logDebug = (msg) => {
+    console.log(msg);
+  };
 
   try {
     // 初始化 InstructionService（Architect Agent 會直接處理用戶需求）
@@ -129,81 +145,81 @@ export async function runWithInstructionService(
 
     // 如果是「單純問答模式」，直接回傳，不觸發後續 coder / verifier / tester
     if (plan && plan.mode === 'qa') {
-      console.log("\nInstructionService QA mode: skip project generation / verifier / tester");
+      logDebug("\nInstructionService QA mode: skip project generation / verifier / tester");
       return plan;
     }
 
-    console.log(`\nPlan created, Session ID: ${plan.id}`);
-    console.log(`Workspace directory: ${plan.workspaceDir || 'N/A'}`);
-    console.log(`File operations: Created=${plan.fileOps.created.length}, Skipped=${plan.fileOps.skipped.length}, Errors=${plan.fileOps.errors.length}`);
+    logFlow(`\nPlan created, Session ID: ${plan.id}`);
+    logDebug(`Workspace directory: ${plan.workspaceDir || 'N/A'}`);
+    logDebug(`File operations: Created=${plan.fileOps.created.length}, Skipped=${plan.fileOps.skipped.length}, Errors=${plan.fileOps.errors.length}`);
 
     // Display Token usage statistics
     const tokenStats = tokenTracker.getStats();
-    console.log(`\nToken usage: ${tokenStats.total} (Remaining: ${tokenStats.remaining}, ${tokenStats.percentage})`);
+    logDebug(`\nToken usage: ${tokenStats.total} (Remaining: ${tokenStats.remaining}, ${tokenStats.percentage})`);
 
     // Display plan summary
     if (plan.output?.plan) {
-      console.log(`\nPlan title: ${plan.output.plan.title}`);
-      console.log(`Plan summary: ${plan.output.plan.summary}`);
-      console.log(`Steps: ${plan.output.plan.steps?.length || 0}`);
+      logFlow(`\nPlan title: ${plan.output.plan.title}`);
+      logDebug(`Plan summary: ${plan.output.plan.summary}`);
+      logDebug(`Steps: ${plan.output.plan.steps?.length || 0}`);
     }
 
     // If there are coder_instructions, optionally execute
     if (plan.output?.coder_instructions?.markdown) {
-      console.log("\n--- Coder Instructions ---");
-      console.log(plan.output.coder_instructions.markdown);
+      logDebug("\n--- Coder Instructions ---");
+      logDebug(plan.output.coder_instructions.markdown);
     }
 
     // 如果需要，使用 Coder Coordinator 生成代碼
     // 嘗試從 output 中提取 coder_instructions（可能直接存在，或包裹在 markdown 中）
     let coderInstructions = plan.output?.coder_instructions;
-    
+
     // 如果 coder_instructions 不存在，嘗試從 markdown 中提取
     if (!coderInstructions && plan.output?.markdown) {
       try {
         // 嘗試從 markdown 中解析 JSON
         const markdownContent = plan.output.markdown;
-        const jsonMatch = markdownContent.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/) || 
-                         markdownContent.match(/\{[\s\S]*\}/);
-        
+        const jsonMatch = markdownContent.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/) ||
+          markdownContent.match(/\{[\s\S]*\}/);
+
         if (jsonMatch) {
           let jsonStr = jsonMatch[1] || jsonMatch[0];
           jsonStr = jsonStr.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '');
           const parsed = JSON.parse(jsonStr);
-          
+
           if (parsed.coder_instructions) {
             coderInstructions = parsed.coder_instructions;
-            console.log("  Extracted coder_instructions from markdown");
+            logDebug("  Extracted coder_instructions from markdown");
           }
         }
       } catch (e) {
         console.warn(" Failed to extract coder_instructions from markdown:", e.message);
       }
     }
-    
+
     if (coderInstructions) {
-      const coderCoordinator = getCoderCoordinator({
-        useMockApi: false,
-        llmProvider: options.llmProvider || "auto",
-        apiKeys: options.apiKeys || {},
-      });
-      const requestId = `coordinator-${plan.id}`;
-      
-      // 構建 Coordinator 需要的 payload 格式
-      const coordinatorPayload = {
-        output: {
-          coder_instructions: coderInstructions
-        }
-      };
-      
-      const coderResult = await withErrorHandling(
-        'CoderCoordinator.generateFromArchitectPayload',
-        () => coderCoordinator.generateFromArchitectPayload(coordinatorPayload, requestId),
-        { planId: plan.id }
-      );
-      
-      // 直接寫入檔案系統（Cursor 常用方式）
       try {
+        const coderCoordinator = getCoderCoordinator({
+          useMockApi: false,
+          llmProvider: options.llmProvider || "auto",
+          apiKeys: options.apiKeys || {},
+        });
+        const requestId = `coordinator-${plan.id}`;
+
+        // 構建 Coordinator 需要的 payload 格式
+        const coordinatorPayload = {
+          output: {
+            coder_instructions: coderInstructions
+          }
+        };
+
+        const coderResult = await withErrorHandling(
+          'CoderCoordinator.generateFromArchitectPayload',
+          () => coderCoordinator.generateFromArchitectPayload(coordinatorPayload, requestId),
+          { planId: plan.id }
+        );
+
+        // 直接寫入檔案系統（Cursor 常用方式）
         const result = await withErrorHandling(
           'writeProjectDirectly',
           () => Promise.resolve(
@@ -211,11 +227,11 @@ export async function runWithInstructionService(
           ),
           { workspaceDir: plan.workspaceDir }
         );
-        console.log(`\nProject generated at ${result.outDir}`);
-        console.log(`Total files: ${result.files.length}`);
-        console.log(`\nGenerated files:`);
+        logFlow(`\nProject generated at ${result.outDir}`);
+        logDebug(`Total files: ${result.files.length}`);
+        logDebug(`\nGenerated files:`);
         result.files.forEach(file => {
-          console.log(`  ${file}`);
+          logDebug(`  ${file}`);
         });
       } catch (e) {
         errorLogger.warn("Failed to generate project", { error: e.message, workspaceDir: plan.workspaceDir });
@@ -229,21 +245,21 @@ export async function runWithInstructionService(
             ),
             { workspaceDir: plan.workspaceDir }
           );
-          console.log(`\nProject generated (fallback) at ${fallbackResult.outDir}, files: ${fallbackResult.files.length}`);
+          logFlow(`\nProject generated (fallback) at ${fallbackResult.outDir}, files: ${fallbackResult.files.length}`);
         } catch (fallbackError) {
-          errorLogger.error("Both direct write and Markdown fallback failed", { 
-            directError: e.message, 
-            fallbackError: fallbackError.message 
+          errorLogger.error("Both direct write and Markdown fallback failed", {
+            directError: e.message,
+            fallbackError: fallbackError.message
           });
         }
       }
     }
-
     // ===== Verifier Agent: 生成測試計劃 =====
-    console.log("\n" + "=".repeat(60));
-    console.log("Verifier Agent: Generate test plan");
-    console.log("=".repeat(60));
-    
+    // ===== Verifier Agent: 生成測試計劃 =====
+    logDebug("\n" + "=".repeat(60));
+    logFlow("Verifier Agent: Generate test plan");
+    logDebug("=".repeat(60));
+
     let testPlan = null;
     try {
       const verifierResult = await withErrorHandling(
@@ -252,71 +268,71 @@ export async function runWithInstructionService(
         { sessionId: plan.id }
       );
       testPlan = verifierResult.plan;
-      console.log(`Test Plan generated: ${verifierResult.path}`);
-      console.log(`Test files: ${testPlan?.testFiles?.length || 0}`);
-      
+      logFlow(`Test Plan generated: ${verifierResult.path}`);
+      logDebug(`Test files: ${testPlan?.testFiles?.length || 0}`);
+
       if (testPlan?.testFiles && testPlan.testFiles.length > 0) {
         testPlan.testFiles.forEach(tf => {
-          console.log(`  - ${tf.filename} (${tf.testLevel}, ${tf.inputsType})`);
+          logDebug(`  - ${tf.filename} (${tf.testLevel}, ${tf.inputsType})`);
         });
       }
     } catch (err) {
-      errorLogger.warn("Verifier Agent 執行失敗", { 
-        error: err.message, 
-        sessionId: plan.id 
+      errorLogger.warn("Verifier Agent 執行失敗", {
+        error: err.message,
+        sessionId: plan.id
       });
-      console.warn(`\nVerifier Agent execution failed: ${err.message}`);
-      console.warn("   Test Plan generation skipped, but project generation completed");
+      logFlow(`\nVerifier Agent execution failed: ${err.message}`);
+      logFlow("   Test Plan generation skipped, but project generation completed");
     }
 
     // ===== Tester Agent: 生成測試碼並執行測試 =====
     if (testPlan && testPlan.testFiles && testPlan.testFiles.length > 0) {
-      console.log("\n" + "=".repeat(60));
-      console.log("Tester Agent: Generate test code and execute tests");
-      console.log("=".repeat(60));
-      
+      logDebug("\n" + "=".repeat(60));
+      logFlow("Tester Agent: Generate test code and execute tests");
+      logDebug("=".repeat(60));
+
       try {
         const testResult = await withErrorHandling(
           'TesterAgent.runTesterAgent',
           () => tester.runTesterAgent(plan.id),
           { sessionId: plan.id }
         );
-        
+
         const { testReport, errorReport } = testResult;
-        console.log(`\nTests executed successfully!`);
-        console.log(`Test statistics:`);
-        console.log(`   - Test files: ${testReport.totals.files}`);
-        console.log(`   - Total tests: ${testReport.totals.tests}`);
-        console.log(`   - Passed: ${testReport.totals.passed}`);
-        console.log(`   - Failed: ${testReport.totals.failed} ${testReport.totals.failed > 0 ? '' : ''}`);
-        
+        logFlow(`\nTests executed successfully!`);
+        logFlow(`Test statistics:`);
+        logFlow(`   - Test files: ${testReport.totals.files}`);
+        logFlow(`   - Total tests: ${testReport.totals.tests}`);
+        logFlow(`   - Passed: ${testReport.totals.passed}`);
+        logFlow(`   - Failed: ${testReport.totals.failed} ${testReport.totals.failed > 0 ? '' : ''}`);
+
         if (testReport.totals.failed > 0) {
-          console.log(`\nThere are ${testReport.totals.failed} failed tests`);
+          logFlow(`\nThere are ${testReport.totals.failed} failed tests`);
           if (errorReport.failures && errorReport.failures.length > 0) {
-            console.log(`\nFailed case details:`);
+            logDebug(`\nFailed case details:`);
             errorReport.failures.slice(0, 5).forEach((failure, idx) => {
-              console.log(`  ${idx + 1}. ${failure.title}`);
-              console.log(`     File: ${failure.filename}`);
+              logDebug(`  ${idx + 1}. ${failure.title}`);
+              logDebug(`     File: ${failure.filename}`);
               if (failure.failureMessages && failure.failureMessages[0]) {
                 const msg = failure.failureMessages[0].substring(0, 100);
-                console.log(`     Error: ${msg}${failure.failureMessages[0].length > 100 ? '...' : ''}`);
+                logDebug(`     Error: ${msg}${failure.failureMessages[0].length > 100 ? '...' : ''}`);
               }
             });
             if (errorReport.failures.length > 5) {
-              console.log(`  ... There are ${errorReport.failures.length - 5} more failed cases`);
+              logDebug(`  ... There are ${errorReport.failures.length - 5} more failed cases`);
             }
           }
         } else {
-          console.log(`\nAll tests passed!`);
+          logFlow(`\nAll tests passed!`);
         }
-        
+
         // 將測試結果添加到 plan 中
         plan.testReport = testReport;
         plan.errorReport = errorReport;
       } catch (err) {
-        errorLogger.warn("Tester Agent execution failed", { 
-          error: err.message, 
-          sessionId: plan.id 
+        errorLogger.warn("Tester Agent execution failed", {
+          error: err.message,
+          sessionId: plan.id
         });
         console.warn(`\nTester Agent execution failed: ${err.message}`);
         console.warn("   Test execution skipped, but project and test plan generated");
@@ -334,12 +350,12 @@ export async function runWithInstructionService(
   } catch (err) {
     // 使用統一的錯誤處理
     errorLogger.log(err, { userInput });
-    
+
     // 如果是自定義錯誤，直接拋出
     if (err instanceof CoordinatorError) {
       throw err;
     }
-    
+
     // Otherwise wrap as CoordinatorError
     throw new CoordinatorError(
       "Process execution failed",
@@ -383,7 +399,7 @@ function writeProjectDirectly(result, outDir = "./output/generated_project") {
 
       // 獲取檔案內容
       const content = file.template || file.content || "";
-      
+
       if (!content || content.trim() === "") {
         errors.push({ file: file.path, error: "Empty content" });
         return;
@@ -420,7 +436,7 @@ function writeProjectDirectly(result, outDir = "./output/generated_project") {
  */
 function formatCoderResultAsMarkdown(result) {
   let markdown = "# Generated project files\n\n";
-  
+
   if (result.notes && result.notes.length > 0) {
     markdown += "## Description\n\n";
     result.notes.forEach(note => {
@@ -428,7 +444,7 @@ function formatCoderResultAsMarkdown(result) {
     });
     markdown += "\n";
   }
-  
+
   if (result.files && result.files.length > 0) {
     result.files.forEach(file => {
       markdown += `<!-- file: ${file.path} -->\n`;
@@ -437,7 +453,7 @@ function formatCoderResultAsMarkdown(result) {
       markdown += `\n\`\`\`\n\n`;
     });
   }
-  
+
   return markdown;
 }
 
@@ -448,7 +464,7 @@ if (typeof process !== 'undefined' && process.argv && process.argv[1]) {
   const scriptPath = process.argv[1].replace(/\\/g, '/');
   const isElectron = typeof process !== 'undefined' && process.versions && process.versions.electron;
   const isCoordinatorScript = scriptPath.includes('Coordinator.js') || scriptPath.endsWith('Coordinator.js');
-  
+
   // 只在非 Electron 環境且直接執行 Coordinator.js 時才運行 main()
   if (isCoordinatorScript && !isElectron) {
     main().catch(err => console.error("Coordinator Error:", err));

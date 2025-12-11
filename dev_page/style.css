@@ -345,6 +345,7 @@ body {
   box-shadow: var(--shadow-convex);
 
   color: var(--color-text);
+  white-space: pre-wrap;
   word-wrap: break-word;
   width: fit-content;
   max-width: 100%;
@@ -1035,3 +1036,93 @@ body {
 
 /* 程式碼框內的 Copy 按鈕 (已移出，此區塊可移除或保留為空) */
 /* .message-bubble--code .message-actions { ... } */
+
+/* Log Container Styles (Liquid Glass Effect) */
+.log-container {
+  margin-top: 15px;
+  width: 100%;
+  max-width: 100%;
+}
+
+.log-details {
+  /* Liquid Glass Effect */
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+/* Dark mode adjustment for glass effect */
+html.dark-mode .log-details {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.log-summary {
+  padding: 12px 16px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--color-text-light);
+  font-size: 0.9rem;
+  font-weight: 500;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s ease;
+}
+
+.log-summary:hover {
+  color: var(--color-text);
+}
+
+.log-summary::marker {
+  color: var(--color-text-light);
+}
+
+.log-content {
+  padding: 0 16px 16px 16px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.85rem;
+  /* Use variable to match summary color */
+  color: var(--color-text-light);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 250px;
+  overflow-y: auto;
+  line-height: 1.5;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+html.dark-mode .log-content {
+  /* Use variable to match summary color in dark mode too */
+  color: var(--color-text-light);
+}
+
+.log-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.log-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.log-content::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.log-entry {
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 4px;
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}

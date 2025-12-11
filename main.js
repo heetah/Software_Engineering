@@ -373,6 +373,11 @@ function registerCoordinatorBridge() {
           {
             llmProvider: llmProvider || "auto",
             apiKeys: apiKeys || {},
+            onLog: (message) => {
+              if (event.sender && !event.sender.isDestroyed()) {
+                event.sender.send("agent-log", message);
+              }
+            }
           }
         );
       } catch (processError) {
@@ -397,12 +402,21 @@ function registerCoordinatorBridge() {
           responseText = plan.answerText || "";
         } else {
           // 專案生成模式：簡化訊息並強調下載
-          responseText = `專案生成已完成！\n\n您要求的檔案已準備就緒，請點擊下方按鈕下載完整壓縮檔。\n\nSession ID: ${plan.id
-            }\n資料夾位置: ${plan.workspaceDir || "N/A"}\n\n`;
+          responseText = `專案生成已完成！您要求的檔案已準備就緒，請點擊下方按鈕下載完整壓縮檔。\n\n`;
 
-          if (plan.output?.plan) {
-            responseText += `📋 計劃名稱: ${plan.output.plan.title
-              }\n📝 計劃摘要: ${plan.output.plan.summary}\n\n`;
+          if (plan.fileOps && plan.fileOps.created && plan.fileOps.created.length > 0) {
+            responseText += `生成檔案列表: \n`;
+            plan.fileOps.created.forEach(file => {
+              let icon = '📄';
+              if (file.endsWith('.html')) icon = '<span style="color: #e44d26;">&lt;/&gt;</span>';
+              else if (file.endsWith('.css')) icon = '<span style="color: #42a5f5;">{}</span>';
+              else if (file.endsWith('.js')) icon = '<span style="color: #FF9800;">JS</span>';
+              else if (file.endsWith('.json')) icon = '<span style="color: #FF9800;">{}</span>';
+
+              const filename = path.basename(file);
+              responseText += `${icon} ${filename} \n`;
+            });
+            responseText += `\n`;
           }
 
           const resolvedWorkspaceDir = plan.workspaceDir
@@ -420,7 +434,6 @@ function registerCoordinatorBridge() {
                 filename: path.basename(zipPath),
                 workspaceDir: resolvedWorkspaceDir,
               };
-              responseText += `\n\n已準備好壓縮檔: ${zipPath}`;
             } catch (zipError) {
               console.error(
                 "[Coordinator Bridge] Failed to zip workspace:",
@@ -428,14 +441,10 @@ function registerCoordinatorBridge() {
               );
             }
           }
-          responseText += `\nTip: Project generated in ${
-            plan.workspaceDir || "output/" + plan.id
-          } directory`;
         }
       } else {
         responseText = "Processing completed, but no plan information returned";
       }
-
       event.sender.send("message-from-agent", {
         type: downloadInfo ? "download" : "text",
         content: responseText,
@@ -465,11 +474,11 @@ function registerCoordinatorBridge() {
       }
       console.log(
         `[Coordinator Bridge] Processing completed, Session ID: ${plan?.id || "N/A"
-        }`
+        } `
       );
     } catch (error) {
       console.error("[Coordinator Bridge] Error processing message:", error);
-      const errorMessage = `Processing failed: ${error.message}\n\nPlease check console for detailed error information.`;
+      const errorMessage = `Processing failed: ${error.message} \n\nPlease check console for detailed error information.`;
       event.sender.send("message-from-agent", {
         type: "error",
         content: errorMessage,
@@ -502,9 +511,9 @@ function registerVisionHandlers() {
         .executeJavaScript(
           `
         if (typeof resetCanvas === 'function') {
-          resetCanvas();
-        }
-      `
+              resetCanvas();
+            }
+          `
         )
         .catch(() => {
           // 忽略錯誤，視窗可能還沒載入完成
@@ -524,7 +533,7 @@ function registerVisionHandlers() {
       }
 
       const timestamp = Date.now();
-      const imagePath = path.join(tempPath, `google-search-${timestamp}.png`);
+      const imagePath = path.join(tempPath, `google - search - ${timestamp}.png`);
       const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
       fs.writeFileSync(imagePath, base64Data, "base64");
 
@@ -534,162 +543,162 @@ function registerVisionHandlers() {
 
       // 建立一個使用正確 Google Lens 端點的 HTML 頁面
       const htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Google Lens 搜圖</title>
-  <style>
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      margin: 0;
-      padding: 20px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
+            < !DOCTYPE html >
+              <html>
+                <head>
+                  <meta charset="UTF-8">
+                    <title>Google Lens 搜圖</title>
+                    <style>
+                      body {
+                        font - family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                      margin: 0;
+                      padding: 20px;
+                      display: flex;
+                      justify-content: center;
+                      align-items: center;
+                      min-height: 100vh;
     }
-    .container {
-      background: white;
-      border-radius: 16px;
-      padding: 40px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-      max-width: 600px;
-      text-align: center;
+                      .container {
+                        background: white;
+                      border-radius: 16px;
+                      padding: 40px;
+                      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                      max-width: 600px;
+                      text-align: center;
     }
-    h1 {
-      color: #333;
-      margin-bottom: 20px;
-      font-size: 28px;
+                      h1 {
+                        color: #333;
+                      margin-bottom: 20px;
+                      font-size: 28px;
     }
-    .status {
-      color: #666;
-      font-size: 16px;
-      margin: 20px 0;
-      line-height: 1.6;
+                      .status {
+                        color: #666;
+                      font-size: 16px;
+                      margin: 20px 0;
+                      line-height: 1.6;
     }
-    .spinner {
-      border: 4px solid #f3f3f3;
-      border-top: 4px solid #4285f4;
-      border-radius: 50%;
-      width: 50px;
-      height: 50px;
-      animation: spin 1s linear infinite;
-      margin: 30px auto;
+                      .spinner {
+                        border: 4px solid #f3f3f3;
+                      border-top: 4px solid #4285f4;
+                      border-radius: 50%;
+                      width: 50px;
+                      height: 50px;
+                      animation: spin 1s linear infinite;
+                      margin: 30px auto;
     }
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
+                      @keyframes spin {
+                        0 % { transform: rotate(0deg); }
+      100% {transform: rotate(360deg); }
     }
-    img {
-      max-width: 100%;
-      max-height: 300px;
-      border-radius: 8px;
-      margin: 20px 0;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                      img {
+                        max - width: 100%;
+                      max-height: 300px;
+                      border-radius: 8px;
+                      margin: 20px 0;
+                      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }
-    .manual-link {
-      display: inline-block;
-      margin-top: 20px;
-      padding: 12px 24px;
-      background: #4285f4;
-      color: white;
-      text-decoration: none;
-      border-radius: 6px;
-      font-size: 14px;
-      transition: background 0.3s;
+                      .manual-link {
+                        display: inline-block;
+                      margin-top: 20px;
+                      padding: 12px 24px;
+                      background: #4285f4;
+                      color: white;
+                      text-decoration: none;
+                      border-radius: 6px;
+                      font-size: 14px;
+                      transition: background 0.3s;
     }
-    .manual-link:hover {
-      background: #357ae8;
+                      .manual-link:hover {
+                        background: #357ae8;
     }
-    #uploadForm {
-      display: none;
+                      #uploadForm {
+                        display: none;
     }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>🔍 Google Lens 搜圖</h1>
-    <img src="data:image/png;base64,${base64Data}" alt="Captured Image" id="previewImage">
-    <div class="spinner"></div>
-    <div class="status" id="status">正在準備上傳到 Google Lens...</div>
-    
-    <!-- 表單用於上傳到 Google Lens -->
-    <form id="uploadForm" action="https://lens.google.com/upload" method="POST" enctype="multipart/form-data" target="_blank">
-      <input type="file" name="encoded_image" id="fileInput">
-    </form>
-    
-    <a href="https://www.google.com/?olud" class="manual-link" id="manualLink" style="display:none;">手動開啟 Google Lens</a>
-  </div>
-  
-  <script>
+                    </style>
+                </head>
+                <body>
+                  <div class="container">
+                    <h1>🔍 Google Lens 搜圖</h1>
+                    <img src="data:image/png;base64,${base64Data}" alt="Captured Image" id="previewImage">
+                      <div class="spinner"></div>
+                      <div class="status" id="status">正在準備上傳到 Google Lens...</div>
+
+                      <!-- 表單用於上傳到 Google Lens -->
+                      <form id="uploadForm" action="https://lens.google.com/upload" method="POST" enctype="multipart/form-data" target="_blank">
+                        <input type="file" name="encoded_image" id="fileInput">
+                      </form>
+
+                      <a href="https://www.google.com/?olud" class="manual-link" id="manualLink" style="display:none;">手動開啟 Google Lens</a>
+                  </div>
+
+                  <script>
     // 將 base64 轉換為 Blob
-    function base64ToBlob(base64, contentType = 'image/png') {
+                    function base64ToBlob(base64, contentType = 'image/png') {
       const byteCharacters = atob(base64);
-      const byteArrays = [];
-      
-      for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+                    const byteArrays = [];
+
+                    for (let offset = 0; offset < byteCharacters.length; offset += 512) {
         const slice = byteCharacters.slice(offset, offset + 512);
-        const byteNumbers = new Array(slice.length);
-        for (let i = 0; i < slice.length; i++) {
-          byteNumbers[i] = slice.charCodeAt(i);
+                    const byteNumbers = new Array(slice.length);
+                    for (let i = 0; i < slice.length; i++) {
+                      byteNumbers[i] = slice.charCodeAt(i);
         }
-        const byteArray = new Uint8Array(byteNumbers);
-        byteArrays.push(byteArray);
+                    const byteArray = new Uint8Array(byteNumbers);
+                    byteArrays.push(byteArray);
       }
-      
-      return new Blob(byteArrays, { type: contentType });
+
+                    return new Blob(byteArrays, {type: contentType });
     }
-    
-    // 自動上傳到 Google Lens
-    async function uploadToGoogleLens() {
+
+                    // 自動上傳到 Google Lens
+                    async function uploadToGoogleLens() {
       try {
-        document.getElementById('status').textContent = '正在上傳圖片到 Google Lens...';
-        
-        const base64Data = '${base64Data}';
-        const blob = base64ToBlob(base64Data);
-        
-        // 使用表單提交
-        const form = document.getElementById('uploadForm');
-        const fileInput = document.getElementById('fileInput');
-        
-        // 將 blob 轉換為 File 物件
-        const file = new File([blob], 'screenshot.png', { type: 'image/png' });
-        const dataTransfer = new DataTransfer();
-        dataTransfer.items.add(file);
-        fileInput.files = dataTransfer.files;
-        
-        document.getElementById('status').textContent = '正在開啟 Google Lens...';
-        
+                      document.getElementById('status').textContent = '正在上傳圖片到 Google Lens...';
+
+                    const base64Data = '${base64Data}';
+                    const blob = base64ToBlob(base64Data);
+
+                    // 使用表單提交
+                    const form = document.getElementById('uploadForm');
+                    const fileInput = document.getElementById('fileInput');
+
+                    // 將 blob 轉換為 File 物件
+                    const file = new File([blob], 'screenshot.png', {type: 'image/png' });
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(file);
+                    fileInput.files = dataTransfer.files;
+
+                    document.getElementById('status').textContent = '正在開啟 Google Lens...';
+
         // 提交表單到新視窗
         setTimeout(() => {
-          form.submit();
-          document.getElementById('status').innerHTML = '✅ Google Lens 已在新視窗中開啟！<br><br>搜尋結果將顯示在瀏覽器中。';
-          document.querySelector('.spinner').style.display = 'none';
-          document.getElementById('manualLink').style.display = 'inline-block';
+                      form.submit();
+                    document.getElementById('status').innerHTML = '✅ Google Lens 已在新視窗中開啟！<br><br>搜尋結果將顯示在瀏覽器中。';
+                      document.querySelector('.spinner').style.display = 'none';
+                      document.getElementById('manualLink').style.display = 'inline-block';
         }, 800);
         
       } catch (error) {
-        console.error('Upload error:', error);
-        document.getElementById('status').innerHTML = '正在開啟 Google Lens...<br><br>請稍候片刻。';
-        document.querySelector('.spinner').style.display = 'none';
+                        console.error('Upload error:', error);
+                      document.getElementById('status').innerHTML = '正在開啟 Google Lens...<br><br>請稍候片刻。';
+                        document.querySelector('.spinner').style.display = 'none';
         
         setTimeout(() => {
-          window.open('https://www.google.com/?olud', '_blank');
-          document.getElementById('manualLink').style.display = 'inline-block';
+                          window.open('https://www.google.com/?olud', '_blank');
+                        document.getElementById('manualLink').style.display = 'inline-block';
         }, 500);
       }
     }
-    
+
     // 頁面載入後自動執行
     window.onload = () => {
-      setTimeout(uploadToGoogleLens, 800);
+                          setTimeout(uploadToGoogleLens, 800);
     };
-  </script>
-</body>
-</html>
-      `;
+                      </script>
+                      </body>
+                    </html>
+                      `;
 
       const htmlPath = path.join(tempPath, `google-search-${timestamp}.html`);
       fs.writeFileSync(htmlPath, htmlContent, "utf8");
