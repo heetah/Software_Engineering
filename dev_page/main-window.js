@@ -434,7 +434,7 @@ function appendMessage(text, sender, messageType = 'text', options = {}) {
   messageActions.classList.add('message-actions');
 
   const copyButton = document.createElement('button');
-  copyButton.classList.add('action-button');
+  copyButton.classList.add('action-button', 'action-button--pill');
 
   // [修改點 1] 將圖示改為文字
   copyButton.textContent = '複製';
@@ -473,7 +473,8 @@ function appendMessage(text, sender, messageType = 'text', options = {}) {
     messageBubble.classList.add('message-bubble--download');
 
     const description = document.createElement('div');
-    description.textContent = text || '輸出已準備好，點擊下載 zip。';
+    // [Modified] Use innerHTML to allow colored icons/spans from backend
+    description.innerHTML = text || '輸出已準備好，點擊下載 zip。';
     messageBubble.appendChild(description);
 
     // 創建下載按鈕 (Pill Style)
@@ -564,10 +565,69 @@ ipcRenderer.on('message-from-agent', (_event, response) => {
     return;
   }
 
+  // [Fix: Duplicate Message Bug]
+  // Backend (main.js) already persists the AI message.
+  // We should NOT persist it again here in the frontend.
+  /*
   persistMessage(currentSession.id, 'ai', content, {
     type: messageType,
     download: downloadInfo
   });
+  */
+});
+
+ipcRenderer.on('agent-log', (_event, logMessage) => {
+  if (!thinkingBubbleElement) return;
+
+  // 1. 尋找或建立 Log Container
+  // 由於 appendMessage 返回的是 messageGroup，我們需要在 messageGroup 裡面找
+  // 或者直接把 Log Container 加在 messageGroup 的最後面 (bubble 下方)
+
+  let logDetails = thinkingBubbleElement.querySelector('.log-details');
+  if (!logDetails) {
+    // 建立 Log 區塊結構
+    // <div class="log-container">
+    //   <details class="log-details">
+    //     <summary class="log-summary">查看執行細節 (Process Logs)</summary>
+    //     <div class="log-content"></div>
+    //   </details>
+    // </div>
+
+    const logContainer = document.createElement('div');
+    logContainer.classList.add('log-container');
+
+    logDetails = document.createElement('details');
+    logDetails.classList.add('log-details');
+
+    const summary = document.createElement('summary');
+    summary.classList.add('log-summary');
+    summary.textContent = '查看執行細節 (Process Logs)';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('log-content');
+
+    logDetails.appendChild(summary);
+    logDetails.appendChild(contentDiv);
+    logContainer.appendChild(logDetails);
+
+    // 將 Log Container 加到 Message Content 中 (Bubble 下方)
+    const messageContent = thinkingBubbleElement.querySelector('.message-content');
+    if (messageContent) {
+      messageContent.appendChild(logContainer);
+    }
+  }
+
+  // 2. 追加 Log
+  const contentDiv = logDetails.querySelector('.log-content');
+  if (contentDiv) {
+    const entry = document.createElement('div');
+    entry.classList.add('log-entry');
+    entry.textContent = logMessage;
+    contentDiv.appendChild(entry);
+
+    // 自動捲動到底部
+    contentDiv.scrollTop = contentDiv.scrollHeight;
+  }
 });
 
 /* 設定頁面功能 */

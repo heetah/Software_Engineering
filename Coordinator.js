@@ -105,6 +105,22 @@ export async function runWithInstructionService(
   options = {}
 ) {
   const { architect, verifier, tester } = agents;
+  // Options may contain onLog callback
+  const { onLog } = options;
+
+  // Helper for logging to both console and external callback
+  // Helper for logging to both console and external callback
+  const logFlow = (msg) => {
+    console.log(msg);
+    if (typeof onLog === 'function') {
+      onLog(msg);
+    }
+  };
+
+  // Helper for logging to console only (Debug)
+  const logDebug = (msg) => {
+    console.log(msg);
+  };
 
   // Update agents with current API keys if provided (crucial for packaged app)
   if (options.apiKeys?.openai) {
@@ -140,29 +156,29 @@ export async function runWithInstructionService(
 
     // 如果是「單純問答模式」，直接回傳，不觸發後續 coder / verifier / tester
     if (plan && plan.mode === 'qa') {
-      console.log("\nInstructionService QA mode: skip project generation / verifier / tester");
+      logDebug("\nInstructionService QA mode: skip project generation / verifier / tester");
       return plan;
     }
 
-    console.log(`\nPlan created, Session ID: ${plan.id}`);
-    console.log(`Workspace directory: ${plan.workspaceDir || 'N/A'}`);
-    console.log(`File operations: Created=${plan.fileOps.created.length}, Skipped=${plan.fileOps.skipped.length}, Errors=${plan.fileOps.errors.length}`);
+    logFlow(`\nPlan created, Session ID: ${plan.id}`);
+    logDebug(`Workspace directory: ${plan.workspaceDir || 'N/A'}`);
+    logDebug(`File operations: Created=${plan.fileOps.created.length}, Skipped=${plan.fileOps.skipped.length}, Errors=${plan.fileOps.errors.length}`);
 
     // Display Token usage statistics
     const tokenStats = tokenTracker.getStats();
-    console.log(`\nToken usage: ${tokenStats.total} (Remaining: ${tokenStats.remaining}, ${tokenStats.percentage})`);
+    logDebug(`\nToken usage: ${tokenStats.total} (Remaining: ${tokenStats.remaining}, ${tokenStats.percentage})`);
 
     // Display plan summary
     if (plan.output?.plan) {
-      console.log(`\nPlan title: ${plan.output.plan.title}`);
-      console.log(`Plan summary: ${plan.output.plan.summary}`);
-      console.log(`Steps: ${plan.output.plan.steps?.length || 0}`);
+      logFlow(`\nPlan title: ${plan.output.plan.title}`);
+      logDebug(`Plan summary: ${plan.output.plan.summary}`);
+      logDebug(`Steps: ${plan.output.plan.steps?.length || 0}`);
     }
 
     // If there are coder_instructions, optionally execute
     if (plan.output?.coder_instructions?.markdown) {
-      console.log("\n--- Coder Instructions ---");
-      console.log(plan.output.coder_instructions.markdown);
+      logDebug("\n--- Coder Instructions ---");
+      logDebug(plan.output.coder_instructions.markdown);
     }
 
     // 如果需要，使用 Coder Coordinator 生成代碼
@@ -184,7 +200,7 @@ export async function runWithInstructionService(
 
           if (parsed.coder_instructions) {
             coderInstructions = parsed.coder_instructions;
-            console.log("  Extracted coder_instructions from markdown");
+            logDebug("  Extracted coder_instructions from markdown");
           }
         }
       } catch (e) {
@@ -215,6 +231,27 @@ export async function runWithInstructionService(
 
       // 直接寫入檔案系統（Cursor 常用方式）
       try {
+        const coderCoordinator = getCoderCoordinator({
+          useMockApi: false,
+          llmProvider: options.llmProvider || "auto",
+          apiKeys: options.apiKeys || {},
+        });
+        const requestId = `coordinator-${plan.id}`;
+
+        // 構建 Coordinator 需要的 payload 格式
+        const coordinatorPayload = {
+          output: {
+            coder_instructions: coderInstructions
+          }
+        };
+
+        const coderResult = await withErrorHandling(
+          'CoderCoordinator.generateFromArchitectPayload',
+          () => coderCoordinator.generateFromArchitectPayload(coordinatorPayload, requestId),
+          { planId: plan.id }
+        );
+
+        // 直接寫入檔案系統（Cursor 常用方式）
         const result = await withErrorHandling(
           'writeProjectDirectly',
           () => Promise.resolve(
@@ -222,11 +259,11 @@ export async function runWithInstructionService(
           ),
           { workspaceDir: plan.workspaceDir }
         );
-        console.log(`\nProject generated at ${result.outDir}`);
-        console.log(`Total files: ${result.files.length}`);
-        console.log(`\nGenerated files:`);
+        logFlow(`\nProject generated at ${result.outDir}`);
+        logDebug(`Total files: ${result.files.length}`);
+        logDebug(`\nGenerated files:`);
         result.files.forEach(file => {
-          console.log(`  ${file}`);
+          logDebug(`  ${file}`);
         });
       } catch (e) {
         errorLogger.warn("Failed to generate project", { error: e.message, workspaceDir: plan.workspaceDir });
@@ -240,7 +277,7 @@ export async function runWithInstructionService(
             ),
             { workspaceDir: plan.workspaceDir }
           );
-          console.log(`\nProject generated (fallback) at ${fallbackResult.outDir}, files: ${fallbackResult.files.length}`);
+          logFlow(`\nProject generated (fallback) at ${fallbackResult.outDir}, files: ${fallbackResult.files.length}`);
         } catch (fallbackError) {
           errorLogger.error("Both direct write and Markdown fallback failed", {
             directError: e.message,
@@ -249,7 +286,6 @@ export async function runWithInstructionService(
         }
       }
     }
-
     // ===== Verifier Agent: 生成測試計劃 =====
     console.log("\n" + "=".repeat(60));
     console.log("Verifier Agent: Generate test plan");
@@ -277,8 +313,8 @@ export async function runWithInstructionService(
         error: err.message,
         sessionId: plan.id
       });
-      console.warn(`\nVerifier Agent execution failed: ${err.message}`);
-      console.warn("   Test Plan generation skipped, but project generation completed");
+      logFlow(`\nVerifier Agent execution failed: ${err.message}`);
+      logFlow("   Test Plan generation skipped, but project generation completed");
     }
 
     // ===== Tester Agent: 生成測試碼並執行測試 =====
