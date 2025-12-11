@@ -11,7 +11,8 @@ const logger = require('../shared/logger.cjs');
 const path = require('path');
 const DependencyAnalyzer = require('./dependency-analyzer');
 const ConfigGenerator = require('./config-generator');
-const ContractsAgent = require('./contracts-agent');
+// const ContractsAgent = require('./contracts-agent'); // DISABLED - Architect provides complete contracts
+const ContractsExtractor = require('./contracts-extractor');
 
 // 載入 Worker Generators（本地調用，不需要 HTTP）
 const MarkupGenerator = require('../worker-agents/markup-agent/generator');
@@ -24,6 +25,9 @@ class Coordinator {
   constructor(config = {}) {
     // 依賴分析器
     this.dependencyAnalyzer = new DependencyAnalyzer();
+    
+    // 動態 Contracts 提取器
+    this.contractsExtractor = new ContractsExtractor();
 
     // 配置參數（先設定，再傳給 workers）
     this.MAX_FILES_PER_SKELETON_BATCH = config.maxSkeletonBatch || 15;
@@ -65,7 +69,7 @@ class Coordinator {
     this.workers = {
       'markup': {
         generator: new MarkupGenerator(workerConfig),
-        exts: ['.html', '.xml', '.md', '.htm', '.txt', '.gitignore', '.env', '.ps1', '.sh', '.bat']
+        exts: ['.html', '.xml', '.md', '.htm', '.txt', '.gitignore', '.env', '.ps1', '.sh', '.bat', '.json']
       },
       'script': {
         generator: new ScriptGenerator(workerConfig),
@@ -100,19 +104,14 @@ class Coordinator {
     logger.info('Coordinator starting - preprocessing payload', requestId);
 
     try {
-      // Phase -1: Contracts Agent 預處理 payload
-      logger.info('Phase -1: Running Contracts Agent preprocessing', requestId);
-      const contractsAgent = new ContractsAgent();
-      const enhancedPayload = await contractsAgent.processPayload(payload);
-
-      // 記錄預處理結果
-      if (enhancedPayload._preprocessed) {
-        logger.info('Payload preprocessing completed', requestId, {
-          issuesFound: enhancedPayload._preprocessed.issuesFound,
-          enhancementsApplied: enhancedPayload._preprocessed.enhancementsApplied,
-          version: enhancedPayload._preprocessed.version
-        });
-      }
+      // Phase -1: Contracts Agent 預處理 payload (DISABLED - Architect Agent already provides complete contracts)
+      // logger.info('Phase -1: Running Contracts Agent preprocessing', requestId);
+      // const contractsAgent = new ContractsAgent();
+      // const enhancedPayload = await contractsAgent.processPayload(payload);
+      
+      // 跳過 ContractsAgent，直接使用 Architect 的輸出
+      const enhancedPayload = payload;
+      logger.info('Phase -1: Skipped (using Architect contracts directly)', requestId);
 
       // 使用增強後的 payload 繼續
       const coderInstructions = enhancedPayload.output.coder_instructions;
@@ -368,11 +367,15 @@ class Coordinator {
     // 視覺化依賴關係（用於除錯）
     this.dependencyAnalyzer.visualizeDependencies(depGraph, groups, requestId);
 
+    // 🔄 動態 Contracts：會隨著每層生成完畢而更新
+    let dynamicContracts = contracts ? { ...contracts } : { dom: [], api: [], storage: [] };
+
     logger.info('Starting layered detail generation', requestId, {
       totalFiles: files.length,
       layers: groups.length,
       strategy: groups.length === 1 ? 'all-concurrent' : 'layered-concurrent',
-      hasContracts: !!contracts
+      hasContracts: !!contracts,
+      dynamicContractsEnabled: true
     });
 
     const results = [];
@@ -438,7 +441,7 @@ class Coordinator {
               .map(r => ({ path: r.path, content: r.content, language: r.language })),
             dependencies: completedDeps,
             allFiles: files, // 傳遞所有檔案資訊（用於預知將來的檔案）
-            contracts: contracts || null, // ← 新增：傳遞 contracts 給 Worker Agents
+            contracts: dynamicContracts, // ← 🔄 使用動態更新的 contracts
             projectConfig: projectConfig || null, // ← 新增：傳遞項目配置給 Worker Agents
             modelTier: modelTier, // ← Add modelTier to context
             fileSpec: {
@@ -493,6 +496,26 @@ class Coordinator {
       // 等待當前層的所有檔案生成完成
       const layerResults = await Promise.all(layerPromises);
       results.push(...layerResults);
+
+      // 🔄 動態更新 Contracts：從本層生成的檔案中提取實際的 DOM IDs, IPC channels 等
+      if (!isLastLayer) {
+        const successfulLayerResults = layerResults.filter(r => !r.error && r.content);
+        if (successfulLayerResults.length > 0) {
+          const extracted = this.contractsExtractor.extractFromFiles(successfulLayerResults, requestId);
+          dynamicContracts = this.contractsExtractor.mergeContracts(dynamicContracts, extracted, requestId);
+          
+          logger.info(`🔄 Dynamic contracts updated after Layer ${layerIdx + 1}`, requestId, {
+            domElements: dynamicContracts.dom.length,
+            apiEndpoints: dynamicContracts.api.length,
+            storageKeys: dynamicContracts.storage.length,
+            newlyExtracted: {
+              dom: extracted.dom.length,
+              api: extracted.api.length,
+              storage: extracted.storage.length
+            }
+          });
+        }
+      }
 
       // 層與層之間延遲（最後一層不需要延遲）
       if (!isLastLayer) {

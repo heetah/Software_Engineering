@@ -31,8 +31,8 @@ class SystemGenerator {
 
   async generate({ skeleton, fileSpec, context }) {
     console.log(`[Generator] Processing ${fileSpec.path}`);
-
-    // 優先級 1: 使用 template（Architect 提供的完整代碼）
+    
+    // 優先級 1: 使用 template（Architect 明確指定的內容）
     if (fileSpec.template && fileSpec.template.trim()) {
       console.log(`[Generator] ✅ Using template (${fileSpec.template.length} chars)`);
       return {
@@ -41,27 +41,33 @@ class SystemGenerator {
         method: 'template'
       };
     }
-
-    // 優先級 2: 使用 contracts 結構（example2 格式）
+    
+    // 優先級 2: 使用 contracts 結構（動態生成）
     const hasContracts = context.contracts && (
       (context.contracts.dom && context.contracts.dom.length > 0) ||
       (context.contracts.api && context.contracts.api.length > 0)
     );
-
+    
     if (hasContracts) {
       console.log(`[Generator] ✓ Using contracts-based generation`);
+      console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
+      
+      if (this.useMockApi) {
+        return this.generateWithMock({ skeleton, fileSpec, context });
+      } else {
+        return this.generateWithCloudAPI({ skeleton, fileSpec, context });
+      }
     }
-
+    
+    // 優先級 3: AI 生成（無 contracts 也無 template）
     console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
-
+    
     if (this.useMockApi) {
       return this.generateWithMock({ skeleton, fileSpec, context });
     } else {
       return this.generateWithCloudAPI({ skeleton, fileSpec, context });
     }
-  }
-
-  async generateWithCloudAPI({ skeleton, fileSpec, context }) {
+  }  async generateWithCloudAPI({ skeleton, fileSpec, context }) {
     const prompt = this.buildPrompt({ skeleton, fileSpec, context });
 
     try {
@@ -217,17 +223,11 @@ class Program {
 
     let prompt = `Generate ${language} code for: ${filePath}\n\n`;
 
-    if (description) {
-      prompt += `Description: ${description}\n\n`;
-    }
-
-    if (requirements.length > 0) {
-      prompt += `Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
-    }
-
-    // ← 新增：如果有 contracts，優先顯示
+    // 🚨 CONTRACTS FIRST
     if (contracts) {
-      prompt += `=== CONTRACTS (MUST FOLLOW EXACTLY) ===\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      prompt += `🚨 CRITICAL: CONTRACTS (MUST FOLLOW EXACTLY) 🚨\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
       // API contracts - 對系統語言可能是實現 FFI/JNI 接口
       if (contracts.api && contracts.api.length > 0) {
@@ -279,7 +279,17 @@ class Program {
         }
       }
 
-      prompt += `=== END CONTRACTS ===\n\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      prompt += `END OF CONTRACTS - FOLLOW THEM EXACTLY!\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    }
+
+    if (description) {
+      prompt += `Description: ${description}\n\n`;
+    }
+
+    if (requirements.length > 0) {
+      prompt += `Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
     }
 
     // Include context from other files
