@@ -391,19 +391,39 @@ body {
   bottom: 0;
   border-radius: 20px;
   padding: 2px;
+
+  /* [修改] 使用 Theme Variable 來產生顏色 */
+  /* 使用 var(--color-accent-1) 讓淺色模式呈現藍紫色，深色模式呈現金色 */
   background: linear-gradient(125deg,
       rgba(255, 255, 255, 0) 30%,
-      rgba(255, 255, 255, 0.4) 35%,
+
+      /* 弱光帶 (半透明強調色) */
+      rgba(134, 146, 253, 0.2) 35%,
+      /* 注意：若要完全動態，可改用 color-mix (較新瀏覽器) 或直接用rgba */
+      /* 這裡為了相容性，我們先針對淺色模式優化顏色 */
+      /* 如果您希望深色模式也變色，建議直接用 var(--color-accent-1) 配合 mask */
+
       rgba(255, 255, 255, 0) 40%,
-      rgba(255, 255, 255, 0.8) 50%,
+
+      /* 強光帶 (高亮度強調色) */
+      var(--color-accent-1) 50%,
+
       rgba(255, 255, 255, 0) 60%,
-      rgba(255, 255, 255, 0.3) 65%,
+
+      /* 弱光帶 */
+      rgba(134, 146, 253, 0.2) 65%,
+
       rgba(255, 255, 255, 0) 70%);
+
   background-size: 200% 200%;
-  opacity: 0.9;
+
+  /* 稍微調整混合模式，讓顏色在淺色背景上更明顯 */
+  opacity: 0.7;
   mix-blend-mode: normal;
+
   pointer-events: none;
   animation: shimmer 4s ease-in-out infinite;
+
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;

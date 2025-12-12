@@ -613,19 +613,21 @@ function showGreetingIfEmpty() {
  */
 
 // 定義教學步驟
+/* main-window.js - 更新 tutorialSteps */
+
 const tutorialSteps = [
   {
     // Step 1: 歡迎
     pageId: 'page-chat',
     targetId: null,
-    text: "<strong style='font-size: 18px;'>歡迎使用 AI Copilot</strong><br>我是您的全棧開發助理。這是一個專為開發者設計的工具，讓我帶您快速導覽各個功能區塊。",
+    text: "<strong style='font-size: 18px;'>歡迎使用 AI Copilot</strong><br>我是您的全棧開發助理。讓我花一點時間，帶您熟悉這個強大的開發環境。",
     placement: 'center'
   },
   {
-    // [新增步驟] Step 2: 頂部捷徑 (教學 & 刷新)
+    // Step 2: 頂部捷徑
     pageId: 'page-chat',
-    targetId: 'sidebar-header', // 對應剛剛在 HTML 加上的 ID
-    text: "<strong style='font-size: 18px;'>快速捷徑</strong><br>這裡有兩個實用的小按鈕：<br>🎓 <strong>重看教學</strong>：忘記功能時隨時點擊複習。<br>🔄 <strong>新對話</strong>：一鍵清除當前畫面，開始全新的專案 (Refresh)。",
+    targetId: 'sidebar-header',
+    text: "<strong style='font-size: 18px;'>快速捷徑</strong><br>這裡有兩個實用的小按鈕：<br>🎓 <strong>重看教學</strong>：忘記功能時隨時點擊複習。<br>➕ <strong>新對話</strong>：一鍵清除當前畫面，開始全新的專案 (Refresh)。",
     placement: 'right'
   },
   {
@@ -653,14 +655,21 @@ const tutorialSteps = [
     // Step 6: 輸入區
     pageId: 'page-chat',
     targetId: 'input-area-container',
-    text: "<strong style='font-size: 18px;'>控制台</strong><br>回到主畫面，這裡是您下達指令的地方。",
+    text: "<strong style='font-size: 18px;'>控制台</strong><br>回到主畫面，這裡是您下達指令的地方。<br>小技巧：試著直接把<strong>錯誤截圖</strong>或<strong>程式碼檔案</strong>拖曳進來，我能直接幫您除錯喔！",
     placement: 'top'
   },
   {
-    // Step 7: 結束
+    // Step 7: Circle-to-Search (畫圈搜尋)
+    pageId: 'page-chat',
+    targetId: null, // 全螢幕功能，顯示在中央
+    text: "<strong style='font-size: 18px;'>Circle to Search (畫圈搜尋)</strong><br>這是最強大的隱藏功能！<br>按下 <strong>Cmd/Ctrl + Shift + A</strong>，畫面會凍結，接著用滑鼠<strong>圈選</strong>任何區域，AI 將自動進行以圖搜圖或文字分析。",
+    placement: 'center'
+  },
+  {
+    // Step 8: 結束
     pageId: 'page-chat',
     targetId: null,
-    text: "<strong style='font-size: 18px;'>準備就緒</strong><br>您已經掌握了所有功能。現在，可以開始使用了！",
+    text: "<strong style='font-size: 18px;'>準備就緒</strong><br>您已經掌握了所有功能。現在，按下左上角的 ➕ 開啟新對話，試著輸入「幫我寫一個貪食蛇遊戲」吧！",
     placement: 'center',
     isLast: true
   }
