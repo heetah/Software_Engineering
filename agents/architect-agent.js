@@ -175,9 +175,6 @@ Output JSON schema:
   "coder_instructions": {
     "role": "Coder Agent",
     "summary": string,
-    "directives": [
-      { "do": string, "why": string }
-    ],
     "files": [
       { 
         "path": string, 
@@ -187,8 +184,6 @@ Output JSON schema:
       }
     ],
     "commands": string[],
-    "acceptance": string[],
-    "notes": string[],
     "contracts": {
       "dom": [
         { 
@@ -240,8 +235,7 @@ Output JSON schema:
         "title": string,
         "description": string,
         "commands": string[],
-        "artifacts": string[],
-        "acceptance": string[]
+        "artifacts": string[]
       }
     ]
   },
@@ -272,9 +266,15 @@ Rules:
   * Worker Agents are experts - let them generate code based on contracts
 - **Contracts Strategy**:
   * Define ALL DOM elements that will be used (buttons, inputs, divs with IDs)
-  * Define ALL API endpoints/IPC channels with request/response schemas
+  * Define ALL API endpoints/IPC channels with COMPLETE request/response schemas
   * Define ALL storage requirements (files, localStorage keys)
   * Be specific: include IDs, types, purposes, and which files interact with them
+  * ⚠️ CRITICAL: NEVER set requestSchema or responseSchema to null
+  * For APIs that take no parameters: requestSchema = {type: "object", properties: {}}
+  * For APIs that return nothing: responseSchema = {type: "object", properties: {success: {type: "boolean"}, message: {type: "string"}}}
+  * For APIs that return simple types: responseSchema = {type: "string"} or {type: "number"}
+  * For APIs that return objects: ALWAYS define the object structure with properties
+  * For APIs that return arrays: ALWAYS define the array items structure
 - **For Electron apps**:
   * Define IPC contracts between main.js and renderer (e.g., "calculate" channel)
   * Specify preload.js should use contextBridge.exposeInMainWorld (not exposeAPI)
@@ -282,6 +282,8 @@ Rules:
   * ⚠️ CRITICAL: main.js is Node.js - it CANNOT require('./config') because config.js uses window.APP_CONFIG
   * ⚠️ CRITICAL: In main.js requirements, explicitly state "Do NOT import config.js"
   * For main.js: use hardcoded window dimensions (width: 800, height: 600)
+  * ⚠️ CRITICAL: ALL IPC handlers must have complete responseSchema - even simple ones like checkout
+  * Example: checkout IPC should return {success: boolean, message: string}, not void
 - Keep acceptance criteria testable and unambiguous.
 - Include environment scaffolding commands (npm install, etc.).
 - For web applications, ALWAYS include frontend files (HTML, CSS, JavaScript) with modern, responsive design.
@@ -435,9 +437,6 @@ Output JSON schema:
   "coder_instructions": {
     "role": "Coder Agent",
     "summary": string,
-    "directives": [
-      { "do": string, "why": string }
-    ],
     "files": [
       { 
         "path": string, 
@@ -447,8 +446,6 @@ Output JSON schema:
       }
     ],
     "commands": string[],
-    "acceptance": string[],
-    "notes": string[],
     "contracts": {
       "dom": [
         { 
@@ -500,8 +497,7 @@ Output JSON schema:
         "title": string,
         "description": string,
         "commands": string[],
-        "artifacts": string[],
-        "acceptance": string[]
+        "artifacts": string[]
       }
     ]
   },

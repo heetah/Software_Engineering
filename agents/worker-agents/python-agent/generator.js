@@ -151,39 +151,52 @@ if __name__ == "__main__":
         });
 
         if (relevantApis.length > 0) {
-          prompt += `\nAPI Endpoints to implement:\n`;
+          prompt += `\n📡 API ENDPOINTS TO IMPLEMENT:\n\n`;
           relevantApis.forEach(api => {
-            prompt += `\n  ${api.endpoint} - ${api.description}\n`;
+            const method = api.method || 'GET';
+            prompt += `  ${method} ${api.endpoint} - ${api.purpose || api.description}\n`;
 
-            // 分析 endpoint 格式
-            const endpoint = api.endpoint.split(' ')[1] || api.endpoint; // "GET /api/weather" -> "/api/weather"
-            const hasQueryParams = api.request && api.request.query;
-            const hasPathParams = endpoint.includes('<') || endpoint.includes(':');
-
-            if (hasQueryParams) {
-              prompt += `  ⚠️  Uses QUERY PARAMETERS:\n`;
-              Object.entries(api.request.query).forEach(([key, value]) => {
-                prompt += `    - ${key}: ${value}\n`;
-              });
-              prompt += `  Example: city = request.args.get('city')\n`;
-              prompt += `  Flask route: @app.route('${endpoint}')\n`;
+            // 顯示 request schema
+            if (api.requestSchema) {
+              if (api.requestSchema.properties) {
+                prompt += `  Request Parameters:\n`;
+                Object.entries(api.requestSchema.properties).forEach(([key, val]) => {
+                  const required = api.requestSchema.required?.includes(key) ? '(required)' : '(optional)';
+                  prompt += `    - ${key}: ${val.type} ${required}\n`;
+                });
+              } else if (api.requestSchema.type) {
+                prompt += `  Request: ${api.requestSchema.type}\n`;
+              }
+            } else {
+              prompt += `  Request: No parameters\n`;
             }
 
-            if (hasPathParams) {
-              prompt += `  ⚠️  Uses PATH PARAMETERS:\n`;
-              const flaskRoute = endpoint.replace(/:(\w+)/g, '<$1>');
-              prompt += `  Flask route: @app.route('${flaskRoute}')\n`;
-              prompt += `  Example: def endpoint(city: str):\n`;
-            }
-
-            if (api.request) {
-              prompt += `  Request schema:\n${JSON.stringify(api.request, null, 4).split('\n').map(l => '    ' + l).join('\n')}\n`;
-            }
-            if (api.response) {
-              prompt += `  Response schema (EXACT field names):\n${JSON.stringify(api.response, null, 4).split('\n').map(l => '    ' + l).join('\n')}\n`;
+            // 顯示 response schema
+            if (api.responseSchema) {
+              if (api.responseSchema.type === 'array') {
+                const itemProps = api.responseSchema.items?.properties;
+                if (itemProps) {
+                  prompt += `  Response: Array of objects with:\n`;
+                  Object.entries(itemProps).forEach(([key, val]) => {
+                    prompt += `    - ${key}: ${val.type}\n`;
+                  });
+                } else {
+                  prompt += `  Response: Array\n`;
+                }
+              } else if (api.responseSchema.type === 'object') {
+                prompt += `  Response: Object with:\n`;
+                Object.entries(api.responseSchema.properties || {}).forEach(([key, val]) => {
+                  prompt += `    - ${key}: ${val.type}\n`;
+                });
+              } else {
+                prompt += `  Response: ${api.responseSchema.type}\n`;
+              }
+            } else {
+              prompt += `  Response: void\n`;
             }
             prompt += `\n`;
           });
+
           prompt += `🔒 CRITICAL RULES:\n`;
           prompt += `  - Use TypedDict or Pydantic models matching schemas EXACTLY\n`;
           prompt += `  - Field names must match contract exactly (including case)\n`;

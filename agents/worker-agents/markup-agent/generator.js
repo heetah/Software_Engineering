@@ -261,11 +261,44 @@ FORBIDDEN:
         });
 
         if (relevantApis.length > 0) {
-          prompt += `API Endpoints (for JavaScript):\n`;
+          prompt += `📡 API ENDPOINTS (Backend Contracts):\n\n`;
           relevantApis.forEach(api => {
-            prompt += `  ${api.endpoint} - ${api.description}\n`;
+            prompt += `  ${api.endpoint} - ${api.purpose || api.description}\n`;
+            
+            // 顯示 request schema
+            if (api.requestSchema && api.requestSchema.properties) {
+              const params = Object.entries(api.requestSchema.properties).map(([key, val]) => {
+                const required = api.requestSchema.required?.includes(key) ? '(required)' : '(optional)';
+                return `    - ${key}: ${val.type} ${required}`;
+              }).join('\n');
+              prompt += `  Request:\n${params}\n`;
+            }
+            
+            // 顯示 response schema
+            if (api.responseSchema) {
+              let responseStr = '';
+              if (api.responseSchema.type === 'array') {
+                const itemProps = api.responseSchema.items?.properties;
+                if (itemProps) {
+                  responseStr = Object.keys(itemProps).map(key => 
+                    `    - ${key}: ${itemProps[key].type}`
+                  ).join('\n');
+                  prompt += `  Response: Array of objects with:\n${responseStr}\n`;
+                } else {
+                  prompt += `  Response: Array\n`;
+                }
+              } else if (api.responseSchema.type === 'object') {
+                responseStr = Object.entries(api.responseSchema.properties || {}).map(([key, val]) => 
+                  `    - ${key}: ${val.type}`
+                ).join('\n');
+                prompt += `  Response: Object with:\n${responseStr}\n`;
+              } else {
+                prompt += `  Response: ${api.responseSchema.type}\n`;
+              }
+            }
+            prompt += `\n`;
           });
-          prompt += `Ensure forms/buttons match API data structure.\n\n`;
+          prompt += `Ensure HTML forms/inputs match the request schema structure.\n\n`;
         }
       }
 

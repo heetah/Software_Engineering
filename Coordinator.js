@@ -10,6 +10,8 @@ dotenv.config();
 import ArchitectAgent from "./agents/architect-agent.js";
 import VerifierAgent from "./agents/verifier-agent.js";
 import TesterAgent from "./agents/tester-agent.js";
+import ContractValidator from "./agents/contract-validator.js";
+import ContractAutoFixer from "./agents/contract-auto-fixer.js";
 // 將 Coder 產出的 Markdown 生成專案
 import { writeProjectFromMarkdown } from "./agents/project-writer.js";
 // InstructionService 用於會話管理和結構化計劃生成
@@ -236,6 +238,47 @@ export async function runWithInstructionService(
             fallbackError: fallbackError.message 
           });
         }
+      }
+      
+      // ===== Contract Validation & Auto-Fix: 驗證並自動修復契約不一致 =====
+      console.log("\n" + "=".repeat(60));
+      console.log("Contract Validator: Checking & Auto-Fixing contracts");
+      console.log("=".repeat(60));
+      
+      try {
+        const contractValidator = new ContractValidator();
+        const contractAutoFixer = new ContractAutoFixer();
+        
+        // 檢查並自動修復
+        const checkResult = await withErrorHandling(
+          'ContractAutoFixer.checkAndFix',
+          () => contractAutoFixer.checkAndFix(plan.id, contractValidator),
+          { sessionId: plan.id }
+        );
+        
+        if (checkResult.fixResult) {
+          // 已經執行過修復
+          if (checkResult.needsAI) {
+            console.log("\n⚠️  部分問題無法自動修復，建議：");
+            console.log("   1. 檢查上述錯誤訊息");
+            console.log("   2. 手動修復或重新生成受影響的檔案");
+            console.log("   3. 如果問題複雜，考慮重新生成整個專案\n");
+          } else {
+            console.log("\n✅ 所有契約問題已自動修復！");
+            console.log(`   成功: ${checkResult.fixResult.successCount}，失敗: ${checkResult.fixResult.failCount}\n`);
+          }
+        }
+        
+        // 如果完全沒問題，只顯示驗證報告
+        if (!checkResult.needsFix) {
+          const validationReport = contractValidator.generateReport(checkResult.validationResult);
+          console.log(validationReport);
+        }
+      } catch (validationError) {
+        errorLogger.warn("Contract validation/auto-fix failed", { 
+          error: validationError.message,
+          sessionId: plan.id
+        });
       }
     }
 

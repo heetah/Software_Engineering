@@ -293,13 +293,58 @@ document.addEventListener('DOMContentLoaded', () => {
           const isElectronIPC = relevantApis.some(api => api.method === 'ipc-handle');
           
           if (isElectronIPC) {
-            prompt += `📡 IPC CHANNELS (Electron):\n`;
+            prompt += `📡 IPC CHANNELS (Electron):\n\n`;
             relevantApis.forEach(api => {
               const methodName = this.channelToMethodName(api.endpoint);
-              prompt += `   window.electronAPI.${methodName}(...)  // ${api.purpose}\n`;
+              
+              // 格式化 request schema
+              let requestStr = '';
+              if (api.requestSchema && api.requestSchema.properties) {
+                const params = Object.entries(api.requestSchema.properties).map(([key, val]) => {
+                  const required = api.requestSchema.required?.includes(key) ? '' : '?';
+                  return `${key}${required}: ${val.type}`;
+                }).join(', ');
+                requestStr = params || 'void';
+              } else {
+                requestStr = 'void';
+              }
+              
+              // 格式化 response schema
+              let responseStr = '';
+              if (api.responseSchema) {
+                if (api.responseSchema.type === 'array') {
+                  const itemProps = api.responseSchema.items?.properties;
+                  if (itemProps) {
+                    const fields = Object.keys(itemProps).join(', ');
+                    responseStr = `Array<{${fields}}>`;
+                  } else {
+                    responseStr = 'Array';
+                  }
+                } else if (api.responseSchema.type === 'object') {
+                  const fields = Object.keys(api.responseSchema.properties || {}).join(', ');
+                  responseStr = `{${fields}}`;
+                } else {
+                  responseStr = api.responseSchema.type;
+                }
+              } else {
+                responseStr = 'void';
+              }
+              
+              prompt += `   ✅ ${methodName}(${requestStr}) -> ${responseStr}\n`;
+              prompt += `      Purpose: ${api.purpose}\n`;
+              
+              // 顯示詳細的 request/response 格式
+              if (api.requestSchema && api.requestSchema.properties) {
+                prompt += `      Request: ${JSON.stringify(api.requestSchema.properties, null, 2).replace(/\n/g, '\n             ')}\n`;
+              }
+              if (api.responseSchema) {
+                const schemaStr = JSON.stringify(api.responseSchema, null, 2).replace(/\n/g, '\n             ');
+                prompt += `      Response: ${schemaStr}\n`;
+              }
+              prompt += `\n`;
             });
-            prompt += `\n❌ DO NOT use: fetch() or HTTP requests\n`;
-            prompt += `✅ USE ONLY window.electronAPI methods\n\n`;
+            prompt += `❌ DO NOT use: fetch() or HTTP requests\n`;
+            prompt += `✅ USE ONLY window.electronAPI methods with EXACT signatures above\n\n`;
           }
         }
       }
