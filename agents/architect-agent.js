@@ -173,10 +173,27 @@ Output rules:
       ragContext = await ragEngine.query(queryText, 3);
 
       if (ragContext && ragContext.length > 0) {
-        console.log(`  🧠 Retrieved RAG context (${ragContext.length} chars) for architecture planning`);
+        // 🔥 Relevance filtering to prevent cross-contamination
+        // (e.g., "calculator" should not retrieve "expense tracker" context)
+        const queryKeywords = prompt.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+        const contextKeywords = ragContext.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+
+        const relevantKeywords = queryKeywords.filter(q =>
+          contextKeywords.some(c => c.includes(q) || q.includes(c))
+        );
+
+        // Only inject RAG if at least 20% of query keywords appear in context
+        const relevanceRatio = queryKeywords.length > 0 ? relevantKeywords.length / queryKeywords.length : 0;
+        if (relevanceRatio < 0.2) {
+          console.log(`  🧠 RAG context filtered out (low relevance: ${relevantKeywords.length}/${queryKeywords.length} keywords matched)`);
+          ragContext = '';
+        } else {
+          console.log(`  🧠 Retrieved RAG context (${ragContext.length} chars, relevance: ${(relevanceRatio * 100).toFixed(0)}%) for architecture planning`);
+        }
       }
     } catch (err) {
       console.warn(`  RAG Engine unavailable: ${err.message}`);
+      ragContext = '';
       // Continue without RAG if it fails
     }
 
@@ -186,13 +203,14 @@ Your primary job:
 - Translate high-level goals into explicit, actionable instructions directed at the Coder Agent.
 - Produce a precise, implementable plan and a clear "handoff" message that tells the Coder Agent exactly what to do next.
 - For web applications, automatically infer and include frontend design requirements (UI/UX, layout, styling, responsive design).
-- **SCALE & COMPLETENESS**: The user wants a **FULL-SCALE, PRODUCTION-READY** application, not a toy example or MVP.
-  - Break down features into multiple logical files and modules.
-  - Include comprehensive error handling, validations, and edge case coverage in your design.
-  - If the user asks for a specific system (e.g., "E-commerce"), include ALL standard features (browsing, cart, checkout, user profile, administrative dashboard, mock payment, search, filtering).
-  - **EXHAUSTIVE CONTRACTS**: For repetitive UI elements (e.g., calculator buttons, grid items), you MUST list ALL of them in the contracts. Do not output a partial list (e.g., "1, 2, ...").
-  - **MANDATORY LINKING**: Explicitly require 'index.html' to include '<link rel="stylesheet" href="style.css">' and '<script src="script.js" defer></script>'.
-  - Do NOT simplify the architecture. Aim for professional software engineering standards.
+- **APPROPRIATE SCALE**: Match the project scale to the user's actual request.
+  - For SIMPLE prompts (e.g., "calculator", "to-do list", "stopwatch"): Generate a minimal, focused implementation (3-5 files: HTML, CSS, JS, package.json, README).
+  - For MODERATE prompts (e.g., "blog system", "inventory manager"): Generate a well-structured application (5-10 files with organized modules).
+  - For COMPLEX prompts (e.g., "e-commerce platform", "social network", "CRM system"): Generate a full-scale, production-ready application with comprehensive features.
+  - **DEFAULT PHILOSOPHY**: When in doubt, prefer simplicity and clarity over complexity. It's easier to add features than to remove unnecessary complexity.
+  - **COMPLETE CONTRACTS**: For UI elements, list ALL items explicitly (e.g., all calculator buttons: 0-9, +, -, ×, ÷, =, C, .). Do not use ellipsis "..." to abbreviate.
+  - **MANDATORY LINKING**: Always require 'index.html' to include '<link rel="stylesheet" href="style.css">' and '<script src="script.js" defer></script>'.
+  - Aim for professional code quality, but match the architecture complexity to the actual requirement.
 - **IMPORTANT**: Define clear contracts (DOM elements, API endpoints, storage keys) instead of writing full code templates.
 - Use "template" ONLY for simple config files (package.json, .gitignore). For code files, define "contracts" and let Worker Agents generate the implementation.
 

@@ -1111,7 +1111,7 @@ Return ONLY the JSON array, no markdown or explanation.`;
           }],
           generationConfig: {
             temperature: 0.3,
-            maxOutputTokens: 16384  // 提高到 16384 以處理複雜專案（實際會被 Gemini 限制在 8192）
+            maxOutputTokens: 8192  // Gemini 1.5 Flash actual limit (previously set to 16384 but was capped at 8192)
           }
         };
 
