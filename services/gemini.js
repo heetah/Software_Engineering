@@ -6,16 +6,18 @@ dotenv.config();
 
 // Gemini API 設定
 const GEMINI_API_KEY =
-  process.env.GEMINI_API_KEY || "請在.env檔案中設定GEMINI_API_KEY";
+  process.env.GOOGLE_API_KEY || "請在.env檔案中設定GEMINI_API_KEY";
 // 使用最新的 Gemini 2.0 Flash 模型
 const GEMINI_API_URL =
-  process.env.GEMINI_API_URL ||
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
-export async function askGemini(prompt) {
+export async function askGemini(prompt, apiKey = null) {
   try {
+    // 優先使用傳入的 apiKey，否則使用環境變數
+    const keyToUse = apiKey || GEMINI_API_KEY;
+
     // 檢查 API Key 是否設定
-    if (!GEMINI_API_KEY || GEMINI_API_KEY.includes("請在.env檔案中設定")) {
+    if (!keyToUse || keyToUse.includes("請在.env檔案中設定")) {
       console.warn("Gemini API Key 未設定");
       return {
         ok: false,
@@ -23,7 +25,7 @@ export async function askGemini(prompt) {
       };
     }
 
-    const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+    const response = await fetch(`${GEMINI_API_URL}?key=${keyToUse}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

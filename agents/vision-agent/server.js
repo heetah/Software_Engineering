@@ -7,11 +7,11 @@ const logger = require('../shared/logger.cjs');
 const { errorHandlerMiddleware, requestIdMiddleware } = require('../shared/errors.cjs');
 
 logger.info('Vision Agent starting...', null, {
-  PORT: process.env.PORT || 3000
+  PORT: 3000
 });
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
 // Middleware
 app.use(requestIdMiddleware);
@@ -35,15 +35,15 @@ app.get('/dashboard', (req, res) => {
     let html = '<!doctype html><html><head><meta charset="utf-8"><title>Generated Files</title></head><body>';
     html += '<h1>Generated Files Dashboard</h1>';
     html += '<h2>Coder Output (coder-...)</h2><ul>';
-    
+
     const items = fs.readdirSync(coderOut).filter(n => fs.lstatSync(path.join(coderOut, n)).isDirectory());
-    items.sort((a,b) => a < b ? 1 : -1);
-    
+    items.sort((a, b) => a < b ? 1 : -1);
+
     for (const it of items) {
       const statusPath = `/outputs/${encodeURIComponent(it)}/status.html`;
       html += `<li><a href="${statusPath}">${it}</a> - <a href="/outputs/${encodeURIComponent(it)}/">files</a></li>`;
     }
-    
+
     html += '</ul></body></html>';
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);

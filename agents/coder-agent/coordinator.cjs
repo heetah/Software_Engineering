@@ -11,7 +11,8 @@ const logger = require('../shared/logger.cjs');
 const path = require('path');
 const DependencyAnalyzer = require('./dependency-analyzer');
 const ConfigGenerator = require('./config-generator');
-const ContractsAgent = require('./contracts-agent');
+// const ContractsAgent = require('./contracts-agent'); // DISABLED - Architect provides complete contracts
+const ContractsExtractor = require('./contracts-extractor');
 
 // 載入 Worker Generators（本地調用，不需要 HTTP）
 const MarkupGenerator = require('../worker-agents/markup-agent/generator');
@@ -25,33 +26,48 @@ class Coordinator {
     // 依賴分析器
     this.dependencyAnalyzer = new DependencyAnalyzer();
 
+    // 動態 Contracts 提取器
+    this.contractsExtractor = new ContractsExtractor();
+
     // 配置參數（先設定，再傳給 workers）
-    this.MAX_FILES_PER_SKELETON_BATCH = config.maxSkeletonBatch || 15;
+    this.MAX_FILES_PER_SKELETON_BATCH = config.maxSkeletonBatch || 30; // 擴大批次以支持大型專案
     this.DETAIL_GENERATION_DELAY = config.detailDelay || 1500; // 毫秒
 
-    // API 配置優先順序：1. config 參數 2. CLOUD_API 3. OPENAI_API
-    this.CLOUD_API_ENDPOINT = config.cloudApiEndpoint ||
-      process.env.CLOUD_API_ENDPOINT ||
-      process.env.OPENAI_BASE_URL;
-    this.CLOUD_API_KEY = config.cloudApiKey ||
-      process.env.CLOUD_API_KEY ||
-      process.env.OPENAI_API_KEY;
+    // API 配置優先順序：1. config 參數 (Frontend Keys) 2. CLOUD_API 3. OPENAI_API
+    const provider = (config.llmProvider || "auto").toLowerCase();
+
+    let apiKey = config.cloudApiKey;
+    let endpoint = config.cloudApiEndpoint;
+
+    // 根據 Provider 選擇 Key
+    if (provider === 'gemini') {
+      apiKey = config.geminiApiKey || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+      endpoint = "https://generativelanguage.googleapis.com/v1beta";
+    } else if (provider === 'openai') {
+      apiKey = config.openaiApiKey || process.env.OPENAI_API_KEY;
+      endpoint = "https://api.openai.com/v1";
+    } else if (provider === 'auto') {
+      // Auto優先順序：傳入的 OpenAI -> 傳入的 Gemini -> 環境變數 OpenAI -> 環境變數 Gemini
+      if (config.openaiApiKey) {
+        apiKey = config.openaiApiKey;
+        endpoint = "https://api.openai.com/v1";
+      } else if (config.geminiApiKey) {
+        apiKey = config.geminiApiKey;
+        endpoint = "https://generativelanguage.googleapis.com/v1beta";
+      } else if (process.env.OPENAI_API_KEY) {
+        apiKey = process.env.OPENAI_API_KEY;
+        endpoint = "https://api.openai.com/v1";
+      } else if (process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY) {
+        apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+        endpoint = "https://generativelanguage.googleapis.com/v1beta";
+      }
+    }
+
+    this.CLOUD_API_ENDPOINT = endpoint;
+    this.CLOUD_API_KEY = apiKey;
 
     // 預設使用真實 API（不使用 mock）
     this.USE_MOCK_API = config.useMockApi === true;
-
-    // 🔍 Debug: 記錄接收到的配置
-    console.log('[CoderCoordinator] Config received:', {
-      hasCloudApiEndpoint: !!config.cloudApiEndpoint,
-      hasCloudApiKey: !!config.cloudApiKey,
-      hasEnvCloudEndpoint: !!process.env.CLOUD_API_ENDPOINT,
-      hasEnvCloudKey: !!process.env.CLOUD_API_KEY,
-      hasEnvOpenaiEndpoint: !!process.env.OPENAI_BASE_URL,
-      hasEnvOpenaiKey: !!process.env.OPENAI_API_KEY,
-      finalEndpoint: this.CLOUD_API_ENDPOINT ? this.CLOUD_API_ENDPOINT.substring(0, 50) + '...' : 'MISSING',
-      finalKeyExists: !!this.CLOUD_API_KEY,
-      useMockApi: this.USE_MOCK_API
-    });
 
     // 建立 worker config，確保傳遞 API 配置
     const workerConfig = {
@@ -65,7 +81,7 @@ class Coordinator {
     this.workers = {
       'markup': {
         generator: new MarkupGenerator(workerConfig),
-        exts: ['.html', '.xml', '.md', '.htm', '.txt', '.gitignore', '.env', '.ps1', '.sh', '.bat']
+        exts: ['.html', '.xml', '.md', '.htm', '.txt', '.gitignore', '.env', '.ps1', '.sh', '.bat', '.json']
       },
       'script': {
         generator: new ScriptGenerator(workerConfig),
@@ -100,19 +116,14 @@ class Coordinator {
     logger.info('Coordinator starting - preprocessing payload', requestId);
 
     try {
-      // Phase -1: Contracts Agent 預處理 payload
-      logger.info('Phase -1: Running Contracts Agent preprocessing', requestId);
-      const contractsAgent = new ContractsAgent();
-      const enhancedPayload = await contractsAgent.processPayload(payload);
+      // Phase -1: Contracts Agent 預處理 payload (DISABLED - Architect Agent already provides complete contracts)
+      // logger.info('Phase -1: Running Contracts Agent preprocessing', requestId);
+      // const contractsAgent = new ContractsAgent();
+      // const enhancedPayload = await contractsAgent.processPayload(payload);
 
-      // 記錄預處理結果
-      if (enhancedPayload._preprocessed) {
-        logger.info('Payload preprocessing completed', requestId, {
-          issuesFound: enhancedPayload._preprocessed.issuesFound,
-          enhancementsApplied: enhancedPayload._preprocessed.enhancementsApplied,
-          version: enhancedPayload._preprocessed.version
-        });
-      }
+      // 跳過 ContractsAgent，直接使用 Architect 的輸出
+      const enhancedPayload = payload;
+      logger.info('Phase -1: Skipped (using Architect contracts directly)', requestId);
 
       // 使用增強後的 payload 繼續
       const coderInstructions = enhancedPayload.output.coder_instructions;
@@ -368,11 +379,15 @@ class Coordinator {
     // 視覺化依賴關係（用於除錯）
     this.dependencyAnalyzer.visualizeDependencies(depGraph, groups, requestId);
 
+    // 🔄 動態 Contracts：會隨著每層生成完畢而更新
+    let dynamicContracts = contracts ? { ...contracts } : { dom: [], api: [], storage: [] };
+
     logger.info('Starting layered detail generation', requestId, {
       totalFiles: files.length,
       layers: groups.length,
       strategy: groups.length === 1 ? 'all-concurrent' : 'layered-concurrent',
-      hasContracts: !!contracts
+      hasContracts: !!contracts,
+      dynamicContractsEnabled: true
     });
 
     const results = [];
@@ -438,7 +453,7 @@ class Coordinator {
               .map(r => ({ path: r.path, content: r.content, language: r.language })),
             dependencies: completedDeps,
             allFiles: files, // 傳遞所有檔案資訊（用於預知將來的檔案）
-            contracts: contracts || null, // ← 新增：傳遞 contracts 給 Worker Agents
+            contracts: dynamicContracts, // ← 🔄 使用動態更新的 contracts
             projectConfig: projectConfig || null, // ← 新增：傳遞項目配置給 Worker Agents
             modelTier: modelTier, // ← Add modelTier to context
             fileSpec: {
@@ -493,6 +508,26 @@ class Coordinator {
       // 等待當前層的所有檔案生成完成
       const layerResults = await Promise.all(layerPromises);
       results.push(...layerResults);
+
+      // 🔄 動態更新 Contracts：從本層生成的檔案中提取實際的 DOM IDs, IPC channels 等
+      if (!isLastLayer) {
+        const successfulLayerResults = layerResults.filter(r => !r.error && r.content);
+        if (successfulLayerResults.length > 0) {
+          const extracted = this.contractsExtractor.extractFromFiles(successfulLayerResults, requestId);
+          dynamicContracts = this.contractsExtractor.mergeContracts(dynamicContracts, extracted, requestId);
+
+          logger.info(`🔄 Dynamic contracts updated after Layer ${layerIdx + 1}`, requestId, {
+            domElements: dynamicContracts.dom.length,
+            apiEndpoints: dynamicContracts.api.length,
+            storageKeys: dynamicContracts.storage.length,
+            newlyExtracted: {
+              dom: extracted.dom.length,
+              api: extracted.api.length,
+              storage: extracted.storage.length
+            }
+          });
+        }
+      }
 
       // 層與層之間延遲（最後一層不需要延遲）
       if (!isLastLayer) {
@@ -1076,7 +1111,7 @@ Return ONLY the JSON array, no markdown or explanation.`;
           }],
           generationConfig: {
             temperature: 0.3,
-            maxOutputTokens: 16384  // 提高到 16384 以處理複雜專案（實際會被 Gemini 限制在 8192）
+            maxOutputTokens: 8192  // Gemini 1.5 Flash actual limit (previously set to 16384 but was capped at 8192)
           }
         };
 
@@ -1085,7 +1120,12 @@ Return ONLY the JSON array, no markdown or explanation.`;
         };
 
         // Gemini 使用 query parameter 認證
-        const apiUrl = `${this.CLOUD_API_ENDPOINT}?key=${this.CLOUD_API_KEY}`;
+        let baseUrl = this.CLOUD_API_ENDPOINT;
+        if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+
+        // 使用 gemini-1.5-flash 生成骨架 (速度快且 Context Window 大)
+        const model = 'gemini-1.5-flash';
+        const apiUrl = `${baseUrl}/models/${model}:generateContent?key=${this.CLOUD_API_KEY}`;
 
         const response = await fetch(apiUrl, {
           method: 'POST',

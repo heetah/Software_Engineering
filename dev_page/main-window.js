@@ -42,6 +42,71 @@ let currentGeminiApiKey = localStorage.getItem('geminiApiKey') || '';
 let currentOpenAIApiKey = localStorage.getItem('openaiApiKey') || '';
 let currentSearchMode = localStorage.getItem('searchMode') || 'ask';
 
+// 搜尋模式選擇
+const searchModeAsk = document.getElementById('search-mode-ask');
+const searchModeLens = document.getElementById('search-mode-lens');
+const searchModeAi = document.getElementById('search-mode-ai');
+
+if (searchModeAsk && searchModeLens && searchModeAi) {
+  // 初始化選中狀態
+  const initSearchMode = () => {
+    if (currentSearchMode === 'lens') {
+      searchModeLens.checked = true;
+    } else if (currentSearchMode === 'ai') {
+      searchModeAi.checked = true;
+    } else {
+      searchModeAsk.checked = true;
+      currentSearchMode = 'ask';
+    }
+    // 同步到 Main process
+    ipcRenderer.invoke('settings:set-search-mode', currentSearchMode);
+  };
+
+  initSearchMode();
+
+  const handleSearchModeChange = (mode) => {
+    currentSearchMode = mode;
+    localStorage.setItem('searchMode', mode);
+    ipcRenderer.invoke('settings:set-search-mode', mode);
+    console.log('Search Mode changed to:', mode);
+    // Add visual feedback or log
+    console.log(`[UI] Syncing search mode ${mode} to Main.`);
+  };
+
+  searchModeAsk.addEventListener('change', (e) => {
+    if (e.target.checked) handleSearchModeChange('ask');
+  });
+
+  searchModeLens.addEventListener('change', (e) => {
+    if (e.target.checked) handleSearchModeChange('lens');
+  });
+
+  searchModeAi.addEventListener('change', (e) => {
+    if (e.target.checked) handleSearchModeChange('ai');
+  });
+}
+
+const handleSearchModeChange = (mode) => {
+  currentSearchMode = mode;
+  localStorage.setItem('searchMode', mode);
+  ipcRenderer.invoke('settings:set-search-mode', mode);
+  console.log('Search Mode changed to:', mode);
+  // Add visual feedback or log
+  console.log(`[UI] Syncing search mode ${mode} to Main.`);
+};
+
+searchModeAsk.addEventListener('change', (e) => {
+  if (e.target.checked) handleSearchModeChange('ask');
+});
+
+searchModeLens.addEventListener('change', (e) => {
+  if (e.target.checked) handleSearchModeChange('lens');
+});
+
+searchModeAi.addEventListener('change', (e) => {
+  if (e.target.checked) handleSearchModeChange('ai');
+});
+
 /* 綁定事件監聽器 */
 sendButton.addEventListener('click', () => {
   sendMessage().catch((error) => console.error('Failed to send message', error));
@@ -130,65 +195,20 @@ if (llmProviderAuto && llmProviderGemini && llmProviderOpenAI) {
   llmProviderOpenAI.addEventListener('change', (e) => {
     if (e.target.checked) {
       handleLlmProviderChange('openai');
-
     }
   });
-}
 
-
-// 確保所有 settings-toggle-option 都能正確觸發點擊
-document.querySelectorAll('.settings-toggle-option').forEach((option) => {
-  option.addEventListener('click', (e) => {
-    // 如果點擊的不是 input 本身，確保觸發 input
-    const input = option.querySelector('.toggle-switch__input');
-    if (input && e.target !== input) {
-      input.checked = true;
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-  });
-});
-
-// 搜尋模式選擇
-const searchModeAsk = document.getElementById('search-mode-ask');
-const searchModeLens = document.getElementById('search-mode-lens');
-const searchModeAi = document.getElementById('search-mode-ai');
-
-if (searchModeAsk && searchModeLens && searchModeAi) {
-  // 初始化選中狀態
-  const initSearchMode = () => {
-    if (currentSearchMode === 'lens') {
-      searchModeLens.checked = true;
-    } else if (currentSearchMode === 'ai') {
-      searchModeAi.checked = true;
-    } else {
-      searchModeAsk.checked = true;
-      currentSearchMode = 'ask';
-    }
-    // 同步到 Main process
-    ipcRenderer.invoke('settings:set-search-mode', currentSearchMode);
-  };
-
-  initSearchMode();
-
-  const handleSearchModeChange = (mode) => {
-    currentSearchMode = mode;
-    localStorage.setItem('searchMode', mode);
-    ipcRenderer.invoke('settings:set-search-mode', mode);
-    console.log('Search Mode changed to:', mode);
-    // Add visual feedback or log
-    console.log(`[UI] Syncing search mode ${mode} to Main.`);
-  };
-
-  searchModeAsk.addEventListener('change', (e) => {
-    if (e.target.checked) handleSearchModeChange('ask');
-  });
-
-  searchModeLens.addEventListener('change', (e) => {
-    if (e.target.checked) handleSearchModeChange('lens');
-  });
-
-  searchModeAi.addEventListener('change', (e) => {
-    if (e.target.checked) handleSearchModeChange('ai');
+  // 確保點擊整個 label 區域都能觸發 radio
+  const toggleOptions = document.querySelectorAll('.settings-toggle-option');
+  toggleOptions.forEach((option) => {
+    option.addEventListener('click', (e) => {
+      // 如果點擊的不是 input 本身，確保觸發 input
+      const input = option.querySelector('.toggle-switch__input');
+      if (input && e.target !== input) {
+        input.checked = true;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
   });
 }
 
@@ -226,11 +246,24 @@ if (saveApiKeysButton) {
       saveApiKeysButton.textContent = originalText;
       saveApiKeysButton.style.opacity = '1';
     }, 1500);
+
+    // Sync to main process
+    syncApiKeysToMain();
   });
 }
 
 /* 應用程式初始化 */
 bootstrapHistory().catch((error) => console.error('Failed to initialise history', error));
+
+// Sync keys on startup
+syncApiKeysToMain();
+
+function syncApiKeysToMain() {
+  ipcRenderer.send('settings:update-api-keys', {
+    gemini: currentGeminiApiKey || null,
+    openai: currentOpenAIApiKey || null
+  });
+}
 
 /* 核心功能函式 - 會話與歷史紀錄 */
 function createHistoryItem(session) {
@@ -434,7 +467,7 @@ function appendMessage(text, sender, messageType = 'text', options = {}) {
   messageActions.classList.add('message-actions');
 
   const copyButton = document.createElement('button');
-  copyButton.classList.add('action-button', 'action-button--pill');
+  copyButton.classList.add('action-button');
 
   // [修改點 1] 將圖示改為文字
   copyButton.textContent = '複製';
@@ -473,8 +506,7 @@ function appendMessage(text, sender, messageType = 'text', options = {}) {
     messageBubble.classList.add('message-bubble--download');
 
     const description = document.createElement('div');
-    // [Modified] Use innerHTML to allow colored icons/spans from backend
-    description.innerHTML = text || '輸出已準備好，點擊下載 zip。';
+    description.textContent = text || '輸出已準備好，點擊下載 zip。';
     messageBubble.appendChild(description);
 
     // 創建下載按鈕 (Pill Style)
@@ -565,69 +597,10 @@ ipcRenderer.on('message-from-agent', (_event, response) => {
     return;
   }
 
-  // [Fix: Duplicate Message Bug]
-  // Backend (main.js) already persists the AI message.
-  // We should NOT persist it again here in the frontend.
-  /*
   persistMessage(currentSession.id, 'ai', content, {
     type: messageType,
     download: downloadInfo
   });
-  */
-});
-
-ipcRenderer.on('agent-log', (_event, logMessage) => {
-  if (!thinkingBubbleElement) return;
-
-  // 1. 尋找或建立 Log Container
-  // 由於 appendMessage 返回的是 messageGroup，我們需要在 messageGroup 裡面找
-  // 或者直接把 Log Container 加在 messageGroup 的最後面 (bubble 下方)
-
-  let logDetails = thinkingBubbleElement.querySelector('.log-details');
-  if (!logDetails) {
-    // 建立 Log 區塊結構
-    // <div class="log-container">
-    //   <details class="log-details">
-    //     <summary class="log-summary">查看執行細節 (Process Logs)</summary>
-    //     <div class="log-content"></div>
-    //   </details>
-    // </div>
-
-    const logContainer = document.createElement('div');
-    logContainer.classList.add('log-container');
-
-    logDetails = document.createElement('details');
-    logDetails.classList.add('log-details');
-
-    const summary = document.createElement('summary');
-    summary.classList.add('log-summary');
-    summary.textContent = '查看執行細節 (Process Logs)';
-
-    const contentDiv = document.createElement('div');
-    contentDiv.classList.add('log-content');
-
-    logDetails.appendChild(summary);
-    logDetails.appendChild(contentDiv);
-    logContainer.appendChild(logDetails);
-
-    // 將 Log Container 加到 Message Content 中 (Bubble 下方)
-    const messageContent = thinkingBubbleElement.querySelector('.message-content');
-    if (messageContent) {
-      messageContent.appendChild(logContainer);
-    }
-  }
-
-  // 2. 追加 Log
-  const contentDiv = logDetails.querySelector('.log-content');
-  if (contentDiv) {
-    const entry = document.createElement('div');
-    entry.classList.add('log-entry');
-    entry.textContent = logMessage;
-    contentDiv.appendChild(entry);
-
-    // 自動捲動到底部
-    contentDiv.scrollTop = contentDiv.scrollHeight;
-  }
 });
 
 /* 設定頁面功能 */
@@ -761,4 +734,235 @@ function showGreetingIfEmpty() {
   if (!chatDisplay || chatDisplay.children.length > 0) return;
   const greeting = "您好，我是您的開發助理。請問今天有什麼可以協助您的嗎？";
   appendMessage(greeting, 'ai', 'text');
+}
+
+ipcRenderer.on('agent-log', (_event, logMessage) => {
+  if (!thinkingBubbleElement) return;
+
+  // 1. 尋找或建立 Log Container
+  // 由於 appendMessage 返回的是 messageGroup，我們需要在 messageGroup 裡面找
+  // 或者直接把 Log Container 加在 messageGroup 的最後面 (bubble 下方)
+
+  let logDetails = thinkingBubbleElement.querySelector('.log-details');
+  if (!logDetails) {
+    // 建立 Log 區塊結構
+    // <div class="log-container">
+    //   <details class="log-details">
+    //     <summary class="log-summary">查看執行細節 (Process Logs)</summary>
+    //     <div class="log-content"></div>
+    //   </details>
+    // </div>
+
+    const logContainer = document.createElement('div');
+    logContainer.classList.add('log-container');
+
+    logDetails = document.createElement('details');
+    logDetails.classList.add('log-details');
+
+    const summary = document.createElement('summary');
+    summary.classList.add('log-summary');
+    summary.textContent = '查看執行細節 (Process Logs)';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('log-content');
+
+    logDetails.appendChild(summary);
+    logDetails.appendChild(contentDiv);
+    logContainer.appendChild(logDetails);
+
+    // 將 Log Container 加到 Message Content 中 (Bubble 下方)
+    const messageContent = thinkingBubbleElement.querySelector('.message-content');
+    if (messageContent) {
+      messageContent.appendChild(logContainer);
+    }
+  }
+
+  // 2. 追加 Log（美化版）
+  const contentDiv = logDetails.querySelector('.log-content');
+  if (contentDiv) {
+    // 解析日誌訊息並添加樣式
+    const formattedLog = formatAgentLog(logMessage);
+
+    // 如果返回 null，表示這個日誌不需要顯示
+    if (!formattedLog) return;
+
+    const entry = document.createElement('div');
+    entry.innerHTML = formattedLog.html;
+    entry.className = `log-entry ${formattedLog.className}`;
+
+    contentDiv.appendChild(entry);
+
+    // 自動捲動到底部
+    contentDiv.scrollTop = contentDiv.scrollHeight;
+  }
+});
+
+// 美化 Agent Log 格式 - 簡化版（只顯示主要Agent狀態）
+function formatAgentLog(message) {
+  let className = '';
+  let html = message;
+  let icon = '';
+
+  // 檢測主要 Agent 階段
+  if (message.includes('Architect') && (message.includes('starting') || message.includes('Running') || message.includes('initialized'))) {
+    icon = '📐';
+    className = 'log-entry--architect log-entry--active';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Architect Agent</strong> 執行中...</span>`;
+  }
+  else if (message.includes('Verifier') && (message.includes('starting') || message.includes('Running') || message.includes('test-plan'))) {
+    icon = '✓';
+    className = 'log-entry--verifier log-entry--active';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Verifier Agent</strong> 執行中...</span>`;
+  }
+  else if (message.includes('Tester') && (message.includes('starting') || message.includes('Running') || message.includes('Jest'))) {
+    icon = '🧪';
+    className = 'log-entry--tester log-entry--active';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Tester Agent</strong> 執行中...</span>`;
+  }
+  // Coder Agent 相關
+  else if (message.includes('Phase 0')) {
+    icon = '⚙️';
+    className = 'log-entry--coder log-entry--active';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Coder Agent</strong> 準備配置...</span>`;
+  }
+  else if (message.includes('Phase 1')) {
+    icon = '🔨';
+    className = 'log-entry--coder log-entry--active';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Coder Agent</strong> 生成專案骨架...</span>`;
+  }
+  else if (message.includes('Phase 2')) {
+    icon = '💻';
+    className = 'log-entry--coder log-entry--active';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Coder Agent</strong> 生成檔案內容...</span>`;
+  }
+  else if (message.includes('Phase 3')) {
+    icon = '📦';
+    className = 'log-entry--coder log-entry--active';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Coder Agent</strong> 組裝專案...</span>`;
+  }
+  // 顯示生成進度（Layer）
+  else if (message.includes('Layer') && message.includes('processing')) {
+    const layerMatch = message.match(/Layer (\d+)\/(\d+)/);
+    if (layerMatch) {
+      icon = '⏳';
+      className = 'log-entry--progress';
+      html = `<span class="log-icon">${icon}</span><span class="log-text">生成進度: ${layerMatch[1]}/${layerMatch[2]}</span>`;
+    } else {
+      return null; // 不顯示
+    }
+  }
+  // 完成訊息
+  else if (message.includes('completed') || message.includes('Completed')) {
+    icon = '✅';
+    className = 'log-entry--success';
+    html = `<span class="log-icon">${icon}</span><span class="log-text">生成完成</span>`;
+  }
+  // 其他訊息一律過濾
+  else {
+    return null; // 不顯示細節日誌
+  }
+
+  return { html, className };
+}
+
+function formatAgentLog(message) {
+  let className = '';
+  let html = message;
+  let icon = '';
+
+  //檢測 Phase
+  if (message.includes('Phase 0')) {
+    icon = '⚙️';
+    className = 'log-entry--phase';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Phase 0:</strong> 生成配置檔案</span>`;
+  } else if (message.includes('Phase 1')) {
+    icon = '📐';
+    className = 'log-entry--phase';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Phase 1:</strong> 生成專案骨架</span>`;
+  } else if (message.includes('Phase 2')) {
+    icon = '🔨';
+    className = 'log-entry--phase';
+    html = `<span class="log-text"><strong>Phase 2:</strong> 生成檔案細節</span>`;
+  } else if (message.includes('Phase 3')) {
+    icon = '📦';
+    className = 'log-entry--phase';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Phase 3:</strong> 組裝結果</span>`;
+  }
+  // 檢測 Layer 處理
+  else if (message.includes('Layer') && message.includes('processing')) {
+    icon = '🔄';
+    className = 'log-entry--layer';
+    const layerMatch = message.match(/Layer (\d+)\/(\d+)/);
+    if (layerMatch) {
+      html = `<span class="log-icon">${icon}</span><span class="log-text">處理第 ${layerMatch[1]}/${layerMatch[2]} 層...</span>`;
+    }
+  }
+  // 檢測檔案生成成功
+  else if (message.includes('✅ Generated') || message.includes('Generated ')) {
+    icon = '✅';
+    className = 'log-entry--success';
+    const fileMatch = message.match(/Generated\s+(.+)/);
+    if (fileMatch) {
+      let fileName = fileMatch[1].trim();
+      // 獲取檔案類型圖標
+      let fileIcon = '📄';
+      if (fileName.includes('.html')) fileIcon = '🌐';
+      else if (fileName.includes('.css')) fileIcon = '🎨';
+      else if (fileName.includes('.js')) fileIcon = '⚡';
+      else if (fileName.includes('.json')) fileIcon = '📋';
+      else if (fileName.includes('.py')) fileIcon = '🐍';
+
+      html = `<span class="log-icon">${icon}</span><span class="log-file-icon">${fileIcon}</span><span class="log-text">${fileName}</span>`;
+    }
+  }
+  // 檢測 Agent 類型
+  else if (message.includes('[Generator]')) {
+    icon = '🤖';
+    className = 'log-entry--agent';
+    html = `<span class="log-icon">${icon}</span><span class="log-text">${message.replace('[Generator]', '<strong>Generator:</strong>')}</span>`;
+  }
+  else if (message.includes('[Coordinator]')) {
+    icon = '🎯';
+    className = 'log-entry--coordinator';
+    html = `<span class="log-icon">${icon}</span><span class="log-text">${message.replace('[Coordinator]', '<strong>Coordinator:</strong>')}</span>`;
+  }
+  // 檢測 Architect/Verifier/Tester
+  else if (message.includes('Architect')) {
+    icon = '📐';
+    className = 'log-entry--architect';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Architect Agent:</strong> 正在設計專案架構...</span>`;
+  }
+  else if (message.includes('Verifier') || message.includes('test-plan')) {
+    icon = '✓';
+    className = 'log-entry--verifier';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Verifier Agent:</strong> 生成測試計劃...</span>`;
+  }
+  else if (message.includes('Tester') || message.includes('Test')) {
+    icon = '🧪';
+    className = 'log-entry--tester';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Tester Agent:</strong> 執行測試...</span>`;
+  }
+  // 檢測配置生成
+  else if (message.includes('Config files') || message.includes('package.json')) {
+    icon = '⚙️';
+    className = 'log-entry--config';
+    html = `<span class="log-icon">${icon}</span><span class="log-text">${message}</span>`;
+  }
+  // 檢測 Contracts
+  else if (message.includes('Contracts')) {
+    icon = '📋';
+    className = 'log-entry--contracts';
+    html = `<span class="log-icon">${icon}</span><span class="log-text">${message}</span>`;
+  }
+  // 警告訊息
+  else if (message.includes('⚠️') || message.includes('Warning')) {
+    className = 'log-entry--warning';
+  }
+  //一般訊息
+  else {
+    className = 'log-entry--info';
+    html = `<span class="log-text">${message}</span>`;
+  }
+
+  return { html, className };
 }

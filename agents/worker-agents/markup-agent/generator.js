@@ -9,30 +9,16 @@ const { callCloudAPI } = require('../api-adapter.cjs');
 class MarkupGenerator {
   constructor(config = {}) {
     // API 配置優先順序：1. config 參數 2. CLOUD_API 3. OPENAI_API
-    this.cloudApiEndpoint = config.cloudApiEndpoint ||
-      process.env.CLOUD_API_ENDPOINT ||
-      process.env.OPENAI_BASE_URL;
-    this.cloudApiKey = config.cloudApiKey ||
-      process.env.CLOUD_API_KEY ||
-      process.env.OPENAI_API_KEY;
+    this.cloudApiEndpoint = config.cloudApiEndpoint;
+    this.cloudApiKey = config.cloudApiKey;
     this.useMockApi = !this.cloudApiEndpoint;
-
-    // 🔍 Debug: 記錄配置
-    console.log('[MarkupGenerator] Initialized:', {
-      hasConfigEndpoint: !!config.cloudApiEndpoint,
-      hasConfigKey: !!config.cloudApiKey,
-      hasEnvCloudEndpoint: !!process.env.CLOUD_API_ENDPOINT,
-      hasEnvOpenaiEndpoint: !!process.env.OPENAI_BASE_URL,
-      finalEndpoint: this.cloudApiEndpoint ? this.cloudApiEndpoint.substring(0, 50) + '...' : 'MISSING',
-      willUseMock: this.useMockApi
-    });
   }
 
   async generate({ skeleton, fileSpec, context }) {
     console.log(`[Generator] Processing ${fileSpec.path}`);
 
-    // 優先級 1: 使用 template（Architect 提供的完整代碼）
-    if (fileSpec.template && fileSpec.template.trim()) {
+    // 優先級 1: 使用 template（Architect 明確指定的內容）
+    if (typeof fileSpec.template === 'string' && fileSpec.template.trim()) {
       console.log(`[Generator] ✅ Using template (${fileSpec.template.length} chars)`);
       return {
         content: fileSpec.template,
@@ -41,7 +27,7 @@ class MarkupGenerator {
       };
     }
 
-    // 優先級 2: 使用 contracts 結構（example2 格式）
+    // 優先級 2: 使用 contracts 結構（動態生成）
     const hasContracts = context.contracts && (
       (context.contracts.dom && context.contracts.dom.length > 0) ||
       (context.contracts.api && context.contracts.api.length > 0)
@@ -58,7 +44,7 @@ class MarkupGenerator {
       }
     }
 
-    // 優先級 3: AI 生成（無 contracts 也無 template）
+    // 優先級 3: AI 生成（無 template 也無 contracts）
     console.log(`[Generator] ⚠ No contracts or template - using AI generation`);
     console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
 
@@ -74,14 +60,47 @@ class MarkupGenerator {
    */
   async generateWithCloudAPI({ skeleton, fileSpec, context }) {
     const prompt = this.buildPrompt({ skeleton, fileSpec, context });
+    const filePath = fileSpec.path || '';
+    const ext = path.extname(filePath).toLowerCase();
+
+    // 根據文件類型選擇 system prompt
+    let systemPrompt;
+    if (ext === '.json') {
+      systemPrompt = `You are an expert at generating JSON files.
+
+CRITICAL RULES:
+1. Output ONLY valid JSON - no markdown, no \`\`\`json blocks, no comments
+2. JSON must be parseable by JSON.parse()
+3. Use proper escaping for special characters
+4. For empty arrays, output: []
+5. For empty objects, output: {}
+
+FORBIDDEN:
+- \`\`\`json or \`\`\` markers
+- // comments (JSON doesn't support comments)
+- Trailing commas`;
+    } else {
+      systemPrompt = `You are an expert HTML/Markup developer. Generate clean, semantic HTML.
+
+CRITICAL RULES:
+1. Output ONLY raw HTML/markup code - no markdown blocks
+2. Use consistent element IDs that match the contracts/requirements
+3. For Electron apps: load script.js NOT app.js, do NOT load config.js in HTML
+4. Include proper meta tags and semantic structure
+
+FORBIDDEN:
+- \`\`\`html or \`\`\` markers
+- Loading non-existent script files
+- Inconsistent element IDs`;
+    }
 
     try {
       const { content, tokensUsed } = await callCloudAPI({
         endpoint: this.cloudApiEndpoint,
         apiKey: this.cloudApiKey,
-        systemPrompt: 'You are an expert HTML developer. Generate clean, semantic HTML based on requirements. Output only the code.',
+        systemPrompt: systemPrompt,
         userPrompt: prompt,
-        maxTokens: 80000  // Increased to 80k as requested
+        maxTokens: 16348  // Increased to 16k as requested
       });
 
       // 檢查 API 是否真的返回了內容
@@ -90,10 +109,14 @@ class MarkupGenerator {
         throw new Error('API returned empty content (possibly blocked by safety filters)');
       }
 
+      // 清理 markdown 程式碼區塊標記（包括 JSON）
       const cleanContent = content
+        .replace(/^```json\n/, '')
         .replace(/^```html\n/, '')
+        .replace(/^```xml\n/, '')
         .replace(/^```\n/, '')
         .replace(/\n```$/, '')
+        .replace(/```$/m, '')
         .trim();
 
       // 二次檢查清理後的內容
@@ -150,6 +173,126 @@ class MarkupGenerator {
 
     let prompt = `Generate HTML for: ${filePath}\n\n`;
 
+    // 🚨 CONTRACTS FIRST - 最優先顯示，確保 AI 必定看到
+    if (contracts) {
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      prompt += `🚨 CRITICAL: CONTRACTS (MUST FOLLOW EXACTLY) 🚨\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+      // ✨ DOM contracts - 最重要！定義必須存在的 HTML 元素
+      if (contracts.dom && contracts.dom.length > 0) {
+        // For HTML files, show ALL DOM elements (HTML produces them, JavaScript consumes them)
+        const relevantDom = contracts.dom;
+
+        if (relevantDom.length > 0) {
+          prompt += `⚠️ DOM STRUCTURE REQUIREMENTS (MANDATORY) ⚠️\n`;
+          prompt += `The following elements will be queried by JavaScript.\n`;
+          prompt += `Missing ANY of these will cause JavaScript errors!\n\n`;
+
+          relevantDom.forEach((dom, idx) => {
+            prompt += `DOM Contract #${idx + 1}: ${dom.description || dom.purpose}\n`;
+
+            // Support simple format: { id, type, purpose, accessedBy }
+            if (dom.id) {
+              prompt += `  ✓ Element ID: #${dom.id}\n`;
+              prompt += `  ✓ Element Type: <${dom.type}>\n`;
+              if (dom.accessedBy) {
+                prompt += `  ✓ Accessed by: ${dom.accessedBy.join(', ')}\n`;
+              }
+            }
+
+            // Support complex format: { templateId, containerId, requiredElements }
+            if (dom.templateId) {
+              prompt += `  ✓ Template ID: #${dom.templateId}\n`;
+            }
+            if (dom.containerId) {
+              prompt += `  ✓ Container ID: #${dom.containerId}\n`;
+            }
+
+            if (dom.requiredElements && dom.requiredElements.length > 0) {
+              prompt += `  Required Elements:\n`;
+              dom.requiredElements.forEach(elem => {
+                prompt += `    • ${elem.selector} <${elem.element}>\n`;
+                prompt += `      Purpose: ${elem.purpose}\n`;
+                if (elem.attributes) {
+                  prompt += `      Attributes: ${JSON.stringify(elem.attributes)}\n`;
+                }
+                if (elem.consumers) {
+                  prompt += `      Used by: ${elem.consumers.join(', ')}\n`;
+                }
+              });
+            }
+            prompt += `\n`;
+          });
+
+          prompt += `❌ YOU WILL FAIL IF YOU:\n`;
+          prompt += `  - Use different IDs than specified above\n`;
+          prompt += `  - Use different element types\n`;
+          prompt += `  - Omit any required element\n\n`;
+
+          prompt += `✅ YOU MUST:\n`;
+          prompt += `  1. Include ALL elements with EXACT IDs\n`;
+          prompt += `  2. Use specified HTML element types\n`;
+          prompt += `  3. Add all required attributes\n`;
+          prompt += `  4. Place elements logically in structure\n\n`;
+        }
+      }
+
+      // API contracts
+      if (contracts.api && contracts.api.length > 0) {
+        // 🔥 修復：寬鬆過濾，如果 consumers 為空也顯示
+        const relevantApis = contracts.api.filter(api => {
+          const consumers = api.consumers || [];
+          return consumers.length === 0 || consumers.some(c => c.includes(filePath.replace('.html', '.js')));
+        });
+
+        if (relevantApis.length > 0) {
+          prompt += `📡 API ENDPOINTS (Backend Contracts):\n\n`;
+          relevantApis.forEach(api => {
+            prompt += `  ${api.endpoint} - ${api.purpose || api.description}\n`;
+
+            // 顯示 request schema
+            if (api.requestSchema && api.requestSchema.properties) {
+              const params = Object.entries(api.requestSchema.properties).map(([key, val]) => {
+                const required = api.requestSchema.required?.includes(key) ? '(required)' : '(optional)';
+                return `    - ${key}: ${val.type} ${required}`;
+              }).join('\n');
+              prompt += `  Request:\n${params}\n`;
+            }
+
+            // 顯示 response schema
+            if (api.responseSchema) {
+              let responseStr = '';
+              if (api.responseSchema.type === 'array') {
+                const itemProps = api.responseSchema.items?.properties;
+                if (itemProps) {
+                  responseStr = Object.keys(itemProps).map(key =>
+                    `    - ${key}: ${itemProps[key].type}`
+                  ).join('\n');
+                  prompt += `  Response: Array of objects with:\n${responseStr}\n`;
+                } else {
+                  prompt += `  Response: Array\n`;
+                }
+              } else if (api.responseSchema.type === 'object') {
+                responseStr = Object.entries(api.responseSchema.properties || {}).map(([key, val]) =>
+                  `    - ${key}: ${val.type}`
+                ).join('\n');
+                prompt += `  Response: Object with:\n${responseStr}\n`;
+              } else {
+                prompt += `  Response: ${api.responseSchema.type}\n`;
+              }
+            }
+            prompt += `\n`;
+          });
+          prompt += `Ensure HTML forms/inputs match the request schema structure.\n\n`;
+        }
+      }
+
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      prompt += `END OF CONTRACTS - FOLLOW THEM EXACTLY!\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    }
+
     if (description) {
       prompt += `Description: ${description}\n\n`;
     }
@@ -181,8 +324,8 @@ class MarkupGenerator {
       prompt += `Additional Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
     }
 
-    // ← 新增：如果有 contracts，顯示相關資訊
-    if (contracts) {
+    // ← 舊的 contracts 區塊已移到開頭，這裡不再重複
+    if (contracts && false) {
       prompt += `=== CONTRACTS (MUST FOLLOW EXACTLY) ===\n`;
 
       // ✨ DOM contracts - 最重要！定義必須存在的 HTML 元素

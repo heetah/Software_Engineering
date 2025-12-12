@@ -18,9 +18,7 @@ const LOG_LEVELS = {
   DEBUG: 3
 };
 
-const currentLogLevel = process.env.LOG_LEVEL 
-  ? LOG_LEVELS[process.env.LOG_LEVEL.toUpperCase()] || LOG_LEVELS.INFO
-  : LOG_LEVELS.INFO;
+const currentLogLevel = LOG_LEVELS.INFO;
 
 /**
  * Format log entry with timestamp and request ID
@@ -45,7 +43,7 @@ function writeLog(level, message, requestId = null, meta = {}) {
   if (levelValue > currentLogLevel) return;
 
   const logEntry = formatLogEntry(level, message, requestId, meta);
-  
+
   // Console output with colors
   const colorMap = {
     ERROR: '\x1b[31m', // Red
@@ -71,7 +69,7 @@ const logger = {
   warn: (message, requestId = null, meta = {}) => writeLog('WARN', message, requestId, meta),
   info: (message, requestId = null, meta = {}) => writeLog('INFO', message, requestId, meta),
   debug: (message, requestId = null, meta = {}) => writeLog('DEBUG', message, requestId, meta),
-  
+
   /**
    * Generate a unique request ID
    */
