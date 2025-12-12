@@ -35,8 +35,14 @@ dotenv.config();
 let db;
 
 // --- AA: Vision API Setup ---
-const GOOGLE_API_KEY =
-  process.env.GOOGLE_API_KEY || "AIzaSyBnbtdTqWT80E7dyS3MUr0LTZ68lxjMWAc";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+
+// Global API Key Cache (from frontend)
+let globalApiKeys = {
+  gemini: null,
+  openai: null
+};
 // Disable AutoResizeOutputDevice
 app.commandLine.appendSwitch("disable-features", "AutoResizeOutputDevice");
 
@@ -44,17 +50,6 @@ app.commandLine.appendSwitch("disable-features", "AutoResizeOutputDevice");
 let mainWindow = null;
 let captureWindow = null;
 let isCapturing = false;
-let currentSearchMode = "ask"; // 'ask', 'lens', 'ai'
-
-// --- IPC Handlers for Search Mode ---
-ipcMain.handle("settings:set-search-mode", (event, mode) => {
-  currentSearchMode = mode;
-  console.log("Search mode updated to:", mode);
-});
-
-ipcMain.handle("settings:get-search-mode", () => {
-  return currentSearchMode;
-});
 
 async function zipWorkspaceDirectory(directoryPath) {
   const resolvedDir = path.resolve(directoryPath);
@@ -121,7 +116,7 @@ async function normalizeSessions() {
     }
     await run("COMMIT");
   } catch (error) {
-    await run("ROLLBACK").catch(() => {});
+    await run("ROLLBACK").catch(() => { });
     throw error;
   }
 
@@ -311,34 +306,43 @@ function registerHistoryHandlers() {
   });
 
   // 下載 ZIP 檔案的處理器
-  ipcMain.handle(
-    "download:save-zip",
-    async (event, { zipPath, defaultName }) => {
-      try {
-        const window = BrowserWindow.fromWebContents(event.sender);
-        const { canceled, filePath } = await dialog.showSaveDialog(window, {
-          title: "儲存專案壓縮檔",
-          defaultPath: defaultName || "project.zip",
-          filters: [{ name: "ZIP Files", extensions: ["zip"] }],
-        });
+  ipcMain.handle("download:save-zip", async (event, { zipPath, defaultName }) => {
+    try {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      const { canceled, filePath } = await dialog.showSaveDialog(window, {
+        title: "儲存專案壓縮檔",
+        defaultPath: defaultName || "project.zip",
+        filters: [{ name: "ZIP Files", extensions: ["zip"] }],
+      });
 
-        if (canceled || !filePath) {
-          return { ok: false, cancelled: true };
-        }
-
-        fs.copyFileSync(zipPath, filePath);
-        return { ok: true, filePath };
-      } catch (error) {
-        console.error("Failed to save zip file:", error);
-        return { ok: false, error: error.message };
+      if (canceled || !filePath) {
+        return { ok: false, cancelled: true };
       }
+
+      fs.copyFileSync(zipPath, filePath);
+      return { ok: true, filePath };
+    } catch (error) {
+      console.error("Failed to save zip file:", error);
+      return { ok: false, error: error.message };
     }
-  );
+  });
 }
 
 function registerSettingsHandlers() {
   ipcMain.handle("settings:get-app-data-path", () => {
     return app.getPath("userData");
+  });
+
+  // Simple in-memory storage for search mode
+  let searchMode = 'standard';
+
+  ipcMain.handle("settings:get-search-mode", () => {
+    return searchMode;
+  });
+
+  ipcMain.handle("settings:set-search-mode", (event, mode) => {
+    searchMode = mode;
+    return true;
   });
 }
 
@@ -379,6 +383,57 @@ function registerCoordinatorBridge() {
         throw new Error(`Initialization failed: ${initError.message}`);
       }
 
+      dotenv.config();
+
+      // 🔧 攔截 console.log 並轉發到前端「查看執行細節」
+      const originalLog = console.log;
+      const originalWarn = console.warn;
+      const originalInfo = console.info;
+
+      const shouldForwardLog = (message) => {
+        if (typeof message !== 'string') return false;
+
+        // 轉發關鍵日誌（Phase, 生成進度, Layer 等）
+        return (
+          message.includes('Phase') ||
+          message.includes('Generated') ||
+          message.includes('✅') ||
+          message.includes('Layer') ||
+          message.includes('Generating') ||
+          message.includes('Starting') ||
+          message.includes('Completed') ||
+          message.includes('Processing') ||
+          message.includes('[Generator]') ||
+          message.includes('[Coordinator]') ||
+          message.includes('Config files') ||
+          message.includes('test-plan')
+        );
+      };
+
+      console.log = (...args) => {
+        const message = args.join(' ');
+        if (shouldForwardLog(message) && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('agent-log', message);
+        }
+        originalLog.apply(console, args);
+      };
+
+      console.warn = (...args) => {
+        const message = args.join(' ');
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('agent-log', `⚠️ ${message}`);
+        }
+        originalWarn.apply(console, args);
+      };
+
+      console.info = (...args) => {
+        const message = args.join(' ');
+        if (shouldForwardLog(message) && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('agent-log', `ℹ️ ${message}`);
+        }
+        originalInfo.apply(console, args);
+      };
+
       let plan;
       try {
         plan = await coordinatorModule.runWithInstructionService(
@@ -387,14 +442,14 @@ function registerCoordinatorBridge() {
           {
             llmProvider: llmProvider || "auto",
             apiKeys: apiKeys || {},
-            onLog: (message) => {
-              if (event.sender && !event.sender.isDestroyed()) {
-                event.sender.send("agent-log", message);
-              }
-            }
           }
         );
       } catch (processError) {
+        // 恢復原始 console 方法
+        console.log = originalLog;
+        console.warn = originalWarn;
+        console.info = originalInfo;
+
         console.error(
           "[Coordinator Bridge] Coordinator processing failed:",
           processError
@@ -459,6 +514,7 @@ function registerCoordinatorBridge() {
       } else {
         responseText = "Processing completed, but no plan information returned";
       }
+
       event.sender.send("message-from-agent", {
         type: downloadInfo ? "download" : "text",
         content: responseText,
@@ -477,18 +533,22 @@ function registerCoordinatorBridge() {
 
         await run(
           "INSERT INTO messages (session_id, role, payload_json) VALUES (?, ?, ?)",
-          [session.id, "ai", JSON.stringify(payloadToPersist)]
+          [
+            session.id,
+            "ai",
+            JSON.stringify(payloadToPersist),
+          ]
         ).catch((err) => {
           console.error("Failed to write AI response to history:", err);
         });
       }
       console.log(
         `[Coordinator Bridge] Processing completed, Session ID: ${plan?.id || "N/A"
-        } `
+        }`
       );
     } catch (error) {
       console.error("[Coordinator Bridge] Error processing message:", error);
-      const errorMessage = `Processing failed: ${error.message} \n\nPlease check console for detailed error information.`;
+      const errorMessage = `Processing failed: ${error.message}\n\nPlease check console for detailed error information.`;
       event.sender.send("message-from-agent", {
         type: "error",
         content: errorMessage,
@@ -521,9 +581,9 @@ function registerVisionHandlers() {
         .executeJavaScript(
           `
         if (typeof resetCanvas === 'function') {
-              resetCanvas();
-            }
-          `
+          resetCanvas();
+        }
+      `
         )
         .catch(() => {
           // 忽略錯誤，視窗可能還沒載入完成
@@ -543,7 +603,7 @@ function registerVisionHandlers() {
       }
 
       const timestamp = Date.now();
-      const imagePath = path.join(tempPath, `google - search - ${timestamp}.png`);
+      const imagePath = path.join(tempPath, `google-search-${timestamp}.png`);
       const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
       fs.writeFileSync(imagePath, base64Data, "base64");
 
@@ -553,162 +613,162 @@ function registerVisionHandlers() {
 
       // 建立一個使用正確 Google Lens 端點的 HTML 頁面
       const htmlContent = `
-            < !DOCTYPE html >
-              <html>
-                <head>
-                  <meta charset="UTF-8">
-                    <title>Google Lens 搜圖</title>
-                    <style>
-                      body {
-                        font - family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                      margin: 0;
-                      padding: 20px;
-                      display: flex;
-                      justify-content: center;
-                      align-items: center;
-                      min-height: 100vh;
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Google Lens 搜圖</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
     }
-                      .container {
-                        background: white;
-                      border-radius: 16px;
-                      padding: 40px;
-                      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-                      max-width: 600px;
-                      text-align: center;
+    .container {
+      background: white;
+      border-radius: 16px;
+      padding: 40px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+      max-width: 600px;
+      text-align: center;
     }
-                      h1 {
-                        color: #333;
-                      margin-bottom: 20px;
-                      font-size: 28px;
+    h1 {
+      color: #333;
+      margin-bottom: 20px;
+      font-size: 28px;
     }
-                      .status {
-                        color: #666;
-                      font-size: 16px;
-                      margin: 20px 0;
-                      line-height: 1.6;
+    .status {
+      color: #666;
+      font-size: 16px;
+      margin: 20px 0;
+      line-height: 1.6;
     }
-                      .spinner {
-                        border: 4px solid #f3f3f3;
-                      border-top: 4px solid #4285f4;
-                      border-radius: 50%;
-                      width: 50px;
-                      height: 50px;
-                      animation: spin 1s linear infinite;
-                      margin: 30px auto;
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #4285f4;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin: 30px auto;
     }
-                      @keyframes spin {
-                        0 % { transform: rotate(0deg); }
-      100% {transform: rotate(360deg); }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
     }
-                      img {
-                        max - width: 100%;
-                      max-height: 300px;
-                      border-radius: 8px;
-                      margin: 20px 0;
-                      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    img {
+      max-width: 100%;
+      max-height: 300px;
+      border-radius: 8px;
+      margin: 20px 0;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }
-                      .manual-link {
-                        display: inline-block;
-                      margin-top: 20px;
-                      padding: 12px 24px;
-                      background: #4285f4;
-                      color: white;
-                      text-decoration: none;
-                      border-radius: 6px;
-                      font-size: 14px;
-                      transition: background 0.3s;
+    .manual-link {
+      display: inline-block;
+      margin-top: 20px;
+      padding: 12px 24px;
+      background: #4285f4;
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+      font-size: 14px;
+      transition: background 0.3s;
     }
-                      .manual-link:hover {
-                        background: #357ae8;
+    .manual-link:hover {
+      background: #357ae8;
     }
-                      #uploadForm {
-                        display: none;
+    #uploadForm {
+      display: none;
     }
-                    </style>
-                </head>
-                <body>
-                  <div class="container">
-                    <h1>🔍 Google Lens 搜圖</h1>
-                    <img src="data:image/png;base64,${base64Data}" alt="Captured Image" id="previewImage">
-                      <div class="spinner"></div>
-                      <div class="status" id="status">正在準備上傳到 Google Lens...</div>
-
-                      <!-- 表單用於上傳到 Google Lens -->
-                      <form id="uploadForm" action="https://lens.google.com/upload" method="POST" enctype="multipart/form-data" target="_blank">
-                        <input type="file" name="encoded_image" id="fileInput">
-                      </form>
-
-                      <a href="https://www.google.com/?olud" class="manual-link" id="manualLink" style="display:none;">手動開啟 Google Lens</a>
-                  </div>
-
-                  <script>
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 Google Lens 搜圖</h1>
+    <img src="data:image/png;base64,${base64Data}" alt="Captured Image" id="previewImage">
+    <div class="spinner"></div>
+    <div class="status" id="status">正在準備上傳到 Google Lens...</div>
+    
+    <!-- 表單用於上傳到 Google Lens -->
+    <form id="uploadForm" action="https://lens.google.com/upload" method="POST" enctype="multipart/form-data" target="_blank">
+      <input type="file" name="encoded_image" id="fileInput">
+    </form>
+    
+    <a href="https://www.google.com/?olud" class="manual-link" id="manualLink" style="display:none;">手動開啟 Google Lens</a>
+  </div>
+  
+  <script>
     // 將 base64 轉換為 Blob
-                    function base64ToBlob(base64, contentType = 'image/png') {
+    function base64ToBlob(base64, contentType = 'image/png') {
       const byteCharacters = atob(base64);
-                    const byteArrays = [];
-
-                    for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+      const byteArrays = [];
+      
+      for (let offset = 0; offset < byteCharacters.length; offset += 512) {
         const slice = byteCharacters.slice(offset, offset + 512);
-                    const byteNumbers = new Array(slice.length);
-                    for (let i = 0; i < slice.length; i++) {
-                      byteNumbers[i] = slice.charCodeAt(i);
+        const byteNumbers = new Array(slice.length);
+        for (let i = 0; i < slice.length; i++) {
+          byteNumbers[i] = slice.charCodeAt(i);
         }
-                    const byteArray = new Uint8Array(byteNumbers);
-                    byteArrays.push(byteArray);
+        const byteArray = new Uint8Array(byteNumbers);
+        byteArrays.push(byteArray);
       }
-
-                    return new Blob(byteArrays, {type: contentType });
+      
+      return new Blob(byteArrays, { type: contentType });
     }
-
-                    // 自動上傳到 Google Lens
-                    async function uploadToGoogleLens() {
+    
+    // 自動上傳到 Google Lens
+    async function uploadToGoogleLens() {
       try {
-                      document.getElementById('status').textContent = '正在上傳圖片到 Google Lens...';
-
-                    const base64Data = '${base64Data}';
-                    const blob = base64ToBlob(base64Data);
-
-                    // 使用表單提交
-                    const form = document.getElementById('uploadForm');
-                    const fileInput = document.getElementById('fileInput');
-
-                    // 將 blob 轉換為 File 物件
-                    const file = new File([blob], 'screenshot.png', {type: 'image/png' });
-                    const dataTransfer = new DataTransfer();
-                    dataTransfer.items.add(file);
-                    fileInput.files = dataTransfer.files;
-
-                    document.getElementById('status').textContent = '正在開啟 Google Lens...';
-
+        document.getElementById('status').textContent = '正在上傳圖片到 Google Lens...';
+        
+        const base64Data = '${base64Data}';
+        const blob = base64ToBlob(base64Data);
+        
+        // 使用表單提交
+        const form = document.getElementById('uploadForm');
+        const fileInput = document.getElementById('fileInput');
+        
+        // 將 blob 轉換為 File 物件
+        const file = new File([blob], 'screenshot.png', { type: 'image/png' });
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        fileInput.files = dataTransfer.files;
+        
+        document.getElementById('status').textContent = '正在開啟 Google Lens...';
+        
         // 提交表單到新視窗
         setTimeout(() => {
-                      form.submit();
-                    document.getElementById('status').innerHTML = '✅ Google Lens 已在新視窗中開啟！<br><br>搜尋結果將顯示在瀏覽器中。';
-                      document.querySelector('.spinner').style.display = 'none';
-                      document.getElementById('manualLink').style.display = 'inline-block';
+          form.submit();
+          document.getElementById('status').innerHTML = '✅ Google Lens 已在新視窗中開啟！<br><br>搜尋結果將顯示在瀏覽器中。';
+          document.querySelector('.spinner').style.display = 'none';
+          document.getElementById('manualLink').style.display = 'inline-block';
         }, 800);
         
       } catch (error) {
-                        console.error('Upload error:', error);
-                      document.getElementById('status').innerHTML = '正在開啟 Google Lens...<br><br>請稍候片刻。';
-                        document.querySelector('.spinner').style.display = 'none';
+        console.error('Upload error:', error);
+        document.getElementById('status').innerHTML = '正在開啟 Google Lens...<br><br>請稍候片刻。';
+        document.querySelector('.spinner').style.display = 'none';
         
         setTimeout(() => {
-                          window.open('https://www.google.com/?olud', '_blank');
-                        document.getElementById('manualLink').style.display = 'inline-block';
+          window.open('https://www.google.com/?olud', '_blank');
+          document.getElementById('manualLink').style.display = 'inline-block';
         }, 500);
       }
     }
-
+    
     // 頁面載入後自動執行
     window.onload = () => {
-                          setTimeout(uploadToGoogleLens, 800);
+      setTimeout(uploadToGoogleLens, 800);
     };
-                      </script>
-                      </body>
-                    </html>
-                      `;
+  </script>
+</body>
+</html>
+      `;
 
       const htmlPath = path.join(tempPath, `google-search-${timestamp}.html`);
       fs.writeFileSync(htmlPath, htmlContent, "utf8");
@@ -842,194 +902,193 @@ function registerVisionHandlers() {
       );
       console.log("Screenshot saved:", imagePath);
 
-      try {
-        console.log("Calling Vision API...");
-        const content = imageData.replace(/^data:image\/\w+;base64,/, "");
-        const url = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_API_KEY}`;
-        const body = {
-          requests: [
-            {
-              image: { content },
-              features: [
-                { type: "WEB_DETECTION", maxResults: 10 },
-                { type: "TEXT_DETECTION" },
-                { type: "LABEL_DETECTION", maxResults: 10 },
-                { type: "IMAGE_PROPERTIES" },
-              ],
-            },
-          ],
-        };
+      console.log("Calling Vision API...");
 
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
+      // Determine API Key: Frontend > Environment
+      const visionApiKey = globalApiKeys.gemini || GOOGLE_API_KEY;
+      if (!visionApiKey) {
+        throw new Error("Missing Google API Key for Vision API");
+      }
 
-        if (!res.ok) {
-          let textBody = "";
-          try {
-            textBody = await res.text();
-          } catch (e) {
-            console.error("Failed to read Vision API error body:", e);
-          }
-          console.error(
-            "Vision API returned non-OK status:",
-            res.status,
-            res.statusText,
-            textBody
-          );
-          throw new Error(
-            `Vision API error: ${res.status} ${res.statusText} - ${textBody}`
-          );
-        }
+      const content = imageData.replace(/^data:image\/\w+;base64,/, "");
+      const url = `https://vision.googleapis.com/v1/images:annotate?key=${visionApiKey}`;
+      const body = {
+        requests: [
+          {
+            image: { content },
+            features: [
+              { type: "WEB_DETECTION", maxResults: 10 },
+              { type: "TEXT_DETECTION" },
+              { type: "LABEL_DETECTION", maxResults: 10 },
+              { type: "IMAGE_PROPERTIES" },
+            ],
+          },
+        ],
+      };
 
-        const json = await res.json();
-        console.log("Vision API response:", json);
-        const resp = json.responses && json.responses[0];
-        if (!resp) {
-          throw new Error("Empty response from Vision API");
-        }
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-        const web = resp.webDetection || {};
-        const guesses = (web.bestGuessLabels || [])
-          .map((g) => g.label)
-          .join("; ");
-        const textAnnotations = resp.textAnnotations || [];
-        const detectedText = textAnnotations[0]?.description || "";
-        const labels = (resp.labelAnnotations || [])
-          .map(
-            (label) =>
-              `${label.description} (${Math.round(label.score * 100)}%)`
-          )
-          .join("; ");
-        const imageInfo = {
-          text: detectedText,
-          labels:
-            resp.labelAnnotations?.map((l) => ({
-              name: l.description,
-              confidence: Math.round(l.score * 100),
-            })) || [],
-          mainColors: (
-            resp.imagePropertiesAnnotation?.dominantColors?.colors || []
-          )
-            .slice(0, 3)
-            .map((c) => ({
-              rgb: `RGB(${c.color.red},${c.color.green},${c.color.blue})`,
-              percentage: Math.round(c.score * 100),
-            })),
-          webEntities: (web.webEntities || []).slice(0, 5).map((e) => ({
-            name: e.description,
-            confidence: Math.round((e.score || 0) * 100),
-          })),
-        };
-
-        const description = [
-          "我在這張圖片中看到：",
-          "",
-          imageInfo.text
-            ? "1. 文字內容：\n" +
-              imageInfo.text
-                .split("\\n")
-                .map((t) => `   ${t}`)
-                .join("\\n")
-            : null,
-          "",
-          imageInfo.labels.length > 0
-            ? "2. 主要內容：\n" +
-              imageInfo.labels
-                .map((l) => `   • ${l.name} (可信度 ${l.confidence}%)`)
-                .join("\\n")
-            : null,
-          "",
-          imageInfo.mainColors.length > 0
-            ? "3. 主要顏色：\n" +
-              imageInfo.mainColors
-                .map((c) => `   • ${c.rgb} (佔比 ${c.percentage}%)`)
-                .join("\\n")
-            : null,
-          "",
-          imageInfo.webEntities.length > 0
-            ? "4. 相關概念：\n" +
-              imageInfo.webEntities
-                .map((e) => `   • ${e.name} (相關度 ${e.confidence}%)`)
-                .join("\\n")
-            : null,
-          "",
-          "這看起來是一個" +
-            (guesses || "螢幕截圖") +
-            "，" +
-            "其中包含了" +
-            (imageInfo.labels
-              .slice(0, 3)
-              .map((l) => l.name)
-              .join("、") || "各種元素") +
-            "。",
-        ]
-          .filter(Boolean)
-          .join("\\n");
-
-        const summary = description;
+      if (!res.ok) {
+        let textBody = "";
         try {
-          const { askGemini } = await import("./services/gemini.js");
-          const geminiPrompt = `請用繁體中文分析以下圖片資訊，並提供簡潔、易懂的總結和建議。\n\n圖片資訊：\n${summary}\n\n請提供：\n1. 這張圖片的主要內容摘要\n2. 重要的觀察或見解\n3. 如果有建議或延伸思考，請一併說明\n\n請以親切、專業的語氣回答。`;
-          console.log("Calling Gemini for summary...");
-          const geminiResponse = await askGemini(geminiPrompt);
-          if (geminiResponse && geminiResponse.ok) {
-            event.reply("update-vision-result", geminiResponse.response);
-          } else {
-            console.warn(
-              "Gemini did not return ok, falling back to local summary",
-              geminiResponse
-            );
-            event.reply(
-              "update-vision-result",
-              summary + "\n\n(注意：Gemini 分析功能暫時無法使用)"
-            );
-          }
-        } catch (gemErr) {
-          console.error("Error calling Gemini:", gemErr);
+          textBody = await res.text();
+        } catch (e) {
+          console.error("Failed to read Vision API error body:", e);
+        }
+        console.error(
+          "Vision API returned non-OK status:",
+          res.status,
+          res.statusText,
+          textBody
+        );
+        throw new Error(
+          `Vision API error: ${res.status} ${res.statusText} - ${textBody}`
+        );
+      }
+
+      const json = await res.json();
+      console.log("Vision API response:", json);
+      const resp = json.responses && json.responses[0];
+      if (!resp) {
+        throw new Error("Empty response from Vision API");
+      }
+
+      const web = resp.webDetection || {};
+      const guesses = (web.bestGuessLabels || [])
+        .map((g) => g.label)
+        .join("; ");
+      const textAnnotations = resp.textAnnotations || [];
+      const detectedText = textAnnotations[0]?.description || "";
+      const labels = (resp.labelAnnotations || [])
+        .map(
+          (label) =>
+            `${label.description} (${Math.round(label.score * 100)}%)`
+        )
+        .join("; ");
+      const imageInfo = {
+        text: detectedText,
+        labels:
+          resp.labelAnnotations?.map((l) => ({
+            name: l.description,
+            confidence: Math.round(l.score * 100),
+          })) || [],
+        mainColors: (
+          resp.imagePropertiesAnnotation?.dominantColors?.colors || []
+        )
+          .slice(0, 3)
+          .map((c) => ({
+            rgb: `RGB(${c.color.red},${c.color.green},${c.color.blue})`,
+            percentage: Math.round(c.score * 100),
+          })),
+        webEntities: (web.webEntities || []).slice(0, 5).map((e) => ({
+          name: e.description,
+          confidence: Math.round((e.score || 0) * 100),
+        })),
+      };
+
+      const description = [
+        "我在這張圖片中看到：",
+        "",
+        imageInfo.text
+          ? "1. 文字內容：\n" +
+          imageInfo.text
+            .split("\\n")
+            .map((t) => `   ${t}`)
+            .join("\\n")
+          : null,
+        "",
+        imageInfo.labels.length > 0
+          ? "2. 主要內容：\n" +
+          imageInfo.labels
+            .map((l) => `   • ${l.name} (可信度 ${l.confidence}%)`)
+            .join("\\n")
+          : null,
+        "",
+        imageInfo.mainColors.length > 0
+          ? "3. 主要顏色：\n" +
+          imageInfo.mainColors
+            .map((c) => `   • ${c.rgb} (佔比 ${c.percentage}%)`)
+            .join("\\n")
+          : null,
+        "",
+        imageInfo.webEntities.length > 0
+          ? "4. 相關概念：\n" +
+          imageInfo.webEntities
+            .map((e) => `   • ${e.name} (相關度 ${e.confidence}%)`)
+            .join("\\n")
+          : null,
+        "",
+        "這看起來是一個" +
+        (guesses || "螢幕截圖") +
+        "，" +
+        "其中包含了" +
+        (imageInfo.labels
+          .slice(0, 3)
+          .map((l) => l.name)
+          .join("、") || "各種元素") +
+        "。",
+      ]
+        .filter(Boolean)
+        .join("\\n");
+
+      const summary = description;
+      try {
+        const { askGemini } = await import("./services/gemini.js");
+        const geminiPrompt = `請用繁體中文分析以下圖片資訊，並提供簡潔、易懂的總結和建議。\n\n圖片資訊：\n${summary}\n\n請提供：\n1. 這張圖片的主要內容摘要\n2. 重要的觀察或見解\n3. 如果有建議或延伸思考，請一併說明\n\n請以親切、專業的語氣回答。`;
+        console.log("Calling Gemini for summary...");
+        const geminiResponse = await askGemini(geminiPrompt, visionApiKey);
+        if (geminiResponse && geminiResponse.ok) {
+          event.reply("update-vision-result", geminiResponse.response);
+        } else {
+          console.warn(
+            "Gemini did not return ok, falling back to local summary",
+            geminiResponse
+          );
           event.reply(
             "update-vision-result",
-            summary + "\n\n(注意：無法呼叫 Gemini API)"
+            summary + "\n\n(注意：Gemini 分析功能暫時無法使用)"
           );
         }
-      } catch (error) {
-        console.error("Vision API error:", error);
-        let friendlyMessage = `Image search failed: ${error.message}`;
-        try {
-          const msg = String(error.message);
-          const firstBrace = msg.indexOf("{");
-          const lastBrace = msg.lastIndexOf("}");
-          if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-            const jsonStr = msg.slice(firstBrace, lastBrace + 1);
-            const obj = JSON.parse(jsonStr);
-            if (obj && obj.error) {
-              const serverMsg = obj.error.message || JSON.stringify(obj.error);
-              if (
-                serverMsg.toLowerCase().includes("api key expired") ||
-                (obj.error.details || []).some((d) =>
-                  (d.reason || "").toLowerCase().includes("api_key_invalid")
-                )
-              ) {
-                friendlyMessage =
-                  "Image search failed: Google Vision API key 已過期或無效。請更新/重新產生 API key，並確認已在 Google Cloud Console 啟用 Vision API 並開啟帳單。";
-              } else if (serverMsg) {
-                friendlyMessage = `Image search failed: ${serverMsg}`;
-              }
-            }
-          }
-        } catch (e) {
-          console.error("Failed to parse Vision API error body:", e);
-        }
-        dialog.showErrorBox("Error", friendlyMessage);
+      } catch (gemErr) {
+        console.error("Error calling Gemini:", gemErr);
+        event.reply(
+          "update-vision-result",
+          summary + "\n\n(注意：無法呼叫 Gemini API)"
+        );
       }
     } catch (error) {
-      console.error("Error processing screenshot:", error);
-      dialog.showErrorBox(
-        "Error",
-        `Failed to process screenshot: ${error.message}`
-      );
+      console.error("Vision API error:", error);
+      let friendlyMessage = `Image search failed: ${error.message}`;
+      try {
+        const msg = String(error.message);
+        const firstBrace = msg.indexOf("{");
+        const lastBrace = msg.lastIndexOf("}");
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          const jsonStr = msg.slice(firstBrace, lastBrace + 1);
+          const obj = JSON.parse(jsonStr);
+          if (obj && obj.error) {
+            const serverMsg = obj.error.message || JSON.stringify(obj.error);
+            if (
+              serverMsg.toLowerCase().includes("api key expired") ||
+              (obj.error.details || []).some((d) =>
+                (d.reason || "").toLowerCase().includes("api_key_invalid")
+              )
+            ) {
+              friendlyMessage =
+                "Image search failed: Google Vision API key 已過期或無效。請更新/重新產生 API key，並確認已在 Google Cloud Console 啟用 Vision API 並開啟帳單。";
+            } else if (serverMsg) {
+              friendlyMessage = `Image search failed: ${serverMsg}`;
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Failed to parse Vision API error body:", e);
+      }
+      dialog.showErrorBox("Error", friendlyMessage);
     }
   });
 }
@@ -1062,15 +1121,6 @@ function createMainWindow() {
       event.preventDefault();
     }
   });
-
-  // 預設不自動開啟 DevTools，只有當明確設定 ELECTRON_OPEN_DEVTOOLS=true 時才自動開啟
-  const shouldOpenDevTools = process.env.ELECTRON_OPEN_DEVTOOLS === "true";
-  if (shouldOpenDevTools) {
-    mainWindow.webContents.openDevTools();
-    console.log(
-      "ℹ DevTools has been opened because ELECTRON_OPEN_DEVTOOLS=true."
-    );
-  }
 }
 
 // --- AA: Create Capture Window ---
@@ -1078,18 +1128,20 @@ function createCaptureWindow() {
   try {
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width: logicalWidth, height: logicalHeight } = primaryDisplay.size;
-    const { x: displayX, y: displayY } = primaryDisplay.bounds;
+    const { x, y } = primaryDisplay.bounds;
     const scaleFactor = primaryDisplay.scaleFactor;
+    const physicalWidth = Math.round(logicalWidth * scaleFactor);
+    const physicalHeight = Math.round(logicalHeight * scaleFactor);
 
     console.log(
-      `Screen Info: Logical ${logicalWidth}x${logicalHeight}, Scale ${scaleFactor}`
+      `Screen Info: Logical Size ${logicalWidth}x${logicalHeight}, Scale Factor ${scaleFactor}, Physical Size ${physicalWidth}x${physicalHeight}`
     );
 
     captureWindow = new BrowserWindow({
-      x: displayX,
-      y: displayY,
-      width: logicalWidth,
-      height: logicalHeight,
+      x,
+      y,
+      width: physicalWidth,
+      height: physicalHeight,
       transparent: true,
       frame: false,
       alwaysOnTop: true,
@@ -1104,7 +1156,6 @@ function createCaptureWindow() {
     captureWindow.loadFile(
       path.join(__dirname, "circle-to-search", "index.html")
     );
-    // DevTools 已關閉，如需調試請使用 --debug 參數
     if (process.argv.includes("--debug")) {
       captureWindow.webContents.openDevTools();
     }
@@ -1188,8 +1239,17 @@ app.on("window-all-closed", () => {
 });
 
 app.on("quit", () => {
-  if (db) {
-    console.log("Closing database connection...");
-    db.close();
+  db.close();
+});
+
+// Update global API keys cache from frontend
+ipcMain.on("settings:update-api-keys", (event, keys) => {
+  if (keys) {
+    if (keys.gemini) globalApiKeys.gemini = keys.gemini;
+    if (keys.openai) globalApiKeys.openai = keys.openai;
+    console.log("Global API Keys Cache Updated:", {
+      hasGemini: !!globalApiKeys.gemini,
+      hasOpenAI: !!globalApiKeys.openai
+    });
   }
 });

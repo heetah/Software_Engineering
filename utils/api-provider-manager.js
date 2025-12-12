@@ -24,7 +24,7 @@ class APIProvider {
     this.type = type;
     this.baseUrl = baseUrl;
     this.apiKey = apiKey;
-    this.model = options.model; // No default model, must be provided if needed, or per-request
+    this.model = options.model || this._getDefaultModel(type);
     this.timeout = options.timeout || config.api.timeout;
     this.maxRetries = options.maxRetries || config.api.maxRetries;
     this.retryDelay = options.retryDelay || config.api.retryDelay;
@@ -38,8 +38,16 @@ class APIProvider {
     this.successCount = 0;
   }
 
-  // Removed _getDefaultModel as we now enforce explicit model selection at call site
-  // _getDefaultModel(type) { ... }
+  _getDefaultModel(type) {
+    switch (type) {
+      case API_PROVIDER_TYPES.OPENAI:
+        return 'gpt-4o-mini';
+      case API_PROVIDER_TYPES.GEMINI:
+        return 'gemini-2.5-flash';
+      default:
+        return 'gpt-4o-mini';
+    }
+  }
 
   /**
    * 檢查是否可用（429 錯誤後需要等待）
@@ -124,7 +132,7 @@ export class APIProviderManager {
     this.providers = [];
     this.currentIndex = 0; // 用於輪詢負載均衡
     // 默認使用 failover 策略：一次只使用一個 API，優先使用 OpenAI
-    this.strategy = process.env.API_ROUTING_STRATEGY || 'failover'; // 'round-robin', 'failover', 'random'
+    this.strategy = 'failover'; // 'round-robin', 'failover', 'random'
   }
 
   /**
@@ -139,11 +147,11 @@ export class APIProviderManager {
       const openaiProvider = new APIProvider(
         'OpenAI',
         API_PROVIDER_TYPES.OPENAI,
-        process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+        'https://api.openai.com/v1',
         process.env.OPENAI_API_KEY,
         {
-          // 移除預設 model，改由調用端決定
-          timeout: parseInt(process.env.OPENAI_TIMEOUT) || config.api.timeout,
+          model: 'gpt-4o-mini',
+          timeout: config.api.timeout,
           maxRetries: config.api.maxRetries,
           retryDelay: config.api.retryDelay
         }
@@ -153,15 +161,15 @@ export class APIProviderManager {
     }
 
     // 然後添加 Gemini 提供者（備用）
-    if (process.env.GEMINI_API_KEY) {
+    if (process.env.GOOGLE_API_KEY) {
       const geminiProvider = new APIProvider(
         'Gemini',
         API_PROVIDER_TYPES.GEMINI,
-        process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
-        process.env.GEMINI_API_KEY,
+        'https://generativelanguage.googleapis.com/v1beta',
+        process.env.GOOGLE_API_KEY,
         {
-          // 移除預設 model，改由調用端決定
-          timeout: parseInt(process.env.GEMINI_TIMEOUT) || 60000,
+          model: 'gemini-2.5-flash',
+          timeout: config.api.timeout, // 使用統一配置
           maxRetries: config.api.maxRetries,
           retryDelay: config.api.retryDelay
         }
@@ -182,20 +190,20 @@ export class APIProviderManager {
    * 優先使用 OpenAI，如果不可用則使用 Gemini
    * 在 failover 模式下，一次只返回一個提供者
    */
-  selectProvider(excludeProviders = [], candidates = this.providers) {
-    if (candidates.length === 0) {
+  selectProvider(excludeProviders = []) {
+    if (this.providers.length === 0) {
       throw new Error('No available API providers');
     }
 
     // 過濾出可用的提供者（按註冊順序：OpenAI 優先），排除已嘗試的
-    const availableProviders = candidates.filter(p =>
+    const availableProviders = this.providers.filter(p =>
       p.isReady() && !excludeProviders.includes(p.name)
     );
 
     if (availableProviders.length === 0) {
       // 如果所有提供者都不可用，嘗試使用所有提供者（可能已經恢復），但排除已嘗試的
       console.warn('[API Provider Manager] All providers temporarily unavailable, trying all providers');
-      const allProviders = candidates.filter(p => !excludeProviders.includes(p.name));
+      const allProviders = this.providers.filter(p => !excludeProviders.includes(p.name));
 
       if (allProviders.length === 0) {
         throw new Error('No API providers configured or all providers already tried');
@@ -240,45 +248,14 @@ export class APIProviderManager {
    * 執行 API 調用（一次只使用一個 API，優先 OpenAI，失敗時切換到 Gemini）
    */
   async executeAPI(payload, options = {}) {
-    // 優先使用 options 中的 API Key (使用者提供的)
-    // 注意：這裡的 options.apiKey 是針對特定請求的覆盖
-
-    // Enforce model presence
-    const model = payload.model || options.model || (this.providers.length > 0 && this.providers[0].model);
-    if (!model) {
-      console.warn('[API Provider Manager] Warning: No model specified in payload or options. Some providers may fail.');
-    }
-
-    // 過濾提供者
-    let candidateProviders = this.providers;
-
-    // 如果 options 指定了 provider (例如 'gemini')
-    if (options.provider) {
-      const requestedType = options.provider.toLowerCase();
-
-      // 如果是用戶要求的 "gemini"，只使用 GEMINI 類型的提供者
-      if (requestedType.includes('gemini')) {
-        candidateProviders = this.providers.filter(p => p.type === API_PROVIDER_TYPES.GEMINI);
-      }
-      // 如果是用戶要求的 "openai"，只使用 OPENAI 類型的提供者
-      else if (requestedType.includes('openai')) {
-        candidateProviders = this.providers.filter(p => p.type === API_PROVIDER_TYPES.OPENAI);
-      }
-    }
-
-    if (candidateProviders.length === 0) {
-      throw new Error(`No available API providers matching request: ${options.provider || 'any'}`);
-    }
-
-    // 一次只嘗試一個提供者，按優先順序
-    // 如果指定了 provider，我們只在過濾後的列表中嘗試
-    const maxProviderRetries = Math.min(options.maxProviderRetries || candidateProviders.length, candidateProviders.length);
+    // 一次只嘗試一個提供者，按優先順序（OpenAI -> Gemini）
+    const maxProviderRetries = Math.min(options.maxProviderRetries || this.providers.length, this.providers.length);
     let lastError = null;
     const triedProviders = [];
 
     for (let attempt = 0; attempt < maxProviderRetries; attempt++) {
-      // 選擇提供者，排除已嘗試的，並且只從候選列表中選擇
-      const provider = this.selectProvider(triedProviders, candidateProviders);
+      // 選擇提供者，排除已嘗試的
+      const provider = this.selectProvider(triedProviders);
 
       triedProviders.push(provider.name);
       provider.requestCount++;
@@ -329,57 +306,15 @@ export class APIProviderManager {
    * 調用特定的 API 提供者
    */
   async _callProvider(provider, payload, options = {}) {
-    const { temperature = 0.3, maxTokens, apiKey } = options;
-
-    // 如果 options 中有提供 apiKey，則使用該 key (優先權高於 provider 預設 key)
-    const effectiveApiKey = apiKey || provider.apiKey;
-
-    // 為了傳遞給 _callOpenAI / _callGemini，我們需要一個臨時的 provider 物件或是修改參數傳遞方式
-    // 這裡我們選擇創建一個代理 provider 物件，僅覆蓋 apiKey
-    const effectiveProvider = new Proxy(provider, {
-      get: (target, prop) => {
-        if (prop === 'apiKey') return effectiveApiKey;
-        return target[prop];
-      }
-    });
+    const { temperature = 0.3, maxTokens } = options;
 
     if (provider.type === API_PROVIDER_TYPES.GEMINI) {
       // Gemini API 調用
-      return await this._callGemini(effectiveProvider, payload, { temperature, maxTokens });
+      return await this._callGemini(provider, payload, { temperature, maxTokens });
     } else {
       // OpenAI API 調用（默認）
-      return await this._callOpenAI(effectiveProvider, payload, { temperature, maxTokens });
+      return await this._callOpenAI(provider, payload, { temperature, maxTokens });
     }
-  }
-
-  /**
-   * Resolve model name based on provider and requested model/tier
-   */
-  _resolveModel(providerType, requestedModel) {
-    const model = (requestedModel || '').toLowerCase();
-
-    // Abstract Tiers
-    if (model === 'strong') {
-      return providerType === API_PROVIDER_TYPES.OPENAI ? 'gpt-4o' : 'gemini-1.5-pro';
-    }
-    if (model === 'fast') {
-      return providerType === API_PROVIDER_TYPES.OPENAI ? 'gpt-4o-mini' : 'gemini-1.5-flash';
-    }
-
-    // Cross-provider mapping (Fallback mechanism)
-    if (providerType === API_PROVIDER_TYPES.OPENAI) {
-      // If Gemini model requested on OpenAI, map to closest equivalent
-      if (model.includes('gemini') && model.includes('pro')) return 'gpt-4o';
-      if (model.includes('gemini') && model.includes('flash')) return 'gpt-4o-mini';
-      return requestedModel || 'gpt-4o';
-    } else if (providerType === API_PROVIDER_TYPES.GEMINI) {
-      // If OpenAI model requested on Gemini, map to closest equivalent
-      if (model.includes('gpt-4') || model.includes('strong')) return 'gemini-1.5-pro';
-      if (model.includes('gpt-3') || model.includes('mini')) return 'gemini-1.5-flash';
-      return requestedModel || 'gemini-1.5-pro';
-    }
-
-    return requestedModel;
   }
 
   /**
@@ -388,9 +323,8 @@ export class APIProviderManager {
   async _callOpenAI(provider, payload, options = {}) {
     const { temperature = 0.3, maxTokens } = options;
 
-    // Resolve model: explicit payload > provider default > "strong" default
-    const rawModel = payload.model || provider.model || 'strong';
-    const model = this._resolveModel(API_PROVIDER_TYPES.OPENAI, rawModel);
+    // 優先使用 payload 中的 model，否則使用提供者的默認模型
+    const model = payload.model || provider.model;
 
     // 如果 payload 已經有 messages，直接使用
     // 否則構建標準的 OpenAI 格式
@@ -404,10 +338,6 @@ export class APIProviderManager {
       ...payload,
       model: model
     };
-
-    if (rawModel !== model) {
-      console.log(`[API Provider Manager] 🔄 Mapped model '${rawModel}' to '${model}' for OpenAI support`);
-    }
 
     const response = await axios.post(
       `${provider.baseUrl}/chat/completions`,
@@ -430,13 +360,8 @@ export class APIProviderManager {
   async _callGemini(provider, payload, options = {}) {
     const { temperature = 0.3, maxTokens } = options;
 
-    // Resolve model
-    const rawModel = payload.model || provider.model || 'strong';
-    const model = this._resolveModel(API_PROVIDER_TYPES.GEMINI, rawModel);
-
-    if (rawModel !== model) {
-      console.log(`[API Provider Manager] 🔄 Mapped model '${rawModel}' to '${model}' for Gemini support`);
-    }
+    // 優先使用 payload 中的 model，否則使用提供者的默認模型
+    const model = payload.model || provider.model;
 
     // 轉換 OpenAI 格式的 messages 到 Gemini 格式
     let contents = [];

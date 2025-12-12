@@ -3,34 +3,34 @@
 const FILE_TYPE_CONFIG = {
   // Web 前端
   web: ['.html', '.htm', '.css', '.scss', '.sass', '.less'],
-  
+
   // JavaScript 生態系
   javascript: ['.js', '.mjs', '.cjs', '.jsx'],
-  
+
   // TypeScript
   typescript: ['.ts', '.tsx', '.d.ts'],
-  
+
   // 前端框架
   frameworks: ['.vue', '.svelte', '.astro'],
-  
+
   // 資料格式
   data: ['.json', '.json5', '.jsonc', '.xml', '.yaml', '.yml', '.toml', '.ini', '.csv'],
-  
+
   // 文檔
   docs: ['.md', '.mdx', '.txt', '.rst', '.adoc'],
-  
+
   // 後端語言
   backend: ['.py', '.rb', '.php', '.java', '.kt', '.cs', '.go', '.rs'],
-  
+
   // 配置檔
   config: ['.env', '.env.local', '.env.production', '.gitignore', '.npmrc', '.editorconfig'],
-  
+
   // 腳本
   scripts: ['.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd'],
-  
+
   // 資料庫
   database: ['.sql', '.prisma', '.graphql', '.gql'],
-  
+
   // 其他
   others: ['.svg', '.dockerfile', '.containerfile', '.lock', '.log']
 };
@@ -43,7 +43,7 @@ const SECURITY_LEVELS = {
 };
 
 // 實際使用
-const SECURITY_LEVEL = process.env.FILE_SECURITY_LEVEL || 'moderate';
+const SECURITY_LEVEL = 'moderate';
 const ALLOWED_CATEGORIES = SECURITY_LEVELS[SECURITY_LEVEL];
 const ALLOWED_EXT = ALLOWED_CATEGORIES.flatMap(cat => FILE_TYPE_CONFIG[cat]);
 

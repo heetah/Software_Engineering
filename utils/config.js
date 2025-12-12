@@ -12,46 +12,39 @@ export class Config {
   constructor() {
     // API 配置
     this.api = {
-      baseUrl: process.env.OPENAI_BASE_URL || process.env.BASE_URL || "https://api.openai.com/v1",
-      apiKey: process.env.OPENAI_API_KEY || process.env.API_KEY,
-      // 優化超時：OpenAI 通常較快，減少超時時間以提高響應速度
-      timeout: parseInt(process.env.API_TIMEOUT) || 20000, // 從 30 秒減少到 20 秒
-      maxRetries: parseInt(process.env.API_MAX_RETRIES) || 2, // 從 3 次減少到 2 次
-      retryDelay: parseInt(process.env.API_RETRY_DELAY) || 500 // 從 1000ms 減少到 500ms
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: process.env.OPENAI_API_KEY,
+      // 優化超時：增加超時時間以避免複雜生成的超時錯誤
+      timeout: 120000, // 從 20 秒增加到 120 秒
+      maxRetries: 2, // 從 3 次減少到 2 次
+      retryDelay: 1000 // 增加重試延遲
     };
 
     // Agent 配置
     this.agents = {
       temperature: {
-        requirement: parseFloat(process.env.REQUIREMENT_TEMPERATURE) || 0.6,
-        architect: parseFloat(process.env.ARCHITECT_TEMPERATURE) || 0.3,
-        coder: parseFloat(process.env.CODER_TEMPERATURE) || 0.2,
-        tester: parseFloat(process.env.TESTER_TEMPERATURE) || 0.3
+        requirement: 0.6,
+        architect: 0.3,
+        coder: 0.2,
+        tester: 0.3
       },
       maxTokens: {
-        requirement: parseInt(process.env.REQUIREMENT_MAX_TOKENS) || undefined,
-        architect: parseInt(process.env.ARCHITECT_MAX_TOKENS) || undefined,
-        coder: parseInt(process.env.CODER_MAX_TOKENS) || undefined,
-        tester: parseInt(process.env.TESTER_MAX_TOKENS) || undefined
+        requirement: undefined,
+        architect: undefined,
+        coder: undefined,
+        tester: undefined
       }
     };
 
     // Token 限制配置
     this.tokenLimits = {
-      maxTotal: parseInt(process.env.MAX_TOTAL_TOKENS) || 1000000, // 預設 100 萬 tokens
-      warningThreshold: parseFloat(process.env.TOKEN_WARNING_THRESHOLD) || 0.8 // 80% 時警告
-    };
-
-    // 日誌配置
-    this.logging = {
-      enabled: process.env.LOGGING_ENABLED !== 'false',
-      verbose: process.env.VERBOSE_LOGGING === 'true',
-      level: process.env.LOG_LEVEL || 'info'
+      maxTotal: 2000000, // 增加到 200 萬 tokens
+      warningThreshold: 0.8 // 80% 時警告
     };
 
     // 流程配置
     this.flows = {
-      default: process.env.DEFAULT_FLOW || 'instruction',
+      default: 'instruction',
       available: ['instruction', 'traditional', 'minimal']
     };
   }
@@ -80,11 +73,11 @@ export class Config {
     const warnings = [];
 
     // 檢查是否有至少一個 API 提供者
-    const hasOpenAI = !!(process.env.OPENAI_API_KEY || process.env.API_KEY);
-    const hasGemini = !!process.env.GEMINI_API_KEY;
+    const hasOpenAI = !!(process.env.OPENAI_API_KEY);
+    const hasGemini = !!process.env.GOOGLE_API_KEY;
 
     if (!hasOpenAI && !hasGemini) {
-      errors.push('至少需要設置一個 API Key (OPENAI_API_KEY 或 GEMINI_API_KEY)');
+      errors.push('至少需要設置一個 API Key (OPENAI_API_KEY 或 GOOGLE_API_KEY)');
     } else {
       if (hasOpenAI && hasGemini) {
         // 兩個都有，這是好的
@@ -129,6 +122,21 @@ export class Config {
       tokenLimits: this.tokenLimits,
       defaultFlow: this.flows.default
     };
+  }
+
+  /**
+   * 根據使用者選項更新配置
+   * @param {Object} options - 使用者選項 { llmProvider, apiKeys }
+   */
+  update(options = {}) {
+    if (options.apiKeys) {
+      if (options.apiKeys.openai) {
+        this.api.apiKey = options.apiKeys.openai; // Update default key if openai provided
+      }
+      // You could also store gemini key if you expanded this.api or added this.gemini
+    }
+    // Update other dynamic settings if needed
+    console.log('[Config] Configuration updated from user options');
   }
 }
 

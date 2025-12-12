@@ -12,7 +12,7 @@ const express = require('express');
 const SystemGenerator = require('./generator');
 
 const app = express();
-const PORT = process.env.PORT || 3805;
+const PORT = 3805;
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -20,8 +20,8 @@ const generator = new SystemGenerator();
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     agent: 'system-agent',
     port: PORT,
     supportedExtensions: ['.c', '.h', '.cpp', '.cc', '.cxx', '.hpp', '.go', '.rs', '.java', '.cs']
@@ -31,29 +31,29 @@ app.get('/health', (req, res) => {
 // Main generation endpoint
 app.post('/generate', async (req, res) => {
   const startTime = Date.now();
-  
+
   try {
     const { skeleton, fileSpec, context } = req.body;
-    
+
     if (!fileSpec || !fileSpec.path) {
       return res.status(400).json({
         success: false,
         error: 'Missing required field: fileSpec.path'
       });
     }
-    
+
     console.log(`[${new Date().toISOString()}] Generating ${fileSpec.path}`);
-    
+
     const result = await generator.generate({
       skeleton,
       fileSpec,
       context: context || {}
     });
-    
+
     const elapsed = Date.now() - startTime;
-    
+
     console.log(`[${new Date().toISOString()}] ??Generated ${fileSpec.path} (${elapsed}ms)`);
-    
+
     res.status(200).json({
       success: true,
       content: result.content,
@@ -66,11 +66,11 @@ app.post('/generate', async (req, res) => {
         method: result.method || 'template'
       }
     });
-    
+
   } catch (error) {
     const elapsed = Date.now() - startTime;
     console.error(`[${new Date().toISOString()}] ??Error:`, error.message);
-    
+
     res.status(500).json({
       success: false,
       error: error.message,

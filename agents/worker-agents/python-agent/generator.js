@@ -4,30 +4,16 @@ const { callCloudAPI } = require('../api-adapter.cjs');
 class PythonGenerator {
   constructor(config = {}) {
     // API 配置優先順序：1. config 參數 2. CLOUD_API 3. OPENAI_API
-    this.cloudApiEndpoint = config.cloudApiEndpoint ||
-      process.env.CLOUD_API_ENDPOINT ||
-      process.env.OPENAI_BASE_URL;
-    this.cloudApiKey = config.cloudApiKey ||
-      process.env.CLOUD_API_KEY ||
-      process.env.OPENAI_API_KEY;
+    this.cloudApiEndpoint = config.cloudApiEndpoint;
+    this.cloudApiKey = config.cloudApiKey;
     this.useMockApi = !this.cloudApiEndpoint;
-
-    // 🔍 Debug: 記錄配置
-    console.log('[PythonGenerator] Initialized:', {
-      hasConfigEndpoint: !!config.cloudApiEndpoint,
-      hasConfigKey: !!config.cloudApiKey,
-      hasEnvCloudEndpoint: !!process.env.CLOUD_API_ENDPOINT,
-      hasEnvOpenaiEndpoint: !!process.env.OPENAI_BASE_URL,
-      finalEndpoint: this.cloudApiEndpoint ? this.cloudApiEndpoint.substring(0, 50) + '...' : 'MISSING',
-      willUseMock: this.useMockApi
-    });
   }
 
   async generate({ skeleton, fileSpec, context }) {
     console.log(`[Generator] Processing ${fileSpec.path}`);
 
-    // 優先級 1: 使用 template（Architect 提供的完整代碼）
-    if (fileSpec.template && fileSpec.template.trim()) {
+    // 優先級 1: 使用 template（Architect 明確指定的內容）
+    if (typeof fileSpec.template === 'string' && fileSpec.template.trim()) {
       console.log(`[Generator] ✅ Using template (${fileSpec.template.length} chars)`);
       return {
         content: fileSpec.template,
@@ -36,7 +22,7 @@ class PythonGenerator {
       };
     }
 
-    // 優先級 2: 使用 contracts 結構（example2 格式）
+    // 優先級 2: 使用 contracts 結構（動態生成）
     const hasContracts = context.contracts && (
       (context.contracts.dom && context.contracts.dom.length > 0) ||
       (context.contracts.api && context.contracts.api.length > 0)
@@ -44,8 +30,16 @@ class PythonGenerator {
 
     if (hasContracts) {
       console.log(`[Generator] ✓ Using contracts-based generation`);
+      console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
+
+      if (this.useMockApi) {
+        return this.generateWithMock({ skeleton, fileSpec, context });
+      } else {
+        return this.generateWithCloudAPI({ skeleton, fileSpec, context });
+      }
     }
 
+    // 優先級 3: AI 生成（無 contracts 也無 template）
     console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
 
     if (this.useMockApi) {
@@ -53,9 +47,7 @@ class PythonGenerator {
     } else {
       return this.generateWithCloudAPI({ skeleton, fileSpec, context });
     }
-  }
-
-  async generateWithCloudAPI({ skeleton, fileSpec, context }) {
+  } async generateWithCloudAPI({ skeleton, fileSpec, context }) {
     const prompt = this.buildPrompt({ skeleton, fileSpec, context });
 
     try {
@@ -64,7 +56,7 @@ class PythonGenerator {
         apiKey: this.cloudApiKey,
         systemPrompt: 'You are an expert Python developer. Generate clean, production-ready Python code following PEP 8 standards. Include proper error handling, type hints, and docstrings. Output only the code.',
         userPrompt: prompt,
-        maxTokens: 80000  // Increased to 80k as requested
+        maxTokens: 16348  // Increased to 16k as requested
       });
 
       if (!content || content.trim() === '') {
@@ -130,58 +122,67 @@ if __name__ == "__main__":
 
     let prompt = `Generate Python code for: ${filePath}\n\n`;
 
-    if (description) {
-      prompt += `Description: ${description}\n\n`;
-    }
-
-    if (requirements.length > 0) {
-      prompt += `Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
-    }
-
-    // ← 新增：如果有 contracts，優先顯示
+    // 🚨 CONTRACTS FIRST - 最優先顯示
     if (contracts) {
-      prompt += `=== CONTRACTS (MUST FOLLOW EXACTLY) ===\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      prompt += `🚨 CRITICAL: CONTRACTS (MUST FOLLOW EXACTLY) 🚨\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
       // API contracts - Python 通常是 producer
       if (contracts.api && contracts.api.length > 0) {
-        const relevantApis = contracts.api.filter(api =>
-          api.producers.includes(filePath)
-        );
+        // 🔥 修復：寬鬆過濾，如果 producers 為空也顯示
+        const relevantApis = contracts.api.filter(api => {
+          const producers = api.producers || [];
+          return producers.length === 0 || producers.includes(filePath);
+        });
 
         if (relevantApis.length > 0) {
-          prompt += `\nAPI Endpoints to implement:\n`;
+          prompt += `\n📡 API ENDPOINTS TO IMPLEMENT:\n\n`;
           relevantApis.forEach(api => {
-            prompt += `\n  ${api.endpoint} - ${api.description}\n`;
+            const method = api.method || 'GET';
+            prompt += `  ${method} ${api.endpoint} - ${api.purpose || api.description}\n`;
 
-            // 分析 endpoint 格式
-            const endpoint = api.endpoint.split(' ')[1] || api.endpoint; // "GET /api/weather" -> "/api/weather"
-            const hasQueryParams = api.request && api.request.query;
-            const hasPathParams = endpoint.includes('<') || endpoint.includes(':');
-
-            if (hasQueryParams) {
-              prompt += `  ⚠️  Uses QUERY PARAMETERS:\n`;
-              Object.entries(api.request.query).forEach(([key, value]) => {
-                prompt += `    - ${key}: ${value}\n`;
-              });
-              prompt += `  Example: city = request.args.get('city')\n`;
-              prompt += `  Flask route: @app.route('${endpoint}')\n`;
+            // 顯示 request schema
+            if (api.requestSchema) {
+              if (api.requestSchema.properties) {
+                prompt += `  Request Parameters:\n`;
+                Object.entries(api.requestSchema.properties).forEach(([key, val]) => {
+                  const required = api.requestSchema.required?.includes(key) ? '(required)' : '(optional)';
+                  prompt += `    - ${key}: ${val.type} ${required}\n`;
+                });
+              } else if (api.requestSchema.type) {
+                prompt += `  Request: ${api.requestSchema.type}\n`;
+              }
+            } else {
+              prompt += `  Request: No parameters\n`;
             }
 
-            if (hasPathParams) {
-              prompt += `  ⚠️  Uses PATH PARAMETERS:\n`;
-              const flaskRoute = endpoint.replace(/:(\w+)/g, '<$1>');
-              prompt += `  Flask route: @app.route('${flaskRoute}')\n`;
-              prompt += `  Example: def endpoint(city: str):\n`;
-            }
-
-            if (api.request) {
-              prompt += `  Request schema:\n${JSON.stringify(api.request, null, 4).split('\n').map(l => '    ' + l).join('\n')}\n`;
-            }
-            if (api.response) {
-              prompt += `  Response schema (EXACT field names):\n${JSON.stringify(api.response, null, 4).split('\n').map(l => '    ' + l).join('\n')}\n`;
+            // 顯示 response schema
+            if (api.responseSchema) {
+              if (api.responseSchema.type === 'array') {
+                const itemProps = api.responseSchema.items?.properties;
+                if (itemProps) {
+                  prompt += `  Response: Array of objects with:\n`;
+                  Object.entries(itemProps).forEach(([key, val]) => {
+                    prompt += `    - ${key}: ${val.type}\n`;
+                  });
+                } else {
+                  prompt += `  Response: Array\n`;
+                }
+              } else if (api.responseSchema.type === 'object') {
+                prompt += `  Response: Object with:\n`;
+                Object.entries(api.responseSchema.properties || {}).forEach(([key, val]) => {
+                  prompt += `    - ${key}: ${val.type}\n`;
+                });
+              } else {
+                prompt += `  Response: ${api.responseSchema.type}\n`;
+              }
+            } else {
+              prompt += `  Response: void\n`;
             }
             prompt += `\n`;
           });
+
           prompt += `🔒 CRITICAL RULES:\n`;
           prompt += `  - Use TypedDict or Pydantic models matching schemas EXACTLY\n`;
           prompt += `  - Field names must match contract exactly (including case)\n`;
@@ -211,7 +212,17 @@ if __name__ == "__main__":
         }
       }
 
-      prompt += `=== END CONTRACTS ===\n\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      prompt += `END OF CONTRACTS - FOLLOW THEM EXACTLY!\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    }
+
+    if (description) {
+      prompt += `Description: ${description}\n\n`;
+    }
+
+    if (requirements.length > 0) {
+      prompt += `Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
     }
 
     // Include context from other files

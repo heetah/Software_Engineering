@@ -11,31 +11,7 @@ dotenv.config();
 
 export default class ArchitectAgent extends BaseAgent {
   constructor(options = {}) {
-    // 使用 OpenAI API（從環境變數讀取），支援 CLOUD_API 作為 fallback
-    let apiKey = process.env.OPENAI_API_KEY || process.env.CLOUD_API_KEY;
-
-    // 如果傳入 options 中有 apiKeys，優先使用
-    if (options.apiKeys?.openai) {
-      apiKey = options.apiKeys.openai;
-    }
-
-    let baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-
-    if (!process.env.OPENAI_BASE_URL && process.env.CLOUD_API_ENDPOINT) {
-      if (process.env.CLOUD_API_ENDPOINT.includes('generativelanguage.googleapis.com')) {
-        baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
-      } else {
-        baseUrl = process.env.CLOUD_API_ENDPOINT;
-      }
-    }
-
-    super("Architect Agent", "JSON", "architect", {
-      baseUrl,
-      apiKey,
-      llmProvider: options.llmProvider, // 接收並傳遞 llmProvider
-      model: options.model || 'strong', // Default to Stronger Model (will be resolved by ProviderManager)
-      ...options
-    });
+    super("Architect Agent", "JSON", "architect", options);
   }
 
   _detectBaseUrl(endpoint) {
@@ -176,28 +152,105 @@ Output rules:
    * @returns {Promise<Object>} 生成的計劃物件
    */
   async generatePlan({ prompt, context }) {
+    // 🔥 RAG Enhancement: Query knowledge base for similar projects
+    let ragContext = '';
+    try {
+      const { default: ragEngine } = await import('./rag-engine/index.js');
+
+      // Initialize RAG with API keys (if available)
+      const ragConfig = {
+        cloudApiKey: this.apiKey || process.env.OPENAI_API_KEY,
+        cloudApiEndpoint: this.baseUrl
+      };
+      ragEngine.init(ragConfig);
+
+      // Ingest knowledge base (example projects)
+      await ragEngine.ingestKnowledgeBase();
+      await ragEngine.buildIndex();
+
+      // Query for similar architectures
+      const queryText = `${prompt} architecture patterns contracts`;
+      ragContext = await ragEngine.query(queryText, 3);
+
+      if (ragContext && ragContext.length > 0) {
+        console.log(`  🧠 Retrieved RAG context (${ragContext.length} chars) for architecture planning`);
+      }
+    } catch (err) {
+      console.warn(`  RAG Engine unavailable: ${err.message}`);
+      // Continue without RAG if it fails
+    }
+
     const systemPrompt = `You are the Architect Agent for an Electron.js + Node.js multi-agent application.
 
 Your primary job:
 - Translate high-level goals into explicit, actionable instructions directed at the Coder Agent.
 - Produce a precise, implementable plan and a clear "handoff" message that tells the Coder Agent exactly what to do next.
 - For web applications, automatically infer and include frontend design requirements (UI/UX, layout, styling, responsive design).
-- For simple prompts, expand them with reasonable assumptions about design, functionality, and user experience.
+- **SCALE & COMPLETENESS**: The user wants a **FULL-SCALE, PRODUCTION-READY** application, not a toy example or MVP.
+  - Break down features into multiple logical files and modules.
+  - Include comprehensive error handling, validations, and edge case coverage in your design.
+  - If the user asks for a specific system (e.g., "E-commerce"), include ALL standard features (browsing, cart, checkout, user profile, administrative dashboard, mock payment, search, filtering).
+  - **EXHAUSTIVE CONTRACTS**: For repetitive UI elements (e.g., calculator buttons, grid items), you MUST list ALL of them in the contracts. Do not output a partial list (e.g., "1, 2, ...").
+  - **MANDATORY LINKING**: Explicitly require 'index.html' to include '<link rel="stylesheet" href="style.css">' and '<script src="script.js" defer></script>'.
+  - Do NOT simplify the architecture. Aim for professional software engineering standards.
+- **IMPORTANT**: Define clear contracts (DOM elements, API endpoints, storage keys) instead of writing full code templates.
+- Use "template" ONLY for simple config files (package.json, .gitignore). For code files, define "contracts" and let Worker Agents generate the implementation.
 
 Output JSON schema:
 {
   "coder_instructions": {
     "role": "Coder Agent",
     "summary": string,
-    "directives": [
-      { "do": string, "why": string }
-    ],
     "files": [
-      { "path": string, "purpose": string, "template": string | null }
+      { 
+        "path": string, 
+        "purpose": string, 
+        "template": string | null,  // Use ONLY for package.json, .gitignore, simple configs. Set null for code files.
+        "requirements": string[]     // Detailed functional requirements for Worker Agents
+      }
     ],
     "commands": string[],
-    "acceptance": string[],
-    "notes": string[]
+    "contracts": {
+      "dom": [
+        { 
+          "id": string,              // DOM element ID (e.g., "display", "calculateBtn")
+          "type": string,            // Element type (e.g., "input", "button", "div")
+          "purpose": string,         // What this element does
+          "accessedBy": string[]     // Which files access it (e.g., ["public/script.js"])
+        }
+      ],
+      "api": [
+        { 
+          "endpoint": string,        // IPC channel or HTTP endpoint (e.g., "calculate", "/api/data")
+          "method": string,          // "ipc-handle", "GET", "POST", etc.
+          "purpose": string,         // What this API does
+          "requestSchema": object | null,   // Expected request format
+          "responseSchema": object | null,  // Expected response format
+          "producers": string[],     // Which files implement it (e.g., ["main.js"])
+          "consumers": string[]      // Which files call it (e.g., ["public/script.js"])
+        }
+      ],
+      "storage": [
+        { 
+          "key": string,             // Storage key or filename (e.g., "history.json")
+          "type": string,            // "file", "localStorage", "sessionStorage"
+          "purpose": string,         // What data is stored
+          "schema": object | null    // Data structure
+        }
+      ]
+    },
+    "projectConfig": {
+      "type": string,                // "electron", "web", "node-cli", etc.
+      "runtime": {
+        "platform": string,          // "electron", "browser", "node"
+        "backend_port": number | null,
+        "frontend_port": number | null
+      },
+      "backend": {
+        "port": number | null,
+        "framework": string | null   // "express", "electron-ipc", etc.
+      }
+    }
   },
   "plan": {
     "title": string,
@@ -208,8 +261,7 @@ Output JSON schema:
         "title": string,
         "description": string,
         "commands": string[],
-        "artifacts": string[],
-        "acceptance": string[]
+        "artifacts": string[]
       }
     ]
   },
@@ -234,9 +286,32 @@ Output JSON schema:
 Rules:
 - Return ONLY a JSON object matching the schema (no extra prose, no markdown code blocks).
 - "coder_instructions" must be written as imperative tasks for the Coder Agent.
-- Prefer concrete file paths, minimal templates, and runnable commands.
+- **Template Strategy**:
+  * Use "template" ONLY for: package.json, .gitignore, README.md, simple config files
+  * For ALL code files (.js, .html, .css, .py): Set template=null and define detailed "contracts" instead
+  * Worker Agents are experts - let them generate code based on contracts
+- **Contracts Strategy**:
+  * Define ALL DOM elements that will be used (buttons, inputs, divs with IDs)
+  * Define ALL API endpoints/IPC channels with COMPLETE request/response schemas
+  * Define ALL storage requirements (files, localStorage keys)
+  * Be specific: include IDs, types, purposes, and which files interact with them
+  * ⚠️ CRITICAL: NEVER set requestSchema or responseSchema to null
+  * For APIs that take no parameters: requestSchema = {type: "object", properties: {}}
+  * For APIs that return nothing: responseSchema = {type: "object", properties: {success: {type: "boolean"}, message: {type: "string"}}}
+  * For APIs that return simple types: responseSchema = {type: "string"} or {type: "number"}
+  * For APIs that return objects: ALWAYS define the object structure with properties
+  * For APIs that return arrays: ALWAYS define the array items structure
+- **For Electron apps**:
+  * Define IPC contracts between main.js and renderer (e.g., "calculate" channel)
+  * Specify preload.js should use contextBridge.exposeInMainWorld (not exposeAPI)
+  * Set contextIsolation: true, nodeIntegration: false in main.js
+  * ⚠️ CRITICAL: main.js is Node.js - it CANNOT require('./config') because config.js uses window.APP_CONFIG
+  * ⚠️ CRITICAL: In main.js requirements, explicitly state "Do NOT import config.js"
+  * For main.js: use hardcoded window dimensions (width: 800, height: 600)
+  * ⚠️ CRITICAL: ALL IPC handlers must have complete responseSchema - even simple ones like checkout
+  * Example: checkout IPC should return {success: boolean, message: string}, not void
 - Keep acceptance criteria testable and unambiguous.
-- Include environment scaffolding (e.g., package.json, env files, local database stubs) whenever execution requires it and list commands to set it up.
+- Include environment scaffolding commands (npm install, etc.).
 - For web applications, ALWAYS include frontend files (HTML, CSS, JavaScript) with modern, responsive design.
 - For simple prompts like "生成計算機網站", automatically expand to include:
   * Complete UI/UX design specifications
@@ -244,11 +319,13 @@ Rules:
   * Modern styling (CSS with variables, flexbox/grid)
   * Interactive JavaScript functionality
   * Proper file structure (public/ folder for frontend assets)
+  * Clear DOM contracts (button IDs, input IDs, event handlers)
+  * Clear API contracts (IPC channels or HTTP endpoints)
 - "markdown" should be a concise handoff addressed to the Coder Agent summarizing what to implement now.
 - "design" section should include UI/UX specifications for frontend projects.
 - Mirror the user's request language when possible; otherwise use English.`;
 
-    const userPrompt = JSON.stringify({
+    const userPromptData = {
       goal: prompt,
       context: context || null,
       constraints: {
@@ -263,7 +340,14 @@ Rules:
         responsive_design: true, // 總是響應式設計
         modern_ui: true // 使用現代 UI 設計
       }
-    });
+    };
+
+    // 🧠 Inject RAG context if available
+    if (ragContext && ragContext.length > 0) {
+      userPromptData.reference_architectures = `\n\n=== REFERENCE ARCHITECTURES (from knowledge base) ===\n${ragContext}\n=== END REFERENCE ARCHITECTURES ===\n\nUse these references to inform your architecture design, especially for contracts structure.`;
+    }
+
+    const userPrompt = JSON.stringify(userPromptData);
 
     // 使用 BaseAgent 的重試機制（因為 BaseAgent.run 會自動添加 system message，我們需要自定義 payload）
     // 不指定 model，讓 API Provider Manager 使用默認模型
@@ -378,22 +462,66 @@ Rules:
 Your primary job:
 - Translate high-level goals into explicit, actionable instructions directed at the Coder Agent.
 - Produce a precise, implementable plan and a clear "handoff" message that tells the Coder Agent exactly what to do next.
-- Keep scope focused on Backend(1): GPT integration, Architect Agent behavior, and dev-process command generation.
+- **IMPORTANT**: Define clear contracts (DOM elements, API endpoints, storage keys) instead of writing full code templates.
+- **SCALE & COMPLETENESS**: Ensure the refined plan maintains or expands the project scope to be **FULL-SCALE** and **PRODUCTION-READY**. Avoid simplifying or removing features unless explicitly asked.
+- **MANDATORY LINKING**: Explicitly require 'index.html' to include '<link rel="stylesheet" href="style.css">' and '<script src="script.js" defer></script>'.
+- Use "template" ONLY for simple config files (package.json, .gitignore). For code files, define "contracts" and let Worker Agents generate the implementation.
 
 Output JSON schema:
 {
   "coder_instructions": {
     "role": "Coder Agent",
     "summary": string,
-    "directives": [
-      { "do": string, "why": string }
-    ],
     "files": [
-      { "path": string, "purpose": string, "template": string | null }
+      { 
+        "path": string, 
+        "purpose": string, 
+        "template": string | null,  // Use ONLY for package.json, .gitignore, simple configs. Set null for code files.
+        "requirements": string[]     // Detailed functional requirements for Worker Agents
+      }
     ],
     "commands": string[],
-    "acceptance": string[],
-    "notes": string[]
+    "contracts": {
+      "dom": [
+        { 
+          "id": string,
+          "type": string,
+          "purpose": string,
+          "accessedBy": string[]
+        }
+      ],
+      "api": [
+        { 
+          "endpoint": string,
+          "method": string,
+          "purpose": string,
+          "requestSchema": object | null,
+          "responseSchema": object | null,
+          "producers": string[],
+          "consumers": string[]
+        }
+      ],
+      "storage": [
+        { 
+          "key": string,
+          "type": string,
+          "purpose": string,
+          "schema": object | null
+        }
+      ]
+    },
+    "projectConfig": {
+      "type": string,
+      "runtime": {
+        "platform": string,
+        "backend_port": number | null,
+        "frontend_port": number | null
+      },
+      "backend": {
+        "port": number | null,
+        "framework": string | null
+      }
+    }
   },
   "plan": {
     "title": string,
@@ -404,8 +532,7 @@ Output JSON schema:
         "title": string,
         "description": string,
         "commands": string[],
-        "artifacts": string[],
-        "acceptance": string[]
+        "artifacts": string[]
       }
     ]
   },

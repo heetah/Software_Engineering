@@ -14,6 +14,7 @@
   "license": "ISC",
   "dependencies": {
     "@langchain/core": "^1.1.4",
+    "@llamaindex/openai": "^0.4.22",
     "axios": "^1.12.2",
     "dotenv": "^17.2.3",
     "langchain": "^1.1.5",
@@ -24,23 +25,6 @@
   "devDependencies": {
     "electron": "^29.4.6",
     "electron-builder": "^24.6.4",
-    "node-gyp": "^12.1.0"
-  },
-  "build": {
-    "appId": "com.aicopilot.app",
-    "productName": "AI Copilot Assistant",
-    "npmRebuild": false,
-    "directories": {
-      "output": "dist"
-    },
-    "win": {
-      "target": "nsis"
-    },
-    "files": [
-      "**/*",
-      "!dist/*",
-      "!**/*.ts",
-      "!**/*.map"
-    ]
+    "jest": "^30.2.0"
   }
 }

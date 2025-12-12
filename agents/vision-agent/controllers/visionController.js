@@ -7,7 +7,7 @@ exports.analyze = async (req, res) => {
   const body = req.body || {};
 
   // forwarding config (can be overridden via env)
-  const CODER_AGENT_URL = process.env.CODER_AGENT_URL || 'http://localhost:3800/api/coder/submit';
+  const CODER_AGENT_URL = 'http://localhost:3800/api/coder/submit';
 
   // --- validator & sanitizer helpers ---
   const ALLOWED_EXT = [
@@ -132,46 +132,46 @@ exports.analyze = async (req, res) => {
       const timeoutId = setTimeout(() => {
         reject(new Error(`Request timeout after ${timeoutMs}ms`));
       }, timeoutMs);
-      
+
       try {
         const u = new URL(urlStr);
         const data = JSON.stringify(obj);
         const lib = u.protocol === 'https:' ? require('https') : require('http');
-        const opts = { 
-          method: 'POST', 
-          hostname: u.hostname, 
-          port: u.port || (u.protocol === 'https:' ? 443 : 80), 
-          path: u.pathname + (u.search || ''), 
-          headers: { 
-            'Content-Type': 'application/json; charset=utf-8', 
-            'Content-Length': Buffer.byteLength(data) 
+        const opts = {
+          method: 'POST',
+          hostname: u.hostname,
+          port: u.port || (u.protocol === 'https:' ? 443 : 80),
+          path: u.pathname + (u.search || ''),
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Content-Length': Buffer.byteLength(data)
           }
         };
-        
+
         const req = lib.request(opts, (resp) => {
           const chunks = [];
           resp.on('data', c => chunks.push(c));
           resp.on('end', () => {
             clearTimeout(timeoutId);
             const body = Buffer.concat(chunks).toString('utf8');
-            try { 
-              resolve({ statusCode: resp.statusCode, body: JSON.parse(body) }); 
-            } catch (e) { 
-              resolve({ statusCode: resp.statusCode, body: body }); 
+            try {
+              resolve({ statusCode: resp.statusCode, body: JSON.parse(body) });
+            } catch (e) {
+              resolve({ statusCode: resp.statusCode, body: body });
             }
           });
         });
-        
+
         req.on('error', (err) => {
           clearTimeout(timeoutId);
           reject(err);
         });
-        
+
         req.write(data);
         req.end();
-      } catch (e) { 
+      } catch (e) {
         clearTimeout(timeoutId);
-        reject(e); 
+        reject(e);
       }
     });
   }
@@ -181,8 +181,8 @@ exports.analyze = async (req, res) => {
   const ci = (body.output && body.output.coder_instructions) || body.coder_instructions;
   if (!ci) {
     logger.warn('No coder_instructions found in request', req.requestId);
-    return res.status(400).json({ 
-      error: 'missing_coder_instructions', 
+    return res.status(400).json({
+      error: 'missing_coder_instructions',
       message: 'This service now only processes architect payloads with coder_instructions. OCR functionality has been removed.',
       expected_format: {
         output: {
@@ -191,7 +191,7 @@ exports.analyze = async (req, res) => {
             files: [
               {
                 path: 'index.html',
-                language: 'html', 
+                language: 'html',
                 template: '<html>...</html>'
               }
             ]
@@ -209,18 +209,18 @@ exports.analyze = async (req, res) => {
     const status = { ok: false, errors: validation.errors };
     writeStatusFiles(id, status);
     logger.warn('Coder instructions validation failed', req.requestId, { errors: validation.errors });
-    return res.status(400).json({ 
-      error: 'validation_failed', 
-      details: validation.errors, 
-      status_url: `/outputs/${id}/status.html` 
+    return res.status(400).json({
+      error: 'validation_failed',
+      details: validation.errors,
+      status_url: `/outputs/${id}/status.html`
     });
   }
-  
+
   // Forward to coder-agent for file generation
   try {
     logger.info('Forwarding coder_instructions to coder-agent', req.requestId);
     const resp = await httpPostJson(CODER_AGENT_URL.replace('/analyze', '/submit'), body);
-    
+
     if (resp.statusCode === 201 || resp.statusCode === 200) {
       logger.info('Coder-agent accepted payload', req.requestId, { statusCode: resp.statusCode });
       return res.status(resp.statusCode).json(resp.body);
