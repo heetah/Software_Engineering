@@ -1029,21 +1029,71 @@ function formatAgentLog(message) {
   let html = message;
   let icon = '';
 
-  // 檢測主要 Agent 階段
-  if (message.includes('Architect') && (message.includes('starting') || message.includes('Running') || message.includes('initialized'))) {
+  // === 初始化階段 ===
+  if (message.includes('Coordinator Bridge') && message.includes('Received user input')) {
+    icon = '◆';
+    className = 'log-entry--init';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>系統初始化</strong> 接收用戶需求...</span>`;
+  }
+  else if (message.includes('API Provider Manager') || message.includes('Configuration tips')) {
+    icon = '⚙';
+    className = 'log-entry--config';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>配置載入</strong> 初始化 API...</span>`;
+  }
+  else if (message.includes('provider registered')) {
+    const provider = message.includes('OpenAI') ? 'OpenAI' : 'Gemini';
+    const type = message.includes('primary') ? '主要' : '備用';
+    icon = '◉';
+    className = 'log-entry--config';
+    html = `<span class="log-icon">${icon}</span><span class="log-text">註冊 ${provider} (${type})</span>`;
+  }
+  // === Architect Agent ===
+  else if (message.includes('Architect') && (message.includes('starting') || message.includes('Running') || message.includes('initialized'))) {
     icon = '▲';
     className = 'log-entry--architect log-entry--active';
-    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Architect Agent</strong> 執行中...</span>`;
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Architect Agent</strong> 分析需求並生成架構...</span>`;
   }
-  else if (message.includes('Verifier') && (message.includes('starting') || message.includes('Running') || message.includes('test-plan'))) {
+  else if (message.includes('Architect') && message.includes('completed')) {
+    icon = '●';
+    className = 'log-entry--architect log-entry--success';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Architect Agent</strong> 架構完成</span>`;
+  }
+  // === Verifier Agent ===
+  else if (message.includes('Verifier') && (message.includes('starting') || message.includes('Running'))) {
     icon = '✓';
     className = 'log-entry--verifier log-entry--active';
-    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Verifier Agent</strong> 執行中...</span>`;
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Verifier Agent</strong> 生成測試計劃...</span>`;
   }
-  else if (message.includes('Tester') && (message.includes('starting') || message.includes('Running') || message.includes('Jest'))) {
+  else if (message.includes('Verifier') && message.includes('completed')) {
+    icon = '●';
+    className = 'log-entry--verifier log-entry--success';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Verifier Agent</strong> 測試計劃完成</span>`;
+  }
+  else if (message.includes('test-plan.json')) {
+    icon = '▢';
+    className = 'log-entry--file';
+    html = `<span class="log-icon">${icon}</span><span class="log-text">已生成 test-plan.json</span>`;
+  }
+  // === Tester Agent ===
+  else if (message.includes('Tester') && (message.includes('starting') || message.includes('Running'))) {
     icon = '◉';
     className = 'log-entry--tester log-entry--active';
-    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Tester Agent</strong> 執行中...</span>`;
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Tester Agent</strong> 生成並執行測試...</span>`;
+  }
+  else if (message.includes('Tester') && message.includes('completed')) {
+    icon = '●';
+    className = 'log-entry--tester log-entry--success';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Tester Agent</strong> 測試完成</span>`;
+  }
+  else if (message.includes('Jest')) {
+    icon = '◉';
+    className = 'log-entry--tester';
+    html = `<span class="log-icon">${icon}</span><span class="log-text">執行 Jest 測試...</span>`;
+  }
+  else if (message.includes('test-report.json')) {
+    icon = '▢';
+    className = 'log-entry--file';
+    html = `<span class="log-icon">${icon}</span><span class="log-text">已生成 test-report.json</span>`;
   }
   // Coder Agent 相關
   else if (message.includes('Phase 0')) {
