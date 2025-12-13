@@ -21,12 +21,6 @@
 
 ### 應用程式演示
 
-![應用程式演示](.github/assets/demo.gif)
-
-> **錄製提示**: 使用 [ScreenToGif](https://www.screentogif.com/) 或其他螢幕錄製工具，將 GIF 儲存至 `.github/assets/demo.gif`
-
-### 功能截圖
-
 <table>
   <tr>
     <td width="50%">
