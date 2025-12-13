@@ -235,11 +235,11 @@ export default class TesterAgent extends BaseAgent {
   // 5. 對失敗案例進行原因分析並補充建議
   // 6. 寫出報告檔案
   async runTesterAgent(sessionId) {
-    if (!sessionId) throw new Error("缺少 sessionId");
+    if (!sessionId) throw new Error("sessionId is required");
 
     const plan = await this.loadTestPlan(sessionId);
     if (!Array.isArray(plan?.testFiles) || plan.testFiles.length === 0) {
-      throw new Error("test-plan.json 缺少 testFiles 或為空");
+      throw new Error("test-plan.json is missing testFiles or is empty");
     }
 
     for (const tf of plan.testFiles) {
@@ -255,7 +255,7 @@ export default class TesterAgent extends BaseAgent {
       // 回寫空報告以利後續流程
       const empty = { sessionId, generatedAt: new Date().toISOString(), totals: { files: 0, tests: 0, passed: 0, failed: 0 }, files: [] };
       await this.writeReports(sessionId, empty, { sessionId, generatedAt: new Date().toISOString(), failures: [] });
-      throw new Error("無法解析 jest-report.json");
+      throw new Error("jest-report.json is missing or invalid");
     }
 
     let { testReport, errorReport } = this.buildReports(sessionId, jestJson);

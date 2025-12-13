@@ -346,6 +346,117 @@ function registerSettingsHandlers() {
   });
 }
 
+function registerLibraryHandlers() {
+  const { shell } = require('electron');
+
+  ipcMain.handle("library:get-projects", async () => {
+    try {
+      const outputDir = path.join(__dirname, 'output');
+      if (!fs.existsSync(outputDir)) {
+        return [];
+      }
+
+      const entries = fs.readdirSync(outputDir, { withFileTypes: true });
+      const projects = [];
+
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const projectPath = path.join(outputDir, entry.name);
+          const stats = fs.statSync(projectPath);
+
+          // Try to read project metadata
+          let projectName = entry.name;
+          let description = '';
+
+          // First priority: read .project-meta.json
+          const metaPath = path.join(projectPath, '.project-meta.json');
+          if (fs.existsSync(metaPath)) {
+            try {
+              const metadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+              if (metadata.title) {
+                projectName = metadata.title;
+              }
+              if (metadata.userRequirement) {
+                description = metadata.userRequirement.substring(0, 100);
+              }
+            } catch (err) {
+              console.warn('Failed to read project metadata:', err);
+            }
+          } else {
+            // Fallback: Look for README or config files
+            const readmePath = path.join(projectPath, 'README.md');
+
+            if (fs.existsSync(readmePath)) {
+              try {
+                const readmeContent = fs.readFileSync(readmePath, 'utf-8');
+                const lines = readmeContent.split('\n');
+                if (lines.length > 0) {
+                  // Try to extract title from first heading
+                  const titleMatch = lines.find(line => line.startsWith('# '));
+                  if (titleMatch) {
+                    projectName = titleMatch.replace('# ', '').trim();
+                  }
+                  // Get description from first paragraph
+                  const descLine = lines.find(line => line.trim() && !line.startsWith('#'));
+                  if (descLine) {
+                    description = descLine.trim().substring(0, 100);
+                  }
+                }
+              } catch (err) {
+                console.warn('Failed to read README:', err);
+              }
+            }
+          }
+
+          projects.push({
+            name: projectName,
+            path: projectPath,
+            timestamp: stats.mtimeMs,
+            description: description
+          });
+        }
+      }
+
+      return projects;
+    } catch (error) {
+      console.error('Failed to get projects:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle("library:open-project", async (event, projectPath) => {
+    try {
+      await shell.openPath(projectPath);
+      return { ok: true };
+    } catch (error) {
+      console.error('Failed to open project folder:', error);
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("library:preview-project", async (event, projectPath) => {
+    try {
+      // Look for index.html in the project
+      const publicDir = path.join(projectPath, 'public');
+      const indexPath = fs.existsSync(publicDir)
+        ? path.join(publicDir, 'index.html')
+        : path.join(projectPath, 'index.html');
+
+      if (fs.existsSync(indexPath)) {
+        await shell.openPath(indexPath);
+        return { ok: true };
+      } else {
+        // Fallback to opening the folder
+        await shell.openPath(projectPath);
+        return { ok: true, fallback: true };
+      }
+    } catch (error) {
+      console.error('Failed to preview project:', error);
+      return { ok: false, error: error.message };
+    }
+  });
+}
+
 function registerCoordinatorBridge() {
   let coordinatorModule = null;
   let agents = null;
@@ -385,7 +496,6 @@ function registerCoordinatorBridge() {
 
       dotenv.config();
 
-      // 🔧 攔截 console.log 並轉發到前端「查看執行細節」
       const originalLog = console.log;
       const originalWarn = console.warn;
       const originalInfo = console.info;
@@ -477,10 +587,11 @@ function registerCoordinatorBridge() {
             responseText += `生成檔案列表: \n`;
             plan.fileOps.created.forEach(file => {
               let icon = '📄';
-              if (file.endsWith('.html')) icon = '<span style="color: #e44d26;">&lt;/&gt;</span>';
-              else if (file.endsWith('.css')) icon = '<span style="color: #42a5f5;">{}</span>';
-              else if (file.endsWith('.js')) icon = '<span style="color: #FF9800;">JS</span>';
-              else if (file.endsWith('.json')) icon = '<span style="color: #FF9800;">{}</span>';
+              // Use Unicode symbols instead of HTML to avoid rendering issues
+              if (file.endsWith('.html')) icon = '</>';  // HTML tag symbol
+              else if (file.endsWith('.css')) icon = '{}';  // CSS braces symbol
+              else if (file.endsWith('.js')) icon = 'JS';  // JavaScript abbreviation
+              else if (file.endsWith('.json')) icon = '{}';  // JSON braces symbol
 
               const filename = path.basename(file);
               responseText += `${icon} ${filename} \n`;
@@ -496,6 +607,15 @@ function registerCoordinatorBridge() {
 
           if (resolvedWorkspaceDir) {
             try {
+              // Save project metadata before zipping
+              const metaPath = path.join(resolvedWorkspaceDir, '.project-meta.json');
+              const metadata = {
+                title: content.substring(0, 100),
+                userRequirement: content,
+                createdAt: new Date().toISOString()
+              };
+              fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2), 'utf8');
+
               // 確保 zipWorkspaceDirectory 函式可用 (假設已定義在 main.js 上方)
               const zipPath = await zipWorkspaceDirectory(resolvedWorkspaceDir);
               downloadInfo = {
@@ -1204,6 +1324,7 @@ app.whenReady().then(async () => {
     await initDatabase();
     registerHistoryHandlers();
     registerSettingsHandlers();
+    registerLibraryHandlers();
     registerCoordinatorBridge();
     registerVisionHandlers();
 

@@ -39,10 +39,10 @@ export default class ContractAutoFixer {
     try {
       // 先檢查是否為命名風格不一致（最常見且容易修復）
       const namingStyleIssues = await this.detectNamingStyleMismatch(
-        outputDir, 
+        outputDir,
         validationResult
       );
-      
+
       for (const issue of namingStyleIssues) {
         try {
           const fixed = await this.fixNamingStyle(outputDir, issue);
@@ -193,10 +193,10 @@ export default class ContractAutoFixer {
    */
   async fixMissingProducer(outputDir, missing) {
     const mainPath = path.join(outputDir, missing.file);
-    
+
     try {
       let content = await fs.readFile(mainPath, 'utf-8');
-      
+
       // 檢查是否真的缺失
       const hasHandler = new RegExp(`ipcMain\\.handle\\(['"\`]${missing.endpoint}['"\`]`).test(content);
       if (hasHandler) {
@@ -206,19 +206,19 @@ export default class ContractAutoFixer {
       // 找到最後一個 ipcMain.handle 的位置
       const lastHandlerRegex = /ipcMain\.handle\([^)]+\)[^}]*\{[^}]*\}\);/g;
       const matches = Array.from(content.matchAll(lastHandlerRegex));
-      
+
       if (matches.length === 0) {
         // 沒有任何 handler，找到合適的位置插入
         const insertPos = content.indexOf('app.whenReady()');
         if (insertPos === -1) return false;
-        
+
         const newHandler = this.generateIpcHandler(missing.endpoint, missing.purpose);
         content = content.slice(0, insertPos) + newHandler + '\n\n' + content.slice(insertPos);
       } else {
         // 在最後一個 handler 後面插入
         const lastMatch = matches[matches.length - 1];
         const insertPos = lastMatch.index + lastMatch[0].length;
-        
+
         const newHandler = this.generateIpcHandler(missing.endpoint, missing.purpose);
         content = content.slice(0, insertPos) + '\n\n' + newHandler + content.slice(insertPos);
       }
@@ -235,10 +235,10 @@ export default class ContractAutoFixer {
    */
   async fixMissingConsumer(outputDir, missing) {
     const preloadPath = path.join(outputDir, missing.file);
-    
+
     try {
       let content = await fs.readFile(preloadPath, 'utf-8');
-      
+
       // 檢查是否真的缺失
       const hasInvoke = new RegExp(`ipcRenderer\\.invoke\\(['"\`]${missing.endpoint}['"\`]`).test(content);
       if (hasInvoke) {
@@ -251,10 +251,10 @@ export default class ContractAutoFixer {
 
       const methodName = this.channelToMethodName(missing.endpoint);
       const newMethod = this.generatePreloadMethod(methodName, missing.endpoint, missing.purpose);
-      
+
       // 找到最後一個方法定義
       const closingBracePos = content.lastIndexOf('}', exposeMatch.index + exposeMatch[0].length);
-      
+
       // 插入新方法（加上逗號）
       content = content.slice(0, closingBracePos) + ',\n\n' + newMethod + '\n' + content.slice(closingBracePos);
 
@@ -270,11 +270,11 @@ export default class ContractAutoFixer {
    */
   async fixNameMismatch(outputDir, mismatch) {
     const filePath = path.join(outputDir, mismatch.file);
-    
+
     try {
       let content = await fs.readFile(filePath, 'utf-8');
       const originalContent = content;
-      
+
       // 替換所有出現的錯誤名稱
       // 使用精確匹配，避免誤替換
       const patterns = [
@@ -290,7 +290,7 @@ export default class ContractAutoFixer {
         // 重新創建正則表達式但用於替換
         const searchRegex = new RegExp(pattern.source.replace(/\\\\/g, '\\'), 'g');
         const replaceStr = replacement.replace(/\\\\/g, '\\').replace(/\\/g, '');
-        
+
         if (searchRegex.test(content)) {
           // 簡單替換字串
           content = content.replace(
@@ -350,26 +350,26 @@ ipcMain.handle('${channel}', async (event, ...args) => {
   generateReport(fixResult) {
     let report = '\n';
     report += '═'.repeat(70) + '\n';
-    report += '🔧 自動修復報告 (Auto-Fix Report)\n';
+    report += ' 自動修復報告 (Auto-Fix Report)\n';
     report += '═'.repeat(70) + '\n\n';
 
     if (!fixResult.success && fixResult.error) {
-      report += `❌ 修復失敗: ${fixResult.error}\n`;
+      report += ` 修復失敗: ${fixResult.error}\n`;
       return report;
     }
 
     if (fixResult.totalAttempted === 0) {
-      report += '✅ 沒有需要修復的問題\n';
+      report += ' 沒有需要修復的問題\n';
       return report;
     }
 
-    report += `📊 修復統計:\n`;
+    report += ` 修復統計:\n`;
     report += `   • 嘗試修復: ${fixResult.totalAttempted} 個問題\n`;
     report += `   • 成功: ${fixResult.successCount} 個\n`;
     report += `   • 失敗: ${fixResult.failCount} 個\n\n`;
 
     if (fixResult.fixed.length > 0) {
-      report += '✅ 成功修復的問題:\n';
+      report += ' 成功修復的問題:\n';
       for (const fix of fixResult.fixed) {
         if (fix.type === 'missing-producer') {
           report += `   • 在 ${fix.file} 中加入 IPC handler: '${fix.channel}'\n`;
@@ -407,43 +407,43 @@ ipcMain.handle('${channel}', async (event, ...args) => {
    */
   async detectNamingStyleMismatch(outputDir, validationResult) {
     const issues = [];
-    
+
     // 檢查是否大量頻道都缺失（可能是命名風格問題）
     const missingChannels = validationResult.issues.missingChannels || [];
     if (missingChannels.length === 0) return issues;
-    
+
     // 讀取實際文件來分析命名風格
     const mainPath = path.join(outputDir, 'main.js');
     const preloadPath = path.join(outputDir, 'preload.js');
-    
+
     try {
       const mainContent = await fs.readFile(mainPath, 'utf-8');
       const preloadContent = await fs.readFile(preloadPath, 'utf-8');
-      
+
       // 提取實際使用的 IPC 頻道名稱
       const actualChannels = [];
       const ipcRegex = /ipc(?:Main|Renderer)\.(?:handle|invoke)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
       let match;
-      
+
       while ((match = ipcRegex.exec(mainContent + preloadContent)) !== null) {
         if (!actualChannels.includes(match[1])) {
           actualChannels.push(match[1]);
         }
       }
-      
+
       // 分析命名風格
       const camelCaseCount = actualChannels.filter(ch => /^[a-z]+[A-Z]/.test(ch)).length;
       const kebabCaseCount = actualChannels.filter(ch => /^[a-z]+-[a-z]/.test(ch)).length;
-      
+
       const actualStyle = camelCaseCount > kebabCaseCount ? 'camelCase' : 'kebab-case';
-      
+
       // 檢查期望的風格
       const expectedChannels = missingChannels.map(mc => mc.endpoint);
       const expectedKebabCount = expectedChannels.filter(ch => /^[a-z]+-[a-z]/.test(ch)).length;
       const expectedCamelCount = expectedChannels.filter(ch => /^[a-z]+[A-Z]/.test(ch)).length;
-      
+
       const expectedStyle = expectedKebabCount > expectedCamelCount ? 'kebab-case' : 'camelCase';
-      
+
       // 如果風格不同，這就是問題所在
       if (actualStyle !== expectedStyle && actualChannels.length > 0) {
         issues.push({
@@ -454,11 +454,11 @@ ipcMain.handle('${channel}', async (event, ...args) => {
           files: ['main.js', 'preload.js']
         });
       }
-      
+
     } catch (error) {
       // 檔案讀取失敗，跳過
     }
-    
+
     return issues;
   }
 
@@ -466,31 +466,31 @@ ipcMain.handle('${channel}', async (event, ...args) => {
    * 修復命名風格不一致
    */
   async fixNamingStyle(outputDir, issue) {
-    const converter = issue.expectedStyle === 'kebab-case' 
-      ? this.camelToKebab 
+    const converter = issue.expectedStyle === 'kebab-case'
+      ? this.camelToKebab
       : this.kebabToCamel;
-    
+
     let fixed = false;
-    
+
     for (const file of issue.files) {
       const filePath = path.join(outputDir, file);
       try {
         let content = await fs.readFile(filePath, 'utf-8');
-        
+
         // 轉換所有 IPC 頻道名稱
         for (const channel of issue.channels) {
           const newChannel = converter(channel);
           const regex = new RegExp(`(['"\`])${this.escapeRegex(channel)}\\1`, 'g');
           content = content.replace(regex, `$1${newChannel}$1`);
         }
-        
+
         await fs.writeFile(filePath, content, 'utf-8');
         fixed = true;
       } catch (error) {
         console.error(`Failed to fix naming style in ${file}:`, error.message);
       }
     }
-    
+
     return fixed;
   }
 
@@ -520,22 +520,22 @@ ipcMain.handle('${channel}', async (event, ...args) => {
    */
   async fixSelectOptionCase(outputDir, selectIssue) {
     const htmlPath = path.join(outputDir, selectIssue.htmlFile);
-    
+
     try {
       let content = await fs.readFile(htmlPath, 'utf-8');
-      
+
       // 替換 select 選項值為 JS 中期望的格式
       const oldValueRegex = new RegExp(
         `(<option[^>]*value\\s*=\\s*["'])${selectIssue.htmlValue}(["'][^>]*>)`,
         'gi'
       );
-      
+
       if (!oldValueRegex.test(content)) {
         return false; // 沒有找到需要替換的值
       }
-      
+
       content = content.replace(oldValueRegex, `$1${selectIssue.jsValue}$2`);
-      
+
       await fs.writeFile(htmlPath, content, 'utf-8');
       return true;
     } catch (error) {
@@ -548,10 +548,10 @@ ipcMain.handle('${channel}', async (event, ...args) => {
    */
   async fixMissingDomElement(outputDir, missing) {
     const htmlPath = path.join(outputDir, 'public', 'index.html');
-    
+
     try {
       let content = await fs.readFile(htmlPath, 'utf-8');
-      
+
       // 檢查是否真的缺失
       const hasElement = new RegExp(`\\bid\\s*=\\s*["']${missing.id}["']`).test(content);
       if (hasElement) {
@@ -560,15 +560,15 @@ ipcMain.handle('${channel}', async (event, ...args) => {
 
       // 生成基本的 HTML 元素
       const newElement = this.generateHtmlElement(missing);
-      
+
       // 找到 body 結束標籤前插入
       const bodyEndPos = content.lastIndexOf('</body>');
       if (bodyEndPos === -1) return false;
-      
-      content = content.slice(0, bodyEndPos) + 
-                `  ${newElement}\n` + 
-                content.slice(bodyEndPos);
-      
+
+      content = content.slice(0, bodyEndPos) +
+        `  ${newElement}\n` +
+        content.slice(bodyEndPos);
+
       await fs.writeFile(htmlPath, content, 'utf-8');
       return true;
     } catch (error) {
@@ -582,7 +582,7 @@ ipcMain.handle('${channel}', async (event, ...args) => {
   generateHtmlElement(missing) {
     const elementType = missing.elementType || 'div';
     const purpose = missing.purpose || 'TODO: Add purpose';
-    
+
     switch (elementType.toLowerCase()) {
       case 'input':
         return `<input type="text" id="${missing.id}" placeholder="${purpose}" />`;
@@ -603,10 +603,10 @@ ipcMain.handle('${channel}', async (event, ...args) => {
    */
   async checkAndFix(sessionId, contractValidator) {
     console.log('\n🔍 開始檢查契約一致性...');
-    
+
     // 先驗證
     const validationResult = await contractValidator.validateSession(sessionId);
-    
+
     if (validationResult.isValid) {
       console.log('✅ 契約驗證通過，無需修復');
       return { needsFix: false, validationResult };
@@ -631,7 +631,7 @@ ipcMain.handle('${channel}', async (event, ...args) => {
     // 修復後重新驗證
     console.log('🔄 重新驗證修復結果...');
     const revalidation = await contractValidator.validateSession(sessionId);
-    
+
     if (revalidation.isValid) {
       console.log('✅ 修復成功！所有契約現在都一致了\n');
       return {

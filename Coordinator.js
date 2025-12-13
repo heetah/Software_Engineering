@@ -274,13 +274,13 @@ export async function runWithInstructionService(
         if (checkResult.fixResult) {
           // 已經執行過修復
           if (checkResult.needsAI) {
-            console.log("\n⚠️  部分問題無法自動修復，建議：");
-            console.log("   1. 檢查上述錯誤訊息");
-            console.log("   2. 手動修復或重新生成受影響的檔案");
-            console.log("   3. 如果問題複雜，考慮重新生成整個專案\n");
+            console.log("\n Some contract issues cannot be automatically fixed, suggestions:");
+            console.log("   1. Check the error messages above");
+            console.log("   2. Manually fix or re-generate affected files");
+            console.log("   3. If the issue is complex, consider re-generating the entire project\n");
           } else {
-            console.log("\n✅ 所有契約問題已自動修復！");
-            console.log(`   成功: ${checkResult.fixResult.successCount}，失敗: ${checkResult.fixResult.failCount}\n`);
+            console.log("\n All contract issues have been automatically fixed!");
+            console.log(`   Success: ${checkResult.fixResult.successCount}, Failed: ${checkResult.fixResult.failCount}\n`);
           }
         }
 
@@ -319,7 +319,7 @@ export async function runWithInstructionService(
         });
       }
     } catch (err) {
-      errorLogger.warn("Verifier Agent 執行失敗", {
+      errorLogger.warn("Verifier Agent execution failed", {
         error: err.message,
         sessionId: plan.id
       });
@@ -458,7 +458,7 @@ function writeProjectDirectly(result, outDir = "./output/generated_project") {
 
   // 如果有錯誤，記錄但不中斷
   if (errors.length > 0) {
-    console.warn(`\n⚠️  ${errors.length} file(s) failed to write:`);
+    console.warn(`\n  ${errors.length} file(s) failed to write:`);
     errors.forEach(({ file, error }) => {
       console.warn(`  - ${file}: ${error}`);
     });
