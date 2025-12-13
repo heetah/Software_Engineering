@@ -151,9 +151,55 @@ body {
  * ====================================================================
  */
 
+/* [新增] 側邊欄頂部容器 */
+.sidebar-header {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 20px;
+  padding: 0 5px;
+}
+
+/* [新增] 側邊欄頂部按鈕樣式 */
+.sidebar-header-btn {
+  flex: 1;
+  max-width: 45%;
+  height: 44px;
+  border: none;
+  border-radius: 12px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex);
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-header-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 8px 8px 16px var(--color-shadow-dark);
+}
+
+.sidebar-header-btn:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-concave);
+}
+
 .sidebar__menu {
   margin-top: 20px;
-  /* 稍微上移 */
+}
+
+/* [新增] 側邊欄頂部按鈕容器 (讓按鈕並排) */
+.sidebar-header-row {
+  display: flex;
+  gap: 12px;
+  /* 按鈕之間的間距 */
+  margin-bottom: 15px;
+  /* 與下方聊天按鈕的距離 */
+  padding-left: 2px;
+  /* 微調對齊 */
 }
 
 .menu-button {
@@ -1035,3 +1081,213 @@ body {
 
 /* 程式碼框內的 Copy 按鈕 (已移出，此區塊可移除或保留為空) */
 /* .message-bubble--code .message-actions { ... } */
+
+/* Log Container Styles */
+.log-container {
+  margin-top: 15px;
+  width: 100%;
+  max-width: 100%;
+}
+
+.log-details {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+html.dark-mode .log-details {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.log-summary {
+  padding: 12px 16px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--color-text-light);
+  font-size: 0.9rem;
+  font-weight: 500;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s ease;
+}
+
+.log-summary:hover {
+  color: var(--color-text);
+}
+
+.log-summary::marker {
+  color: var(--color-text-light);
+}
+
+.log-content {
+  padding: 0 16px 16px 16px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: var(--color-text-light);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 250px;
+  overflow-y: auto;
+  line-height: 1.5;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+html.dark-mode .log-content {
+  color: var(--color-text-light);
+}
+
+.log-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.log-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.log-content::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.log-entry {
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 4px;
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+/*
+ * ====================================================================
+ * 11. 新手教學系統 (Onboarding System)
+ * ====================================================================
+ */
+
+.tutorial-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+  overflow: hidden;
+}
+
+.tutorial-overlay.is-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tutorial-spotlight {
+  position: absolute;
+  border-radius: 16px;
+  background: transparent;
+  box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.85);
+  border: 2px solid rgba(var(--color-accent-1), 0.6);
+  transition: all 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+  pointer-events: none;
+}
+
+.tutorial-bubble {
+  position: absolute;
+  z-index: 10000;
+  width: 280px;
+  max-width: 90vw;
+  background: var(--color-bg);
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), var(--shadow-convex);
+  transition: all 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+  pointer-events: auto;
+}
+
+.tutorial-text {
+  margin-bottom: 12px;
+  line-height: 1.6;
+  font-size: 15px;
+}
+
+.tutorial-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* [修正版] 新手教學下一步按鈕 (流動光澤邊框) */
+#tutorial-next-btn {
+  position: relative;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  border: none;
+  outline: none;
+  background: var(--color-bg);
+  border-radius: 20px;
+  padding: 8px 24px;
+  z-index: 1;
+  overflow: hidden;
+  box-shadow: var(--shadow-convex);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+#tutorial-next-btn::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 20px;
+  padding: 2px;
+  background: linear-gradient(125deg,
+      rgba(255, 255, 255, 0) 30%,
+      var(--color-accent-1) 45%,
+      rgba(255, 255, 255, 1) 50%,
+      var(--color-accent-2) 55%,
+      rgba(255, 255, 255, 0) 70%);
+  background-size: 200% 200%;
+  animation: shimmer 3s ease-in-out infinite;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  z-index: -1;
+  pointer-events: none;
+}
+
+#tutorial-next-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), var(--shadow-convex);
+  color: var(--color-accent-2);
+}
+
+#tutorial-next-btn:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-concave);
+}
+
+#tutorial-next-btn.is-finish::after {
+  background: linear-gradient(125deg,
+      var(--color-accent-1) 0%,
+      #ffffff 50%,
+      var(--color-accent-2) 100%);
+  background-size: 200% 200%;
+  -webkit-mask: none;
+  mask: none;
+  z-index: -1;
+  opacity: 0.8;
+}
