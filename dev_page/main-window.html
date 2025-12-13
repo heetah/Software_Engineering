@@ -6,19 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; script-src 'self' 'sha256-EyYHOa9iZFkWSakqzgVsSQQGx+OAVKONnrBeEEK/b6A='; style-src 'self' 'unsafe-inline'; font-src 'self' data:;">
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:;">
 
   <title>Multi-Agent AI Copilot</title>
   <link rel="stylesheet" href="style.css">
-
-  <script>
-    (function () {
-      const savedTheme = localStorage.getItem('theme');
-      if (savedTheme === 'dark') {
-        document.documentElement.classList.add('dark-mode');
-      }
-    })();
-  </script>
 </head>
 
 <body>
@@ -26,6 +17,16 @@
   <div class="app-layout">
 
     <div class="sidebar">
+      <!-- 側邊欄頂部按鈕組 -->
+      <div class="sidebar-header" id="sidebar-header">
+        <button class="sidebar-header-btn" id="tutorial-btn" title="重看新手教學">
+          🎓
+        </button>
+        <button class="sidebar-header-btn" id="refresh-session-btn" title="開始新對話">
+          🔄
+        </button>
+      </div>
+
       <div class="sidebar__menu">
         <button class="menu-button is-active" id="chat-button">
           <span>💬</span> 聊天
@@ -57,19 +58,21 @@
         <div class="chat-display" id="chat-display">
         </div>
 
-        <div class="input-area">
-          <textarea class="input-field" id="text-input" placeholder="在這裡輸入訊息..." rows="1"></textarea>
+        <div id="input-area-container">
+          <div class="input-area">
+            <textarea class="input-field" id="text-input" placeholder="在這裡輸入訊息..." rows="1"></textarea>
 
-          <input type="file" id="file-upload-input" style="display: none;">
+            <input type="file" id="file-upload-input" style="display: none;">
 
-          <div class="input-actions">
-            <span class="char-counter" id="char-counter">0</span>
-            <button class="action-button action-button--icon" id="file-upload-button" title="上傳檔案">
-              📎
-            </button>
-            <button class="action-button action-button--send" id="send-button" title="發送">
-              ➤
-            </button>
+            <div class="input-actions">
+              <span class="char-counter" id="char-counter">0</span>
+              <button class="action-button action-button--icon" id="file-upload-button" title="上傳檔案">
+                📎
+              </button>
+              <button class="action-button action-button--send" id="send-button" title="發送">
+                ➤
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -217,6 +220,29 @@
               </div>
             </div>
 
+            <!-- 關於 App 卡片 -->
+            <div class="settings-card" id="about-app-card">
+              <h3 class="settings-card__title">關於 App</h3>
+              <p class="settings-card__description">
+                Multi-Agent AI Copilot - 您的智能開發助理
+              </p>
+              <div class="settings-action-group">
+                <label class="settings-label">快捷鍵</label>
+                <p class="settings-label-description">
+                  <b>F12</b>：開啟開發者工具<br>
+                  <b>Ctrl + R</b> (macOS: Cmd + R)：開始新對話<br>
+                  <b>Enter</b>：在教學模式中進入下一步<br>
+                  <b>Escape</b>：結束教學模式
+                </p>
+              </div>
+              <div class="settings-action-group">
+                <label class="settings-label">隱私聲明</label>
+                <p class="settings-label-description">
+                  您的 API Key 和對話記錄僅儲存於本機，不會上傳到任何外部伺服器。
+                </p>
+              </div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -310,6 +336,18 @@
           </div>
         </div>
       </div>
+
+      <!-- 新手教學 Overlay -->
+      <div class="tutorial-overlay" id="tutorial-overlay">
+        <div class="tutorial-spotlight" id="tutorial-spotlight"></div>
+        <div class="tutorial-bubble" id="tutorial-bubble">
+          <div class="tutorial-text" id="tutorial-text"></div>
+          <div class="tutorial-actions">
+            <button class="action-button" id="tutorial-next-btn">下一步</button>
+          </div>
+        </div>
+      </div>
+
       <script src="main-window.js"></script>
 </body>
 

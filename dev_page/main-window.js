@@ -3,6 +3,12 @@
  * (最終整合版：Copy 按鈕內嵌、無亮部陰影樣式適配)
  */
 
+// Initialize theme BEFORE anything else to prevent flash
+const savedTheme = localStorage.getItem('theme');
+if (savedTheme === 'dark') {
+  document.documentElement.classList.add('dark-mode');
+}
+
 const { ipcRenderer } = require('electron');
 
 // 聊天介面相關
@@ -46,6 +52,10 @@ let currentSearchMode = localStorage.getItem('searchMode') || 'ask';
 const searchModeAsk = document.getElementById('search-mode-ask');
 const searchModeLens = document.getElementById('search-mode-lens');
 const searchModeAi = document.getElementById('search-mode-ai');
+
+// 側邊欄的新按鈕
+const tutorialTriggerBtn = document.getElementById('tutorial-btn'); // 新手教學元素
+const refreshSessionBtn = document.getElementById('refresh-session-btn'); // 側邊欄的刷新按鈕
 
 if (searchModeAsk && searchModeLens && searchModeAi) {
   // 初始化選中狀態
@@ -141,6 +151,19 @@ helpButton.addEventListener('click', () => setActivePage('page-help'));
 if (clearHistoryButton) {
   clearHistoryButton.addEventListener('click', () => {
     clearAllHistory().catch((error) => console.error('Failed to clear history', error));
+  });
+}
+
+// Refresh session button (新對話按鈕)
+if (refreshSessionBtn) {
+  refreshSessionBtn.addEventListener('click', async () => {
+    try {
+      await createAndActivateSession();
+      chatDisplay.innerHTML = '';
+      showGreetingIfEmpty();
+    } catch (error) {
+      console.error('Failed to create new session', error);
+    }
   });
 }
 
@@ -865,104 +888,300 @@ function formatAgentLog(message) {
   return { html, className };
 }
 
-function formatAgentLog(message) {
-  let className = '';
-  let html = message;
-  let icon = '';
+/* ====================================================================
+ * 6. 新手教學模組 (Onboarding System) - 多頁面導覽版
+ * ====================================================================
+ */
 
-  //檢測 Phase
-  if (message.includes('Phase 0')) {
-    icon = '⚙️';
-    className = 'log-entry--phase';
-    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Phase 0:</strong> 生成配置檔案</span>`;
-  } else if (message.includes('Phase 1')) {
-    icon = '📐';
-    className = 'log-entry--phase';
-    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Phase 1:</strong> 生成專案骨架</span>`;
-  } else if (message.includes('Phase 2')) {
-    icon = '🔨';
-    className = 'log-entry--phase';
-    html = `<span class="log-text"><strong>Phase 2:</strong> 生成檔案細節</span>`;
-  } else if (message.includes('Phase 3')) {
-    icon = '📦';
-    className = 'log-entry--phase';
-    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Phase 3:</strong> 組裝結果</span>`;
+// 定義教學步驟
+const tutorialSteps = [
+  {
+    // Step 1: 歡迎
+    pageId: 'page-chat',
+    targetId: null,
+    text: "<strong style='font-size: 18px;'>歡迎使用 AI Copilot</strong><br>我是您的全棧開發助理。讓我花一點時間，帶您熟悉這個強大的開發環境。",
+    placement: 'center'
+  },
+  {
+    // Step 2: 頂部捷徑
+    pageId: 'page-chat',
+    targetId: 'sidebar-header',
+    text: "<strong style='font-size: 18px;'>快速捷徑</strong><br>這裡有兩個實用的小按鈕：<br>🎓 <strong>重看教學</strong>：忘記功能時隨時點擊複習。<br>➕ <strong>新對話</strong>：一鍵清除當前畫面，開始全新的專案 (Refresh)。",
+    placement: 'right'
+  },
+  {
+    // Step 3: 歷史紀錄
+    pageId: 'page-chat',
+    targetId: 'history-button',
+    text: "<strong style='font-size: 18px;'>歷史紀錄</strong><br>所有的靈感都不會遺失。點擊這裡展開側邊欄清單，您可以隨時回顧過去的對話，或刪除舊的專案紀錄。",
+    placement: 'right'
+  },
+  {
+    // Step 4: 設定頁面 - API Key
+    pageId: 'page-settings',
+    targetId: 'save-api-keys-button',
+    text: "<strong style='font-size: 18px;'>核心大腦設定</strong><br>這是最重要的一步！<br>請在 <strong>LLM 選擇</strong>區塊填入 API Key 並儲存。我需要這把鑰匙才能連接 Gemini 或 OpenAI 來為您寫程式。",
+    placement: 'top'
+  },
+  {
+    // Step 5: 設定頁面 - 詳細介紹
+    pageId: 'page-settings',
+    targetId: 'about-app-card',
+    text: "<strong style='font-size: 18px;'>控制中心導覽</strong><br>這裡分為四大區塊：<br>1. <strong>顯示</strong>：切換深色模式保護眼睛。<br>2. <strong>資料管理</strong>：備份或清除對話庫。<br>3. <strong>LLM 選擇</strong>：切換不同 AI 模型。<br>4. <strong>關於 App</strong>：查看快捷鍵與隱私聲明。",
+    placement: 'center'
+  },
+  {
+    // Step 6: 輸入區
+    pageId: 'page-chat',
+    targetId: 'input-area-container',
+    text: "<strong style='font-size: 18px;'>控制台</strong><br>回到主畫面，這裡是您下達指令的地方。<br>小技巧：試著直接把<strong>錯誤截圖</strong>或<strong>程式碼檔案</strong>拖曳進來，我能直接幫您除錯喔！",
+    placement: 'top'
+  },
+  {
+    // Step 7: Circle-to-Search (畫圈搜尋)
+    pageId: 'page-chat',
+    targetId: null, // 全螢幕功能，顯示在中央
+    text: "<strong style='font-size: 18px;'>Circle to Search (畫圈搜尋)</strong><br>這是最強大的隱藏功能！<br>按下 <strong>Cmd/Ctrl + Shift + A</strong>，畫面會凍結，接著用滑鼠<strong>圈選</strong>任何區域，AI 將自動進行以圖搜圖或文字分析。",
+    placement: 'center'
+  },
+  {
+    // Step 8: 結束
+    pageId: 'page-chat',
+    targetId: null,
+    text: "<strong style='font-size: 18px;'>準備就緒</strong><br>您已經掌握了所有功能。現在，按下左上角的 ➕ 開啟新對話，試著輸入「幫我寫一個貪食蛇遊戲」吧！",
+    placement: 'center',
+    isLast: true
   }
-  // 檢測 Layer 處理
-  else if (message.includes('Layer') && message.includes('processing')) {
-    icon = '🔄';
-    className = 'log-entry--layer';
-    const layerMatch = message.match(/Layer (\d+)\/(\d+)/);
-    if (layerMatch) {
-      html = `<span class="log-icon">${icon}</span><span class="log-text">處理第 ${layerMatch[1]}/${layerMatch[2]} 層...</span>`;
+];
+
+// 教學模組狀態
+let currentStepIndex = 0;
+const tutorialOverlay = document.getElementById('tutorial-overlay');
+const tutorialSpotlight = document.getElementById('tutorial-spotlight');
+const tutorialBubble = document.getElementById('tutorial-bubble');
+const tutorialText = document.getElementById('tutorial-text');
+const tutorialNextBtn = document.getElementById('tutorial-next-btn');
+
+// 初始化教學
+function initTutorial() {
+  if (tutorialTriggerBtn) {
+    tutorialTriggerBtn.addEventListener('click', () => startTutorial(true));
+  }
+  if (tutorialNextBtn) {
+    tutorialNextBtn.addEventListener('click', nextTutorialStep);
+  }
+
+  // Click on overlay background to close (not on bubble)
+  if (tutorialOverlay) {
+    tutorialOverlay.addEventListener('click', (e) => {
+      // Only close if clicking directly on the overlay (not its children)
+      if (e.target === tutorialOverlay || e.target === tutorialSpotlight) {
+        endTutorial();
+      }
+    });
+  }
+
+  // 鍵盤支援
+  document.addEventListener('keydown', (e) => {
+    if (!tutorialOverlay?.classList.contains('is-active')) return;
+    if (e.key === 'Enter') nextTutorialStep();
+    if (e.key === 'Escape') endTutorial();
+  });
+
+  // 自動檢查初次使用
+  const hasPlayed = localStorage.getItem('hasPlayedTutorial');
+  if (!hasPlayed) {
+    setTimeout(() => startTutorial(false), 800);
+  }
+}
+
+// 開始
+function startTutorial(isManual = false) {
+  currentStepIndex = 0;
+  if (tutorialOverlay) tutorialOverlay.classList.add('is-active');
+  renderStep(currentStepIndex);
+}
+
+// 結束
+function endTutorial() {
+  if (tutorialOverlay) tutorialOverlay.classList.remove('is-active');
+  localStorage.setItem('hasPlayedTutorial', 'true');
+
+  // 重置聚光燈
+  setTimeout(() => {
+    if (tutorialSpotlight) {
+      tutorialSpotlight.style.width = '0';
+      tutorialSpotlight.style.height = '0';
+      tutorialSpotlight.style.top = '50%';
+      tutorialSpotlight.style.left = '50%';
     }
-  }
-  // 檢測檔案生成成功
-  else if (message.includes('✅ Generated') || message.includes('Generated ')) {
-    icon = '✅';
-    className = 'log-entry--success';
-    const fileMatch = message.match(/Generated\s+(.+)/);
-    if (fileMatch) {
-      let fileName = fileMatch[1].trim();
-      // 獲取檔案類型圖標
-      let fileIcon = '📄';
-      if (fileName.includes('.html')) fileIcon = '🌐';
-      else if (fileName.includes('.css')) fileIcon = '🎨';
-      else if (fileName.includes('.js')) fileIcon = '⚡';
-      else if (fileName.includes('.json')) fileIcon = '📋';
-      else if (fileName.includes('.py')) fileIcon = '🐍';
+  }, 500);
+}
 
-      html = `<span class="log-icon">${icon}</span><span class="log-file-icon">${fileIcon}</span><span class="log-text">${fileName}</span>`;
+// 下一步
+function nextTutorialStep() {
+  currentStepIndex++;
+  console.log(`Tutorial: Moving to step ${currentStepIndex} of ${tutorialSteps.length}`);
+  if (currentStepIndex >= tutorialSteps.length) {
+    console.log('Tutorial: Ending tutorial');
+    endTutorial();
+  } else {
+    renderStep(currentStepIndex);
+  }
+}
+
+// 渲染步驟
+function renderStep(index) {
+  const step = tutorialSteps[index];
+  console.log(`Tutorial: Rendering step ${index}`, step);
+
+  // 定義渲染教學內容的函數
+  const renderTutorialContent = () => {
+    // Update tutorial text and add close button
+    if (tutorialText) {
+      tutorialText.innerHTML = step.text;
+
+      // Add close button hint at the bottom of text
+      const closeHint = document.createElement('div');
+      closeHint.style.marginTop = '12px';
+      closeHint.style.fontSize = '12px';
+      closeHint.style.color = 'var(--color-text-light)';
+      closeHint.innerHTML = '按 <strong>ESC</strong> 可隨時關閉教學';
+      tutorialText.appendChild(closeHint);
     }
-  }
-  // 檢測 Agent 類型
-  else if (message.includes('[Generator]')) {
-    icon = '🤖';
-    className = 'log-entry--agent';
-    html = `<span class="log-icon">${icon}</span><span class="log-text">${message.replace('[Generator]', '<strong>Generator:</strong>')}</span>`;
-  }
-  else if (message.includes('[Coordinator]')) {
-    icon = '🎯';
-    className = 'log-entry--coordinator';
-    html = `<span class="log-icon">${icon}</span><span class="log-text">${message.replace('[Coordinator]', '<strong>Coordinator:</strong>')}</span>`;
-  }
-  // 檢測 Architect/Verifier/Tester
-  else if (message.includes('Architect')) {
-    icon = '📐';
-    className = 'log-entry--architect';
-    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Architect Agent:</strong> 正在設計專案架構...</span>`;
-  }
-  else if (message.includes('Verifier') || message.includes('test-plan')) {
-    icon = '✓';
-    className = 'log-entry--verifier';
-    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Verifier Agent:</strong> 生成測試計劃...</span>`;
-  }
-  else if (message.includes('Tester') || message.includes('Test')) {
-    icon = '🧪';
-    className = 'log-entry--tester';
-    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Tester Agent:</strong> 執行測試...</span>`;
-  }
-  // 檢測配置生成
-  else if (message.includes('Config files') || message.includes('package.json')) {
-    icon = '⚙️';
-    className = 'log-entry--config';
-    html = `<span class="log-icon">${icon}</span><span class="log-text">${message}</span>`;
-  }
-  // 檢測 Contracts
-  else if (message.includes('Contracts')) {
-    icon = '📋';
-    className = 'log-entry--contracts';
-    html = `<span class="log-icon">${icon}</span><span class="log-text">${message}</span>`;
-  }
-  // 警告訊息
-  else if (message.includes('⚠️') || message.includes('Warning')) {
-    className = 'log-entry--warning';
-  }
-  //一般訊息
-  else {
-    className = 'log-entry--info';
-    html = `<span class="log-text">${message}</span>`;
-  }
 
-  return { html, className };
+    if (tutorialNextBtn) {
+      if (step.isLast) {
+        tutorialNextBtn.textContent = "開始體驗";
+        tutorialNextBtn.classList.add('is-finish');
+      } else {
+        tutorialNextBtn.textContent = "下一步";
+        tutorialNextBtn.classList.remove('is-finish');
+      }
+    }
+
+    if (!step.targetId) {
+      setSpotlightToCenter();
+    } else {
+      // 嘗試多次尋找目標元素，以處理頁面切換延遲
+      const findAndHighlight = (attempts = 0) => {
+        const target = document.getElementById(step.targetId);
+        if (target) {
+          console.log(`Tutorial: Found target element ${step.targetId}`);
+          const rect = target.getBoundingClientRect();
+          setSpotlightToElement(rect, step.placement);
+        } else if (attempts < 10) {
+          // 增加重試次數到 10 次，每次間隔 150ms
+          console.log(`Tutorial: Target ${step.targetId} not found, retry ${attempts + 1}/10`);
+          setTimeout(() => findAndHighlight(attempts + 1), 150);
+        } else {
+          console.warn(`Tutorial target not found after ${attempts} retries: ${step.targetId}`);
+          setSpotlightToCenter();
+        }
+      };
+      findAndHighlight();
+    }
+  };
+
+  // 檢查是否需要切換頁面
+  if (step.pageId) {
+    const currentPage = document.querySelector('.page.is-active');
+    const targetPage = document.getElementById(step.pageId);
+    const needsPageSwitch = currentPage?.id !== step.pageId;
+
+    if (needsPageSwitch && targetPage) {
+      console.log(`Tutorial: Preloading page ${step.pageId} before rendering`);
+
+      // 先切換頁面
+      setActivePage(step.pageId);
+
+      // 等待頁面完全載入和動畫完成
+      // 使用 requestAnimationFrame 確保渲染完成
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          // 再等待一個較長的延遲確保所有元素都已渲染
+          setTimeout(() => {
+            console.log(`Tutorial: Page ${step.pageId} loaded, rendering tutorial content`);
+            renderTutorialContent();
+          }, 500);
+        });
+      });
+    } else {
+      // 不需要切換頁面，直接渲染
+      console.log(`Tutorial: Already on correct page, rendering immediately`);
+      setTimeout(renderTutorialContent, 300);
+    }
+  } else {
+    // 沒有指定頁面，直接渲染
+    setTimeout(renderTutorialContent, 300);
+  }
+}
+
+function setSpotlightToCenter() {
+  if (!tutorialSpotlight || !tutorialBubble) return;
+
+  // 縮小聚光燈至 0，依賴 box-shadow 遮罩全屏
+  tutorialSpotlight.style.width = '0px';
+  tutorialSpotlight.style.height = '0px';
+  tutorialSpotlight.style.top = '50%';
+  tutorialSpotlight.style.left = '50%';
+
+  tutorialSpotlight.style.boxShadow = '0 0 0 4000px rgba(0, 0, 0, 0.85)';
+
+  tutorialBubble.style.top = '50%';
+  tutorialBubble.style.left = '50%';
+  tutorialBubble.style.transform = 'translate(-50%, -50%)';
+  tutorialBubble.style.right = 'auto';
+  tutorialBubble.style.bottom = 'auto';
+}
+
+function setSpotlightToElement(rect, placement) {
+  if (!tutorialSpotlight || !tutorialBubble) return;
+
+  const padding = 8;
+  const bubbleGap = 20;
+
+  tutorialSpotlight.style.width = `${rect.width + padding * 2}px`;
+  tutorialSpotlight.style.height = `${rect.height + padding * 2}px`;
+  tutorialSpotlight.style.top = `${rect.top - padding}px`;
+  tutorialSpotlight.style.left = `${rect.left - padding}px`;
+
+  tutorialBubble.style.transform = 'none';
+
+  switch (placement) {
+    case 'right':
+      tutorialBubble.style.top = `${rect.top}px`;
+      tutorialBubble.style.left = `${rect.right + padding + bubbleGap}px`;
+      tutorialBubble.style.right = 'auto';
+      tutorialBubble.style.bottom = 'auto';
+      break;
+    case 'left':
+      tutorialBubble.style.top = `${rect.top}px`;
+      tutorialBubble.style.right = `${window.innerWidth - rect.left + padding + bubbleGap}px`;
+      tutorialBubble.style.left = 'auto';
+      tutorialBubble.style.bottom = 'auto';
+      break;
+    case 'top':
+      tutorialBubble.style.bottom = `${window.innerHeight - rect.top + padding + bubbleGap}px`;
+      tutorialBubble.style.left = `${rect.left}px`;
+      tutorialBubble.style.top = 'auto';
+      tutorialBubble.style.right = 'auto';
+      break;
+    case 'bottom':
+      tutorialBubble.style.top = `${rect.bottom + padding + bubbleGap}px`;
+      tutorialBubble.style.left = `${rect.left}px`;
+      tutorialBubble.style.bottom = 'auto';
+      tutorialBubble.style.right = 'auto';
+      break;
+    default:
+      setSpotlightToCenter();
+      break;
+  }
+}
+
+// 啟動
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initTutorial);
+} else {
+  initTutorial();
 }
