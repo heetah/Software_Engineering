@@ -29,6 +29,15 @@ const pageSettings = document.getElementById('page-settings');
 const helpButton = document.getElementById('help-button');
 const pageHelp = document.getElementById('page-help');
 
+// Library page elements
+const libraryButton = document.getElementById('library-button');
+const pageLibrary = document.getElementById('page-library');
+const libraryContainer = document.getElementById('library-container');
+const projectCount = document.getElementById('project-count');
+const sortProjectsBtn = document.getElementById('sort-projects-btn');
+const sortLabel = document.getElementById('sort-label');
+const sortIcon = document.getElementById('sort-icon');
+
 // 設定頁面元素
 const dataPathDisplay = document.getElementById('data-path-display');
 const clearHistoryButton = document.getElementById('clear-history-button');
@@ -147,6 +156,15 @@ historyButton.addEventListener('click', () => {
 chatButton.addEventListener('click', () => setActivePage('page-chat'));
 settingsButton.addEventListener('click', () => setActivePage('page-settings'));
 helpButton.addEventListener('click', () => setActivePage('page-help'));
+libraryButton.addEventListener('click', () => {
+  setActivePage('page-library');
+  loadProjectLibrary();
+});
+
+// Sort button
+if (sortProjectsBtn) {
+  sortProjectsBtn.addEventListener('click', toggleProjectSort);
+}
 
 if (clearHistoryButton) {
   clearHistoryButton.addEventListener('click', () => {
@@ -541,7 +559,7 @@ function appendMessage(text, sender, messageType = 'text', options = {}) {
       if (!options.filePath) return;
 
       const originalContent = downloadButton.innerHTML;
-      downloadButton.innerHTML = '⏳ 處理中...';
+      downloadButton.innerHTML = '⊙ 處理中...';
       downloadButton.disabled = true;
 
       try {
@@ -550,15 +568,15 @@ function appendMessage(text, sender, messageType = 'text', options = {}) {
           defaultName: options.fileName || undefined
         });
         if (result?.ok) {
-          downloadButton.innerHTML = '✅ 已下載';
+          downloadButton.innerHTML = '✓ 已下載';
         } else if (result?.cancelled) {
           downloadButton.innerHTML = '❌ 已取消';
         } else {
-          downloadButton.innerHTML = '⚠️ 失敗';
+          downloadButton.innerHTML = '✗ 失敗';
         }
       } catch (err) {
         console.error('Failed to download zip', err);
-        downloadButton.innerHTML = '⚠️ 錯誤';
+        downloadButton.innerHTML = '✗ 錯誤';
       }
 
       setTimeout(() => {
@@ -571,8 +589,16 @@ function appendMessage(text, sender, messageType = 'text', options = {}) {
     messageActions.insertBefore(downloadButton, copyButton);
 
   } else {
-    // 一般文字
-    messageBubble.textContent = text;
+    // 一般文字 - 處理換行符號
+    // 先轉義 HTML 以防止 XSS，然後將 \n 轉換為 <br>
+    const escapedText = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;')
+      .replace(/\n/g, '<br>');
+    messageBubble.innerHTML = escapedText;
   }
 
   messageContent.appendChild(messageBubble);
@@ -684,10 +710,12 @@ function setActivePage(pageIdToShow) {
   pageChat.classList.remove('is-active');
   pageSettings.classList.remove('is-active');
   pageHelp.classList.remove('is-active');
+  pageLibrary.classList.remove('is-active');
 
   chatButton.classList.remove('is-active');
   settingsButton.classList.remove('is-active');
   helpButton.classList.remove('is-active');
+  libraryButton.classList.remove('is-active');
 
   if (pageIdToShow === 'page-chat') {
     pageChat.classList.add('is-active');
@@ -698,6 +726,9 @@ function setActivePage(pageIdToShow) {
   } else if (pageIdToShow === 'page-help') {
     pageHelp.classList.add('is-active');
     helpButton.classList.add('is-active');
+  } else if (pageIdToShow === 'page-library') {
+    pageLibrary.classList.add('is-active');
+    libraryButton.classList.add('is-active');
   }
 }
 
@@ -753,6 +784,186 @@ async function deleteSession(sessionId) {
   }
 }
 
+/* Library Page Functions */
+let currentProjects = [];
+let sortOrder = 'newest'; // 'newest' or 'oldest'
+
+async function loadProjectLibrary() {
+  try {
+    const projects = await ipcRenderer.invoke('library:get-projects');
+    currentProjects = projects || [];
+    renderProjectLibrary();
+  } catch (error) {
+    console.error('Failed to load project library:', error);
+    showLibraryError();
+  }
+}
+
+function renderProjectLibrary() {
+  if (!libraryContainer) return;
+
+  libraryContainer.innerHTML = '';
+
+  // Update project count
+  if (projectCount) {
+    const count = currentProjects.length;
+    projectCount.textContent = count === 0 ? '尚無專案' :
+      count === 1 ? '共 1 個專案' : `共 ${count} 個專案`;
+  }
+
+  // Sort projects
+  const sortedProjects = [...currentProjects].sort((a, b) => {
+    if (sortOrder === 'newest') {
+      return b.timestamp - a.timestamp;
+    } else {
+      return a.timestamp - b.timestamp;
+    }
+  });
+
+  // Show empty state if no projects
+  if (sortedProjects.length === 0) {
+    showEmptyLibrary();
+    return;
+  }
+
+  // Render project cards
+  sortedProjects.forEach(project => {
+    const card = createProjectCard(project);
+    libraryContainer.appendChild(card);
+  });
+}
+
+function createProjectCard(project) {
+  const card = document.createElement('div');
+  card.classList.add('project-card');
+
+  // Determine icon based on project type
+  const icon = getProjectIcon(project.name);
+
+  // Format date
+  const date = new Date(project.timestamp);
+  const formattedDate = formatDate(date);
+
+  card.innerHTML = `
+    <div class="project-card__thumbnail">
+      ${icon}
+    </div>
+    <div class="project-card__info">
+      <h3 class="project-card__title">${escapeHtml(project.name)}</h3>
+      <div class="project-card__meta">
+        <span class="project-card__date">
+          <span>◷</span>
+          <span>${formattedDate}</span>
+        </span>
+      </div>
+      <p class="project-card__description">
+        ${project.description || '專案檔案已準備完成'}
+      </p>
+      <div class="project-card__actions">
+        <button class="project-card__btn" data-action="open-folder">
+          開啟資料夾
+        </button>
+        <button class="project-card__btn project-card__btn--primary" data-action="preview">
+          預覽
+        </button>
+      </div>
+    </div>
+  `;
+
+  // Add event listeners to buttons
+  const buttons = card.querySelectorAll('.project-card__btn');
+  buttons.forEach(button => {
+    button.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const action = button.getAttribute('data-action');
+      if (action === 'open-folder') {
+        openProjectFolder(project);
+      } else if (action === 'preview') {
+        previewProject(project);
+      }
+    });
+  });
+
+  return card;
+}
+
+function getProjectIcon(projectName) {
+  const name = projectName.toLowerCase();
+  if (name.includes('calculator') || name.includes('計算機')) return '▢';
+  if (name.includes('todo') || name.includes('待辦')) return '▢';
+  if (name.includes('chat') || name.includes('聊天')) return '▢';
+  if (name.includes('game') || name.includes('遊戲')) return '▢';
+  if (name.includes('shop') || name.includes('商店') || name.includes('點餐')) return '▢';
+  if (name.includes('weather') || name.includes('天氣')) return '▢';
+  if (name.includes('music') || name.includes('音樂')) return '▢';
+  return '▢';
+}
+
+function formatDate(date) {
+  const now = new Date();
+  const diff = now - date;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+  if (days === 0) return '今天';
+  if (days === 1) return '昨天';
+  if (days < 7) return `${days} 天前`;
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}/${month}/${day}`;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function toggleProjectSort() {
+  sortOrder = sortOrder === 'newest' ? 'oldest' : 'newest';
+
+  if (sortLabel) {
+    sortLabel.textContent = sortOrder === 'newest' ? '最新 → 最舊' : '最舊 → 最新';
+  }
+
+  if (sortIcon) {
+    sortIcon.textContent = sortOrder === 'newest' ? '🕒' : '⏰';
+  }
+
+  renderProjectLibrary();
+}
+
+function openProjectFolder(project) {
+  ipcRenderer.invoke('library:open-project', project.path)
+    .catch(error => console.error('Failed to open project folder:', error));
+}
+
+function previewProject(project) {
+  ipcRenderer.invoke('library:preview-project', project.path)
+    .catch(error => console.error('Failed to preview project:', error));
+}
+
+function showEmptyLibrary() {
+  libraryContainer.innerHTML = `
+    <div class="library-empty">
+      <div class="library-empty__icon">▢</div>
+      <div class="library-empty__text">還沒有生成任何專案</div>
+      <div class="library-empty__hint">開始對話，讓 AI 為您生成第一個專案吧！</div>
+    </div>
+  `;
+}
+
+function showLibraryError() {
+  libraryContainer.innerHTML = `
+    <div class="library-empty">
+      <div class="library-empty__icon">▲</div>
+      <div class="library-empty__text">載入專案失敗</div>
+      <div class="library-empty__hint">請稍後再試</div>
+    </div>
+  `;
+}
+
 function showGreetingIfEmpty() {
   if (!chatDisplay || chatDisplay.children.length > 0) return;
   const greeting = "您好，我是您的開發助理。請問今天有什麼可以協助您的嗎？";
@@ -768,14 +979,6 @@ ipcRenderer.on('agent-log', (_event, logMessage) => {
 
   let logDetails = thinkingBubbleElement.querySelector('.log-details');
   if (!logDetails) {
-    // 建立 Log 區塊結構
-    // <div class="log-container">
-    //   <details class="log-details">
-    //     <summary class="log-summary">查看執行細節 (Process Logs)</summary>
-    //     <div class="log-content"></div>
-    //   </details>
-    // </div>
-
     const logContainer = document.createElement('div');
     logContainer.classList.add('log-container');
 
@@ -784,7 +987,7 @@ ipcRenderer.on('agent-log', (_event, logMessage) => {
 
     const summary = document.createElement('summary');
     summary.classList.add('log-summary');
-    summary.textContent = '查看執行細節 (Process Logs)';
+    summary.textContent = 'Process Logs';
 
     const contentDiv = document.createElement('div');
     contentDiv.classList.add('log-content');
@@ -828,7 +1031,7 @@ function formatAgentLog(message) {
 
   // 檢測主要 Agent 階段
   if (message.includes('Architect') && (message.includes('starting') || message.includes('Running') || message.includes('initialized'))) {
-    icon = '📐';
+    icon = '▲';
     className = 'log-entry--architect log-entry--active';
     html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Architect Agent</strong> 執行中...</span>`;
   }
@@ -838,28 +1041,28 @@ function formatAgentLog(message) {
     html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Verifier Agent</strong> 執行中...</span>`;
   }
   else if (message.includes('Tester') && (message.includes('starting') || message.includes('Running') || message.includes('Jest'))) {
-    icon = '🧪';
+    icon = '◉';
     className = 'log-entry--tester log-entry--active';
     html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Tester Agent</strong> 執行中...</span>`;
   }
   // Coder Agent 相關
   else if (message.includes('Phase 0')) {
-    icon = '⚙️';
+    icon = '⚙';
     className = 'log-entry--coder log-entry--active';
     html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Coder Agent</strong> 準備配置...</span>`;
   }
   else if (message.includes('Phase 1')) {
-    icon = '🔨';
+    icon = '▣';
     className = 'log-entry--coder log-entry--active';
     html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Coder Agent</strong> 生成專案骨架...</span>`;
   }
   else if (message.includes('Phase 2')) {
-    icon = '💻';
+    icon = '▣';
     className = 'log-entry--coder log-entry--active';
     html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Coder Agent</strong> 生成檔案內容...</span>`;
   }
   else if (message.includes('Phase 3')) {
-    icon = '📦';
+    icon = '▣';
     className = 'log-entry--coder log-entry--active';
     html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Coder Agent</strong> 組裝專案...</span>`;
   }
@@ -867,7 +1070,7 @@ function formatAgentLog(message) {
   else if (message.includes('Layer') && message.includes('processing')) {
     const layerMatch = message.match(/Layer (\d+)\/(\d+)/);
     if (layerMatch) {
-      icon = '⏳';
+      icon = '⊙';
       className = 'log-entry--progress';
       html = `<span class="log-icon">${icon}</span><span class="log-text">生成進度: ${layerMatch[1]}/${layerMatch[2]}</span>`;
     } else {
@@ -876,7 +1079,7 @@ function formatAgentLog(message) {
   }
   // 完成訊息
   else if (message.includes('completed') || message.includes('Completed')) {
-    icon = '✅';
+    icon = '✓';
     className = 'log-entry--success';
     html = `<span class="log-icon">${icon}</span><span class="log-text">生成完成</span>`;
   }
@@ -906,7 +1109,7 @@ const tutorialSteps = [
     // Step 2: 頂部捷徑
     pageId: 'page-chat',
     targetId: 'sidebar-header',
-    text: "<strong style='font-size: 18px;'>快速捷徑</strong><br>這裡有兩個實用的小按鈕：<br>🎓 <strong>重看教學</strong>：忘記功能時隨時點擊複習。<br>➕ <strong>新對話</strong>：一鍵清除當前畫面，開始全新的專案 (Refresh)。",
+    text: "<strong style='font-size: 18px;'>快速捷徑</strong><br>這裡有兩個實用的小按鈕：<br>⚡ <strong>重看教學</strong>：忘記功能時隨時點擊複習。<br>✦ <strong>新對話</strong>：一鍵清除當前畫面，開始全新的專案 (Refresh)。",
     placement: 'right'
   },
   {

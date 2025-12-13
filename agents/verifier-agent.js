@@ -54,7 +54,7 @@ export default class VerifierAgent extends BaseAgent {
    * @returns {Promise<{path:string, plan:object}>}
    */
   async runVerifierAgent(sessionId) {
-    if (!sessionId) throw new Error("缺少 sessionId");
+    if (!sessionId) throw new Error("sessionId is required");
     try {
       const architectureData = await loadArchitecture(sessionId);
       const templateText = await loadTemplates();
@@ -87,12 +87,12 @@ export async function loadArchitecture(sessionId) {
   const sessionDir = path.join(base, pureId);
   const archFile = path.join(sessionDir, "architecture.json");
   if (!fs.existsSync(archFile)) {
-    throw new Error(`architecture.json 不存在：${archFile}`);
+    throw new Error(`architecture.json is missing: ${archFile}`);
   }
   try {
     return JSON.parse(await fs.promises.readFile(archFile, "utf-8"));
   } catch (e) {
-    throw new Error(`解析 architecture.json 失敗：${e.message}`);
+    throw new Error(`Failed to parse architecture.json: ${e.message}`);
   }
 }
 
@@ -107,7 +107,7 @@ export async function loadTemplates() {
     `./templates.js`
   );
   if (!fs.existsSync(tplFile)) {
-    throw new Error(`templates.js 不存在：${tplFile}`);
+    throw new Error(`templates.js is missing: ${tplFile}`);
   }
   return fs.readFileSync(tplFile, "utf-8");
 }
@@ -140,7 +140,7 @@ export function buildLLMPrompt(architectureData, templateText, sessionId) {
     {
       "id": "<unique-id>",
       "filename": "<module>.<level>.test.js",
-      "description": "測試檔案描述",
+      "description": "Description of the test file",
       "targetModule": "<ModuleName>",
       "testLevel": "unit|integration|e2e",
       "framework": "jest",
@@ -160,7 +160,7 @@ export function buildLLMPrompt(architectureData, templateText, sessionId) {
   ]
 }`;
 
-  return `你現在是一個「自動測試計劃產生器 Verifier Agent」。\n我會提供你：\n1. 系統架構 JSON\n2. 測試模板規則（包含 test-plan schema 與撰寫提示）\n\n請依照這些資訊，產生一份嚴格 JSON 格式的 test-plan。\n\n=== Architecture JSON ===\n${architectureJson}\n\n=== Test Template Rules (raw content) ===\n${templateText}\n\n=== Output Format (MUST FOLLOW) ===\n${outputFormat}\n\n要求：\n- 只輸出單一 JSON 物件；若使用程式碼區塊，僅允許一個 \`\`\`json 區塊。\n- 每個核心 module 至少一個 testFile。\n- 每個 API 至少包含 normal 與 error；若適用需含 boundary。\n- filename 使用 <module>.<level>.test.js；framework 固定為 jest。\n- 每個 testFile 必須提供 inputsType (http|function) 與 importTarget。\n- cases 欄位需完整（caseId/name/type/preconditions/inputs/expected）。\n- generatedAt 使用 ISO8601。`;
+  return `You are a 'Test Plan Generator Verifier Agent'.\nI will provide you with:\n1. System architecture JSON\n2. Test template rules (including test-plan schema and writing prompts)\n\nPlease generate a strict JSON-formatted test-plan based on these information.\n\n=== Architecture JSON ===\n${architectureJson}\n\n=== Test Template Rules (raw content) ===\n${templateText}\n\n=== Output Format (MUST FOLLOW) ===\n${outputFormat}\n\nRequirements:\n- Only output a single JSON object; if using code block, only allow one \`\`\`json block.\n- Each core module must have at least one testFile.\n- Each API must have at least normal and error; if applicable, must contain boundary.\n- filename uses <module>.<level>.test.js; framework is fixed to jest.\n- Each testFile must provide inputsType (http|function) and importTarget.\n- cases field must be complete (caseId/name/type/preconditions/inputs/expected).\n- generatedAt uses ISO8601.`;
 }
 
 /**
@@ -199,7 +199,7 @@ export function validateTestPlan(raw, sessionId) {
   const firstBrace = jsonText.indexOf("{");
   const lastBrace = jsonText.lastIndexOf("}");
   if (firstBrace === -1 || lastBrace === -1) {
-    throw new Error("LLM 輸出不含 JSON 結構");
+    throw new Error("LLM output does not contain JSON structure");
   }
   jsonText = jsonText.substring(firstBrace, lastBrace + 1);
 
@@ -207,43 +207,43 @@ export function validateTestPlan(raw, sessionId) {
   try {
     obj = JSON.parse(jsonText);
   } catch (err) {
-    throw new Error(`JSON parse 失敗: ${err.message}`);
+    throw new Error(`JSON parse failed: ${err.message}`);
   }
 
   if (!obj || typeof obj !== "object") {
-    throw new Error("test plan 非物件");
+    throw new Error("test plan is not an object");
   }
   if (obj.sessionId !== sessionId) {
     // 若模型沒放 sessionId，補上
     obj.sessionId = sessionId;
   }
   if (!Array.isArray(obj.testFiles) || obj.testFiles.length === 0) {
-    throw new Error("testFiles 缺失或為空");
+    throw new Error("testFiles is missing or empty");
   }
   // 基本欄位檢查
   // 檢查每個 testFile 結構
   // ===== Validate testFile Structure =====
   for (const tf of obj.testFiles) {
     if (!tf.filename || !tf.targetModule || !tf.testLevel || !Array.isArray(tf.cases)) {
-      throw new Error(`testFile 結構不完整: ${tf.filename || "<no filename>"}`);
+      throw new Error(`testFile structure is incomplete: ${tf.filename || "<no filename>"}`);
     }
     // 新版規則：framework=jest、檔名以 .test.js 收尾、inputsType 與 importTarget 必填
     // ===== Additional testFile Validations =====
     if (tf.framework !== "jest") {
-      throw new Error(`framework 必須為 jest: ${tf.filename}`);
+      throw new Error(`framework must be jest: ${tf.filename}`);
     }
     if (typeof tf.filename !== "string" || !tf.filename.endsWith(".test.js")) {
-      throw new Error(`filename 必須為 *.test.js: ${tf.filename}`);
+      throw new Error(`filename must end with .test.js: ${tf.filename}`);
     }
     if (!tf.inputsType || !["http", "function"].includes(tf.inputsType)) {
-      throw new Error(`inputsType 必須為 http 或 function: ${tf.filename}`);
+      throw new Error(`inputsType must be http or function: ${tf.filename}`);
     }
     if (!tf.importTarget || typeof tf.importTarget !== "string") {
-      throw new Error(`importTarget 缺失或格式不正確: ${tf.filename}`);
+      throw new Error(`importTarget is missing or invalid: ${tf.filename}`);
     }
     for (const c of tf.cases) {
       if (!c.caseId || !c.name || !c.type || c.inputs === undefined || c.expected === undefined) {
-        throw new Error(`case 結構不完整: ${c.caseId || c.name || "<no id>"}`);
+        throw new Error(`case structure is incomplete: ${c.caseId || c.name || "<no id>"}`);
       }
     }
   }
@@ -292,7 +292,7 @@ export async function writeTestPlan(sessionId, testPlan) {
 // ===== Run Verifier Agent =====
 
 export async function runVerifierAgent(sessionId) {
-  if (!sessionId) throw new Error("缺少 sessionId");
+  if (!sessionId) throw new Error("sessionId is missing");
   const agent = new VerifierAgent();
   try {
     const architectureData = await loadArchitecture(sessionId);
@@ -301,10 +301,10 @@ export async function runVerifierAgent(sessionId) {
     const raw = await callLLM(prompt, agent);
     const testPlan = validateTestPlan(raw, sessionId);
     const pathWritten = await writeTestPlan(sessionId, testPlan);
-    console.log(`✅ test-plan.json 已產生：${pathWritten}`);
+    console.log(`✅ test-plan.json has been generated: ${pathWritten}`);
     return { path: pathWritten, plan: testPlan };
   } catch (err) {
-    console.error(`❌ Verifier Agent 失敗: ${err.message}`);
+    console.error(`❌ Verifier Agent failed: ${err.message}`);
     throw err;
   }
 }

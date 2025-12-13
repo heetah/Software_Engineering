@@ -50,7 +50,7 @@ export default class ContractValidator {
     // 檢查每個預期的 API 是否都被實現
     for (const expectedApi of expectedApis) {
       const actualApi = actualApis.find(a => a.endpoint === expectedApi.endpoint);
-      
+
       if (!actualApi) {
         // 完全缺失
         issues.missingChannels.push({
@@ -69,7 +69,7 @@ export default class ContractValidator {
     // 檢查是否有未定義的額外頻道
     for (const actualApi of actualApis) {
       const expectedApi = expectedApis.find(a => a.endpoint === actualApi.endpoint);
-      
+
       if (!expectedApi) {
         issues.extraChannels.push({
           endpoint: actualApi.endpoint,
@@ -87,7 +87,7 @@ export default class ContractValidator {
     // 檢查每個預期的 DOM 元素
     for (const expectedElement of expectedDom) {
       const actualElement = actualDom.find(d => d.id === expectedElement.id);
-      
+
       if (!actualElement) {
         issues.missingChannels.push({
           type: 'dom',
@@ -161,11 +161,11 @@ export default class ContractValidator {
     // 檢查缺失的 producers
     for (const producer of expectedProducers) {
       const normalizedExpected = normalizePath(producer);
-      const hasMatch = Array.from(actualProducers).some(actual => 
-        normalizePath(actual).includes(normalizedExpected) || 
+      const hasMatch = Array.from(actualProducers).some(actual =>
+        normalizePath(actual).includes(normalizedExpected) ||
         normalizedExpected.includes(normalizePath(actual))
       );
-      
+
       if (!hasMatch) {
         issues.missingProducers.push({
           endpoint: expectedApi.endpoint,
@@ -178,11 +178,11 @@ export default class ContractValidator {
     // 檢查缺失的 consumers
     for (const consumer of expectedConsumers) {
       const normalizedExpected = normalizePath(consumer);
-      const hasMatch = Array.from(actualConsumers).some(actual => 
-        normalizePath(actual).includes(normalizedExpected) || 
+      const hasMatch = Array.from(actualConsumers).some(actual =>
+        normalizePath(actual).includes(normalizedExpected) ||
         normalizedExpected.includes(normalizePath(actual))
       );
-      
+
       if (!hasMatch) {
         issues.missingConsumers.push({
           endpoint: expectedApi.endpoint,
@@ -215,12 +215,12 @@ export default class ContractValidator {
           type: 'add-ipc-handler',
           file: missing.expectedIn[0] || 'main.js',
           channel: missing.endpoint,
-          description: `缺少 IPC handler: '${missing.endpoint}'`,
+          description: `Missing IPC handler: '${missing.endpoint}'`,
           code: `
-// 在 ${missing.expectedIn[0] || 'main.js'} 中加入：
+// In ${missing.expectedIn[0] || 'main.js'}:
 ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
   // ${missing.purpose || 'Handle request'}
-  // TODO: 實現具體邏輯
+  // TODO: Implement specific logic
   return { success: true };
 });`
         });
@@ -233,8 +233,8 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
         severity: 'critical',
         type: 'fix-channel-name',
         file: mismatch.file,
-        description: `IPC 頻道名稱不一致: 期望 '${mismatch.expected}'，實際 '${mismatch.actual}'`,
-        fix: `將 '${mismatch.actual}' 改為 '${mismatch.expected}'`
+        description: `IPC channel name mismatch: Expected '${mismatch.expected}', actual '${mismatch.actual}'`,
+        fix: `Change '${mismatch.actual}' to '${mismatch.expected}'`
       });
     }
 
@@ -245,7 +245,7 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
         type: 'add-producer',
         file: missing.file,
         channel: missing.endpoint,
-        description: `檔案 ${missing.file} 應該實現 IPC handler '${missing.endpoint}'`
+        description: `File ${missing.file} should implement IPC handler '${missing.endpoint}'`
       });
     }
 
@@ -256,7 +256,7 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
         type: 'add-consumer',
         file: missing.file,
         channel: missing.endpoint,
-        description: `檔案 ${missing.file} 應該呼叫 '${missing.endpoint}'`
+        description: `File ${missing.file} should call '${missing.endpoint}'`
       });
     }
 
@@ -267,8 +267,8 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
         type: 'undocumented-channel',
         file: extra.foundIn,
         channel: extra.endpoint,
-        description: `發現未在 architecture.json 中定義的頻道: '${extra.endpoint}'`,
-        suggestion: '考慮是否需要將此頻道加入 architecture.json'
+        description: `Discovered undefined channel: '${extra.endpoint}'`,
+        suggestion: 'Consider adding this channel to architecture.json'
       });
     }
 
@@ -300,7 +300,7 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
       // 讀取輸出目錄中的所有檔案
       const outputDir = path.join(__dirname, `../output/${sessionId}`);
       const files = await this.readProjectFiles(outputDir);
-      
+
       // 手動提取 contracts（簡化版，避免依賴 ContractsExtractor 的 logger）
       const extractedContracts = await this.extractContractsSimple(files);
 
@@ -311,7 +311,7 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
       const htmlFiles = files.filter(f => f.path.endsWith('.html'));
       const jsFiles = files.filter(f => f.path.endsWith('.js'));
       const selectIssues = this.validateSelectOptions(htmlFiles, jsFiles);
-      
+
       // 將 select 問題加入驗證結果
       if (selectIssues.length > 0) {
         validationResult.issues.schemaErrors = validationResult.issues.schemaErrors || [];
@@ -349,20 +349,20 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
 
     for (const file of files) {
       const { path: filePath, content } = file;
-      
+
       // 提取 IPC channels
       const ipcRegex = /ipc(?:Main|Renderer)\.(?:handle|on|invoke|send)\s*\(\s*["']([^"']+)["']/gi;
       let match;
       while ((match = ipcRegex.exec(content)) !== null) {
         const channel = match[1];
         const existing = contracts.api.find(a => a.endpoint === channel);
-        
+
         // 判斷檔案類型
         const isMainJs = filePath.includes('main.js') || filePath.endsWith('main.js');
         const isPreloadJs = filePath.includes('preload.js') || filePath.endsWith('preload.js');
-        const isRendererJs = filePath.includes('script.js') || filePath.includes('renderer.js') || 
-                            (filePath.includes('public/') && filePath.endsWith('.js'));
-        
+        const isRendererJs = filePath.includes('script.js') || filePath.includes('renderer.js') ||
+          (filePath.includes('public/') && filePath.endsWith('.js'));
+
         if (!existing) {
           contracts.api.push({
             endpoint: channel,
@@ -390,7 +390,7 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
             // 提取元素類型和標籤名
             const elementMatch = content.substring(Math.max(0, match.index - 50), match.index).match(/<(\w+)[^>]*$/);
             const tagName = elementMatch ? elementMatch[1] : 'unknown';
-            
+
             contracts.dom.push({
               id,
               type: tagName,
@@ -441,15 +441,15 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
    */
   extractElementAttributes(htmlContent, elementId) {
     const attributes = {};
-    
+
     // 尋找該元素的完整標籤
     const elementRegex = new RegExp(`<(\\w+)[^>]*\\bid\\s*=\\s*["']${elementId}["'][^>]*>([\\s\\S]*?)<\\/\\1>`, 'i');
     const elementMatch = htmlContent.match(elementRegex);
-    
+
     if (elementMatch) {
       const tagName = elementMatch[1];
       const elementBody = elementMatch[2];
-      
+
       // 如果是 select，提取 option 值
       if (tagName.toLowerCase() === 'select') {
         const optionRegex = /<option[^>]*value\s*=\s*["']([^"']+)["'][^>]*>/gi;
@@ -460,19 +460,19 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
         }
         attributes.options = options;
       }
-      
+
       // 提取其他常見屬性
       const typeMatch = elementMatch[0].match(/\btype\s*=\s*["']([^"']+)["']/i);
       if (typeMatch) {
         attributes.type = typeMatch[1];
       }
-      
+
       const nameMatch = elementMatch[0].match(/\bname\s*=\s*["']([^"']+)["']/i);
       if (nameMatch) {
         attributes.name = nameMatch[1];
       }
     }
-    
+
     return attributes;
   }
 
@@ -481,16 +481,16 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
    */
   validateSelectOptions(htmlFiles, jsFiles) {
     const issues = [];
-    
+
     for (const htmlFile of htmlFiles) {
       // 提取所有 select 元素及其選項
       const selectRegex = /<select[^>]*id\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/select>/gi;
       let match;
-      
+
       while ((match = selectRegex.exec(htmlFile.content)) !== null) {
         const selectId = match[1];
         const selectBody = match[2];
-        
+
         // 提取選項值
         const optionRegex = /<option[^>]*value\s*=\s*["']([^"']+)["'][^>]*>/gi;
         const htmlOptions = [];
@@ -498,7 +498,7 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
         while ((optionMatch = optionRegex.exec(selectBody)) !== null) {
           htmlOptions.push(optionMatch[1]);
         }
-        
+
         // 在 JS 中尋找這些值的使用
         for (const jsFile of jsFiles) {
           // 檢查是否有字串字面值與選項值不一致（大小寫）
@@ -509,7 +509,7 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
               htmlOption.toUpperCase(),
               htmlOption.charAt(0).toUpperCase() + htmlOption.slice(1).toLowerCase()
             ];
-            
+
             for (const pattern of patterns) {
               if (pattern !== htmlOption && jsFile.content.includes(`'${pattern}'`)) {
                 issues.push({
@@ -527,7 +527,7 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
         }
       }
     }
-    
+
     return issues;
   }
 
@@ -536,13 +536,13 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
    */
   async readProjectFiles(dir) {
     const files = [];
-    
+
     try {
       const entries = await fs.readdir(dir, { withFileTypes: true });
-      
+
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
-        
+
         if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
           const subFiles = await this.readProjectFiles(fullPath);
           files.push(...subFiles);
@@ -562,7 +562,7 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
     } catch (error) {
       console.warn(`Warning: Could not read directory ${dir}: ${error.message}`);
     }
-    
+
     return files;
   }
 
@@ -574,49 +574,49 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
 
     let report = '\n';
     report += '═'.repeat(70) + '\n';
-    report += '📋 契約驗證報告 (Contract Validation Report)\n';
+    report += '📋 Validation Report\n';
     report += '═'.repeat(70) + '\n\n';
 
     if (isValid) {
-      report += '✅ 所有契約驗證通過！\n';
-      report += '   所有 IPC 頻道、DOM 元素都已正確實現。\n';
+      report += ' All contracts validated successfully!\n';
+      report += ' All IPC channels and DOM elements are correctly implemented.\n';
       return report;
     }
 
-    report += `❌ 發現 ${summary.totalIssues} 個問題\n`;
-    report += `   嚴重問題: ${summary.criticalIssues}\n`;
-    report += `   警告: ${summary.warningIssues}\n\n`;
+    report += `❌ Found ${summary.totalIssues} issues\n`;
+    report += `Critical issues: ${summary.criticalIssues}\n`;
+    report += `Warning issues: ${summary.warningIssues}\n\n`;
 
     // 顯示問題詳情
     if (issues.missingChannels.length > 0) {
-      report += '🔴 缺失的頻道 (Missing Channels):\n';
+      report += 'Missing channels:\n';
       for (const missing of issues.missingChannels) {
         report += `   • ${missing.endpoint || missing.id}\n`;
-        report += `     用途: ${missing.purpose}\n`;
-        report += `     應該在: ${(missing.expectedIn || []).join(', ')}\n\n`;
+        report += `     Purpose: ${missing.purpose}\n`;
+        report += `     Should be in: ${(missing.expectedIn || []).join(', ')}\n\n`;
       }
     }
 
     if (issues.missingProducers.length > 0) {
-      report += '🟡 缺失的生產者 (Missing Producers):\n';
+      report += 'Missing producers:\n';
       for (const missing of issues.missingProducers) {
-        report += `   • ${missing.endpoint} 缺少實現於 ${missing.file}\n`;
+        report += `   • ${missing.endpoint} missing implementation in ${missing.file}\n`;
       }
       report += '\n';
     }
 
     if (issues.missingConsumers.length > 0) {
-      report += '🟡 缺失的消費者 (Missing Consumers):\n';
+      report += '🟡 Missing consumers:\n';
       for (const missing of issues.missingConsumers) {
-        report += `   • ${missing.endpoint} 缺少呼叫於 ${missing.file}\n`;
+        report += `   • ${missing.endpoint} missing implementation in ${missing.file}\n`;
       }
       report += '\n';
     }
 
     if (issues.extraChannels.length > 0) {
-      report += '⚠️  額外的頻道 (Extra Channels):\n';
+      report += 'Extra channels:\n';
       for (const extra of issues.extraChannels) {
-        report += `   • ${extra.endpoint} 於 ${extra.foundIn}\n`;
+        report += `   • ${extra.endpoint} found in ${extra.foundIn}\n`;
       }
       report += '\n';
     }
@@ -624,18 +624,18 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
     // 顯示修復建議
     if (suggestions && suggestions.length > 0) {
       report += '─'.repeat(70) + '\n';
-      report += '💡 修復建議 (Fix Suggestions):\n\n';
-      
+      report += '💡 Fix Suggestions:\n\n';
+
       for (let i = 0; i < suggestions.length; i++) {
         const sug = suggestions[i];
-        const icon = sug.severity === 'critical' ? '🔴' : 
-                     sug.severity === 'high' ? '🟠' : 
-                     sug.severity === 'medium' ? '🟡' : '⚪';
-        
+        const icon = sug.severity === 'critical' ? '🔴' :
+          sug.severity === 'high' ? '🟠' :
+            sug.severity === 'medium' ? '🟡' : '⚪';
+
         report += `${i + 1}. ${icon} [${sug.severity.toUpperCase()}] ${sug.description}\n`;
-        if (sug.file) report += `   檔案: ${sug.file}\n`;
+        if (sug.file) report += `   File: ${sug.file}\n`;
         if (sug.code) report += `\n${sug.code}\n`;
-        if (sug.fix) report += `   修復: ${sug.fix}\n`;
+        if (sug.fix) report += `   Fix: ${sug.fix}\n`;
         report += '\n';
       }
     }
@@ -649,23 +649,23 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
 // 命令列使用
 if (import.meta.url === `file://${process.argv[1]}`) {
   const sessionId = process.argv[2];
-  
+
   if (!sessionId) {
     console.log('Usage: node contract-validator.js <sessionId>');
     process.exit(1);
   }
 
   const validator = new ContractValidator();
-  
+
   validator.validateSession(sessionId).then(result => {
     const report = validator.generateReport(result);
     console.log(report);
-    
+
     if (!result.isValid) {
       process.exit(1);
     }
   }).catch(error => {
-    console.error('驗證失敗:', error);
+    console.error('Validation failed:', error);
     process.exit(1);
   });
 }
