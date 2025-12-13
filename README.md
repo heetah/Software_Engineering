@@ -40,7 +40,7 @@
   </tr>
   <tr>
     <td width="50%">
-      <img src=".github/assets/code-generation.png" alt="程式碼生成">
+      <img src=".github/assets/generating.gif" alt="程式碼生成">
       <p align="center"><b>程式碼生成過程</b></p>
     </td>
     <td width="50%">
