@@ -19,6 +19,37 @@
 
 應用程式採用現代化的 Neumorphism 設計風格，配合 SVG 圖標系統，提供優雅且直觀的使用體驗。
 
+### 應用程式演示
+
+![應用程式演示](.github/assets/demo.gif)
+
+> **錄製提示**: 使用 [ScreenToGif](https://www.screentogif.com/) 或其他螢幕錄製工具，將 GIF 儲存至 `.github/assets/demo.gif`
+
+### 功能截圖
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src=".github/assets/chat-interface.png" alt="聊天介面">
+      <p align="center"><b>智能對話介面</b></p>
+    </td>
+    <td width="50%">
+      <img src=".github/assets/project-library.png" alt="專案庫">
+      <p align="center"><b>專案庫管理</b></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src=".github/assets/code-generation.png" alt="程式碼生成">
+      <p align="center"><b>程式碼生成過程</b></p>
+    </td>
+    <td width="50%">
+      <img src=".github/assets/settings.png" alt="設定頁面">
+      <p align="center"><b>設定與配置</b></p>
+    </td>
+  </tr>
+</table>
+
 ### 主要特色
 - **新手教學** - 互動式教學系統，快速上手
 - **智能對話** - 自然語言描述需求即可
@@ -176,9 +207,9 @@ npm start
    ```
 
 2. **查看進度** - 實時查看各個代理的執行狀態
-   - 📐 Architect Agent 執行中...
-   - ⚙ Coder Agent 準備配置...
-   - ✓ Verifier Agent 執行中...
+   - Architect Agent 執行中...
+   - Coder Agent 準備配置...
+   - Verifier Agent 執行中...
 
 3. **下載專案** - 生成完成後，點擊下載按鈕獲取壓縮檔
 
