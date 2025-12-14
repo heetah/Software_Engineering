@@ -51,7 +51,7 @@ export default class ContractAutoFixer {
               type: 'naming-style',
               from: issue.actualStyle,
               to: issue.expectedStyle,
-              channels: issue.channels,
+              channelsFixed: issue.channelsToFix || [],
               status: 'success'
             });
             successCount++;
@@ -163,6 +163,32 @@ export default class ContractAutoFixer {
             });
             failCount++;
           }
+        }
+      }
+
+      // 修復參數格式不匹配（preload.js 傳遞參數格式與 main.js 期望不一致）
+      for (const mismatch of validationResult.issues.parameterMismatches || []) {
+        try {
+          const fixed = await this.fixParameterMismatch(outputDir, mismatch);
+          if (fixed) {
+            fixes.push({
+              type: 'parameter-mismatch',
+              channel: mismatch.endpoint,
+              from: mismatch.format2.raw,
+              to: mismatch.format1.raw,
+              file: this.extractFileName(mismatch.file2),
+              status: 'success'
+            });
+            successCount++;
+          }
+        } catch (error) {
+          fixes.push({
+            type: 'parameter-mismatch',
+            channel: mismatch.endpoint,
+            error: error.message,
+            status: 'failed'
+          });
+          failCount++;
         }
       }
 
@@ -382,7 +408,10 @@ ipcMain.handle('${channel}', async (event, ...args) => {
         } else if (fix.type === 'missing-dom') {
           report += `   • 在 ${fix.file} 中加入 DOM 元素: #${fix.id}\n`;
         } else if (fix.type === 'naming-style') {
-          report += `   • 統一命名風格: ${fix.from} → ${fix.to} (${fix.channels.length} 個頻道)\n`;
+          const channelCount = fix.channels?.length || fix.channelsFixed?.length || 0;
+          report += `   • 統一命名風格: ${fix.from || fix.actualStyle} → ${fix.to || fix.expectedStyle} (${channelCount} 個頻道)\n`;
+        } else if (fix.type === 'parameter-mismatch') {
+          report += `   • 修正參數格式: '${fix.channel}' ${fix.from} → ${fix.to}\n`;
         }
       }
       report += '\n';
@@ -408,55 +437,80 @@ ipcMain.handle('${channel}', async (event, ...args) => {
   async detectNamingStyleMismatch(outputDir, validationResult) {
     const issues = [];
     
-    // 檢查是否大量頻道都缺失（可能是命名風格問題）
+    // 檢查是否有額外頻道和缺失消費者的配對（命名風格問題的典型特徵）
+    const extraChannels = validationResult.issues.extraChannels || [];
+    const missingConsumers = validationResult.issues.missingConsumers || [];
     const missingChannels = validationResult.issues.missingChannels || [];
-    if (missingChannels.length === 0) return issues;
     
-    // 讀取實際文件來分析命名風格
-    const mainPath = path.join(outputDir, 'main.js');
-    const preloadPath = path.join(outputDir, 'preload.js');
+    // 如果沒有任何問題，直接返回
+    if (extraChannels.length === 0 && missingConsumers.length === 0 && missingChannels.length === 0) {
+      return issues;
+    }
     
-    try {
-      const mainContent = await fs.readFile(mainPath, 'utf-8');
-      const preloadContent = await fs.readFile(preloadPath, 'utf-8');
+    // 提取額外頻道和缺失消費者的端點名稱
+    const extraNames = extraChannels.map(e => e.channel || e.endpoint);
+    const missingNames = [...missingConsumers.map(m => m.endpoint), ...missingChannels.map(m => m.endpoint)];
+    
+    // 檢查是否為 camelCase vs kebab-case 的配對
+    const pairs = [];
+    for (const extra of extraNames) {
+      const kebabVersion = this.camelToKebab(extra);
+      const camelVersion = this.kebabToCamel(extra);
       
-      // 提取實際使用的 IPC 頻道名稱
-      const actualChannels = [];
-      const ipcRegex = /ipc(?:Main|Renderer)\.(?:handle|invoke)\s*\(\s*['"`]([^'"`]+)['"`]/gi;
-      let match;
-      
-      while ((match = ipcRegex.exec(mainContent + preloadContent)) !== null) {
-        if (!actualChannels.includes(match[1])) {
-          actualChannels.push(match[1]);
-        }
-      }
-      
-      // 分析命名風格
-      const camelCaseCount = actualChannels.filter(ch => /^[a-z]+[A-Z]/.test(ch)).length;
-      const kebabCaseCount = actualChannels.filter(ch => /^[a-z]+-[a-z]/.test(ch)).length;
-      
-      const actualStyle = camelCaseCount > kebabCaseCount ? 'camelCase' : 'kebab-case';
-      
-      // 檢查期望的風格
-      const expectedChannels = missingChannels.map(mc => mc.endpoint);
-      const expectedKebabCount = expectedChannels.filter(ch => /^[a-z]+-[a-z]/.test(ch)).length;
-      const expectedCamelCount = expectedChannels.filter(ch => /^[a-z]+[A-Z]/.test(ch)).length;
-      
-      const expectedStyle = expectedKebabCount > expectedCamelCount ? 'kebab-case' : 'camelCase';
-      
-      // 如果風格不同，這就是問題所在
-      if (actualStyle !== expectedStyle && actualChannels.length > 0) {
-        issues.push({
-          actualStyle,
-          expectedStyle,
-          channels: actualChannels,
-          expectedChannels,
-          files: ['main.js', 'preload.js']
+      // 檢查是否有對應的缺失頻道（kebab-case 版本）
+      if (missingNames.includes(kebabVersion) && extra !== kebabVersion) {
+        pairs.push({
+          actual: extra,
+          expected: kebabVersion,
+          conversion: 'camelCase → kebab-case'
         });
       }
-      
-    } catch (error) {
-      // 檔案讀取失敗，跳過
+      // 檢查是否有對應的缺失頻道（camelCase 版本）
+      else if (missingNames.includes(camelVersion) && extra !== camelVersion) {
+        pairs.push({
+          actual: extra,
+          expected: camelVersion,
+          conversion: 'kebab-case → camelCase'
+        });
+      }
+    }
+    
+    if (pairs.length > 0) {
+      // 判斷應該轉換到哪種風格（以 main.js 的 ipcMain.handle 為準）
+      const mainPath = path.join(outputDir, 'main.js');
+      try {
+        const mainContent = await fs.readFile(mainPath, 'utf-8');
+        const handleRegex = /ipcMain\.handle\s*\(\s*['"`]([^'"`]+)['"`]/g;
+        const mainChannels = [];
+        let match;
+        while ((match = handleRegex.exec(mainContent)) !== null) {
+          mainChannels.push(match[1]);
+        }
+        
+        // main.js 的風格是標準
+        const mainKebabCount = mainChannels.filter(ch => ch.includes('-')).length;
+        const mainCamelCount = mainChannels.filter(ch => /[A-Z]/.test(ch)).length;
+        const targetStyle = mainKebabCount >= mainCamelCount ? 'kebab-case' : 'camelCase';
+        
+        issues.push({
+          actualStyle: targetStyle === 'kebab-case' ? 'camelCase' : 'kebab-case',
+          expectedStyle: targetStyle,
+          pairs: pairs,
+          channelsToFix: pairs.map(p => ({ from: p.actual, to: p.expected })),
+          targetFile: 'preload.js'  // 通常需要修復 preload.js 來匹配 main.js
+        });
+      } catch (error) {
+        // 無法讀取 main.js，使用 pairs 中的資訊
+        if (pairs.length > 0) {
+          issues.push({
+            actualStyle: 'unknown',
+            expectedStyle: 'unknown',
+            pairs: pairs,
+            channelsToFix: pairs.map(p => ({ from: p.actual, to: p.expected })),
+            targetFile: 'preload.js'
+          });
+        }
+      }
     }
     
     return issues;
@@ -466,28 +520,64 @@ ipcMain.handle('${channel}', async (event, ...args) => {
    * 修復命名風格不一致
    */
   async fixNamingStyle(outputDir, issue) {
-    const converter = issue.expectedStyle === 'kebab-case' 
-      ? this.camelToKebab 
-      : this.kebabToCamel;
-    
     let fixed = false;
+    const fixedChannels = [];
     
-    for (const file of issue.files) {
-      const filePath = path.join(outputDir, file);
+    // 使用新的 channelsToFix 格式
+    if (issue.channelsToFix && issue.channelsToFix.length > 0) {
+      const targetFile = issue.targetFile || 'preload.js';
+      const filePath = path.join(outputDir, targetFile);
+      
       try {
         let content = await fs.readFile(filePath, 'utf-8');
         
-        // 轉換所有 IPC 頻道名稱
-        for (const channel of issue.channels) {
-          const newChannel = converter(channel);
-          const regex = new RegExp(`(['"\`])${this.escapeRegex(channel)}\\1`, 'g');
-          content = content.replace(regex, `$1${newChannel}$1`);
+        for (const { from, to } of issue.channelsToFix) {
+          // 替換 IPC invoke 調用中的頻道名稱
+          const regex = new RegExp(
+            `(ipcRenderer\\.invoke\\s*\\(\\s*)(['"\`])${this.escapeRegex(from)}\\2`,
+            'g'
+          );
+          
+          if (regex.test(content)) {
+            content = content.replace(regex, `$1$2${to}$2`);
+            fixedChannels.push({ from, to });
+            console.log(`   ✓ 修復 ${from} → ${to}`);
+          }
         }
         
-        await fs.writeFile(filePath, content, 'utf-8');
-        fixed = true;
+        if (fixedChannels.length > 0) {
+          await fs.writeFile(filePath, content, 'utf-8');
+          fixed = true;
+        }
       } catch (error) {
-        console.error(`Failed to fix naming style in ${file}:`, error.message);
+        console.error(`Failed to fix naming style in ${targetFile}:`, error.message);
+      }
+    }
+    // 向後兼容舊格式
+    else if (issue.channels) {
+      const converter = issue.expectedStyle === 'kebab-case' 
+        ? this.camelToKebab 
+        : this.kebabToCamel;
+      
+      for (const file of issue.files || ['preload.js']) {
+        const filePath = path.join(outputDir, file);
+        try {
+          let content = await fs.readFile(filePath, 'utf-8');
+          
+          for (const channel of issue.channels) {
+            const newChannel = converter(channel);
+            if (channel !== newChannel) {
+              const regex = new RegExp(`(['"\`])${this.escapeRegex(channel)}\\1`, 'g');
+              content = content.replace(regex, `$1${newChannel}$1`);
+              fixedChannels.push({ from: channel, to: newChannel });
+            }
+          }
+          
+          await fs.writeFile(filePath, content, 'utf-8');
+          fixed = true;
+        } catch (error) {
+          console.error(`Failed to fix naming style in ${file}:`, error.message);
+        }
       }
     }
     
@@ -596,6 +686,74 @@ ipcMain.handle('${channel}', async (event, ...args) => {
       default:
         return `<div id="${missing.id}"><!-- ${purpose} --></div>`;
     }
+  }
+
+  /**
+   * 從完整路徑中提取檔案名
+   */
+  extractFileName(filePath) {
+    return filePath.split('/').pop();
+  }
+
+  /**
+   * 修復參數格式不匹配
+   * 將 preload.js 中的多參數調用改為物件參數
+   */
+  async fixParameterMismatch(outputDir, mismatch) {
+    const { endpoint, format1, format2, file2 } = mismatch;
+    
+    // 只修復 preload.js 端（通常是呼叫端需要配合處理端）
+    const fileName = this.extractFileName(file2);
+    if (!fileName.includes('preload')) {
+      console.log(`   ⚠️  跳過非 preload 文件: ${fileName}`);
+      return false;
+    }
+    
+    const preloadPath = path.join(outputDir, 'preload.js');
+    
+    try {
+      let content = await fs.readFile(preloadPath, 'utf-8');
+      
+      // 情況 1: format1 (main.js) 期望物件，format2 (preload.js) 傳多參數
+      if ((format1.type === 'object-destructure' || format1.type === 'object-literal') &&
+          (format2.type === 'multiple-params' || format2.type === 'single-param')) {
+        
+        // 從物件解構格式提取參數名
+        const objectParams = format1.raw.replace(/[{}]/g, '').split(',').map(p => p.trim());
+        
+        // 構建新的物件字面量
+        const newParams = `{ ${objectParams.join(', ')} }`;
+        
+        // 構建搜尋和替換模式
+        // 匹配: ipcRenderer.invoke('channel-name', param1, param2)
+        const searchPattern = new RegExp(
+          `(invoke\\s*\\(\\s*['"]${this.escapeRegex(endpoint)}['"]\\s*,\\s*)${this.escapeRegex(format2.raw)}(\\s*\\))`,
+          'g'
+        );
+        
+        const newContent = content.replace(searchPattern, `$1${newParams}$2`);
+        
+        if (newContent !== content) {
+          await fs.writeFile(preloadPath, newContent, 'utf-8');
+          console.log(`   ✓ 修復 ${endpoint}: ${format2.raw} → ${newParams}`);
+          return true;
+        }
+      }
+      
+      console.log(`   ⚠️  無法自動修復 ${endpoint} 的參數格式`);
+      return false;
+      
+    } catch (error) {
+      console.error(`   ❌ 修復失敗: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * 轉義 regex 特殊字符
+   */
+  escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   /**
