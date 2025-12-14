@@ -5,7 +5,7 @@ const express = require('express');
 const PythonGenerator = require('./generator');
 
 const app = express();
-const PORT = process.env.PORT || 3804;
+const PORT = 3804;
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -13,8 +13,8 @@ const generator = new PythonGenerator();
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     agent: 'python-agent',
     port: PORT,
     supportedExtensions: ['.py', '.pyw', '.pyi']
@@ -24,29 +24,29 @@ app.get('/health', (req, res) => {
 // Main generation endpoint
 app.post('/generate', async (req, res) => {
   const startTime = Date.now();
-  
+
   try {
     const { skeleton, fileSpec, context } = req.body;
-    
+
     if (!fileSpec || !fileSpec.path) {
       return res.status(400).json({
         success: false,
         error: 'Missing required field: fileSpec.path'
       });
     }
-    
+
     console.log(`[${new Date().toISOString()}] Generating ${fileSpec.path}`);
-    
+
     const result = await generator.generate({
       skeleton,
       fileSpec,
       context: context || {}
     });
-    
+
     const elapsed = Date.now() - startTime;
-    
+
     console.log(`[${new Date().toISOString()}] ??Generated ${fileSpec.path} (${elapsed}ms)`);
-    
+
     res.status(200).json({
       success: true,
       content: result.content,
@@ -59,11 +59,11 @@ app.post('/generate', async (req, res) => {
         method: result.method || 'template'
       }
     });
-    
+
   } catch (error) {
     const elapsed = Date.now() - startTime;
     console.error(`[${new Date().toISOString()}] ??Error:`, error.message);
-    
+
     res.status(500).json({
       success: false,
       error: error.message,

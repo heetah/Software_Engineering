@@ -29,33 +29,48 @@ class Coordinator {
     // 動態 Contracts 提取器
     this.contractsExtractor = new ContractsExtractor();
 
+    // 動態 Contracts 提取器
+    this.contractsExtractor = new ContractsExtractor();
+
     // 配置參數（先設定，再傳給 workers）
-    this.MAX_FILES_PER_SKELETON_BATCH = config.maxSkeletonBatch || 15;
+    this.MAX_FILES_PER_SKELETON_BATCH = config.maxSkeletonBatch || 30; // 擴大批次以支持大型專案
     this.DETAIL_GENERATION_DELAY = config.detailDelay || 1500; // 毫秒
 
-    // API 配置優先順序：1. config 參數 2. CLOUD_API 3. OPENAI_API
-    this.CLOUD_API_ENDPOINT = config.cloudApiEndpoint ||
-      process.env.CLOUD_API_ENDPOINT ||
-      process.env.OPENAI_BASE_URL;
-    this.CLOUD_API_KEY = config.cloudApiKey ||
-      process.env.CLOUD_API_KEY ||
-      process.env.OPENAI_API_KEY;
+    // API 配置優先順序：1. config 參數 (Frontend Keys) 2. CLOUD_API 3. OPENAI_API
+    const provider = (config.llmProvider || "auto").toLowerCase();
+
+    let apiKey = config.cloudApiKey;
+    let endpoint = config.cloudApiEndpoint;
+
+    // 根據 Provider 選擇 Key
+    if (provider === 'gemini') {
+      apiKey = config.geminiApiKey || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+      endpoint = "https://generativelanguage.googleapis.com/v1beta";
+    } else if (provider === 'openai') {
+      apiKey = config.openaiApiKey || process.env.OPENAI_API_KEY;
+      endpoint = "https://api.openai.com/v1";
+    } else if (provider === 'auto') {
+      // Auto優先順序：傳入的 OpenAI -> 傳入的 Gemini -> 環境變數 OpenAI -> 環境變數 Gemini
+      if (config.openaiApiKey) {
+        apiKey = config.openaiApiKey;
+        endpoint = "https://api.openai.com/v1";
+      } else if (config.geminiApiKey) {
+        apiKey = config.geminiApiKey;
+        endpoint = "https://generativelanguage.googleapis.com/v1beta";
+      } else if (process.env.OPENAI_API_KEY) {
+        apiKey = process.env.OPENAI_API_KEY;
+        endpoint = "https://api.openai.com/v1";
+      } else if (process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY) {
+        apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+        endpoint = "https://generativelanguage.googleapis.com/v1beta";
+      }
+    }
+
+    this.CLOUD_API_ENDPOINT = endpoint;
+    this.CLOUD_API_KEY = apiKey;
 
     // 預設使用真實 API（不使用 mock）
     this.USE_MOCK_API = config.useMockApi === true;
-
-    // 🔍 Debug: 記錄接收到的配置
-    console.log('[CoderCoordinator] Config received:', {
-      hasCloudApiEndpoint: !!config.cloudApiEndpoint,
-      hasCloudApiKey: !!config.cloudApiKey,
-      hasEnvCloudEndpoint: !!process.env.CLOUD_API_ENDPOINT,
-      hasEnvCloudKey: !!process.env.CLOUD_API_KEY,
-      hasEnvOpenaiEndpoint: !!process.env.OPENAI_BASE_URL,
-      hasEnvOpenaiKey: !!process.env.OPENAI_API_KEY,
-      finalEndpoint: this.CLOUD_API_ENDPOINT ? this.CLOUD_API_ENDPOINT.substring(0, 50) + '...' : 'MISSING',
-      finalKeyExists: !!this.CLOUD_API_KEY,
-      useMockApi: this.USE_MOCK_API
-    });
 
     // 建立 worker config，確保傳遞 API 配置
     const workerConfig = {
@@ -1099,7 +1114,7 @@ Return ONLY the JSON array, no markdown or explanation.`;
           }],
           generationConfig: {
             temperature: 0.3,
-            maxOutputTokens: 16384  // 提高到 16384 以處理複雜專案（實際會被 Gemini 限制在 8192）
+            maxOutputTokens: 8192  // Gemini 1.5 Flash actual limit (previously set to 16384 but was capped at 8192)
           }
         };
 
@@ -1108,7 +1123,12 @@ Return ONLY the JSON array, no markdown or explanation.`;
         };
 
         // Gemini 使用 query parameter 認證
-        const apiUrl = `${this.CLOUD_API_ENDPOINT}?key=${this.CLOUD_API_KEY}`;
+        let baseUrl = this.CLOUD_API_ENDPOINT;
+        if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+
+        // 使用 gemini-1.5-flash 生成骨架 (速度快且 Context Window 大)
+        const model = 'gemini-1.5-flash';
+        const apiUrl = `${baseUrl}/models/${model}:generateContent?key=${this.CLOUD_API_KEY}`;
 
         const response = await fetch(apiUrl, {
           method: 'POST',

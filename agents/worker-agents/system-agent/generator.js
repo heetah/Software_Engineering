@@ -10,23 +10,9 @@ const { callCloudAPI } = require('../api-adapter.cjs');
 class SystemGenerator {
   constructor(config = {}) {
     // API 配置優先順序：1. config 參數 2. CLOUD_API 3. OPENAI_API
-    this.cloudApiEndpoint = config.cloudApiEndpoint ||
-      process.env.CLOUD_API_ENDPOINT ||
-      process.env.OPENAI_BASE_URL;
-    this.cloudApiKey = config.cloudApiKey ||
-      process.env.CLOUD_API_KEY ||
-      process.env.OPENAI_API_KEY;
+    this.cloudApiEndpoint = config.cloudApiEndpoint;
+    this.cloudApiKey = config.cloudApiKey;
     this.useMockApi = !this.cloudApiEndpoint;
-
-    // 🔍 Debug: 記錄配置
-    console.log('[SystemGenerator] Initialized:', {
-      hasConfigEndpoint: !!config.cloudApiEndpoint,
-      hasConfigKey: !!config.cloudApiKey,
-      hasEnvCloudEndpoint: !!process.env.CLOUD_API_ENDPOINT,
-      hasEnvOpenaiEndpoint: !!process.env.OPENAI_BASE_URL,
-      finalEndpoint: this.cloudApiEndpoint ? this.cloudApiEndpoint.substring(0, 50) + '...' : 'MISSING',
-      willUseMock: this.useMockApi
-    });
   }
 
   async generate({ skeleton, fileSpec, context }) {
@@ -76,7 +62,7 @@ class SystemGenerator {
         apiKey: this.cloudApiKey,
         systemPrompt: 'You are an expert systems programmer. Generate clean, efficient, production-ready code. Follow language-specific best practices. Include proper error handling and documentation. Output only the code.',
         userPrompt: prompt,
-        maxTokens: 80000
+        maxTokens: 16348
       });
 
       // 清理可能的 markdown 代碼塊標記

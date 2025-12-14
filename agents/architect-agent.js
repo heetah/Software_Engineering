@@ -10,16 +10,8 @@ import { tokenTracker } from "../utils/token-tracker.js";
 dotenv.config();
 
 export default class ArchitectAgent extends BaseAgent {
-  constructor() {
-    // 使用 OpenAI API（從環境變數讀取），支援 CLOUD_API 作為 fallback
-    const apiKey = process.env.OPENAI_API_KEY || process.env.CLOUD_API_KEY;
-    const baseUrl = process.env.OPENAI_BASE_URL || 
-                   (process.env.CLOUD_API_ENDPOINT ? this._detectBaseUrl(process.env.CLOUD_API_ENDPOINT) : "https://api.openai.com/v1");
-    
-    super("Architect Agent", "JSON", "architect", {
-      baseUrl,
-      apiKey
-    });
+  constructor(options = {}) {
+    super("Architect Agent", "JSON", "architect", options);
   }
 
   _detectBaseUrl(endpoint) {
@@ -160,6 +152,51 @@ Output rules:
    * @returns {Promise<Object>} 生成的計劃物件
    */
   async generatePlan({ prompt, context }) {
+    // 🔥 RAG Enhancement: Query knowledge base for similar projects
+    let ragContext = '';
+    try {
+      const { default: ragEngine } = await import('./rag-engine/index.js');
+
+      // Initialize RAG with API keys (if available)
+      const ragConfig = {
+        cloudApiKey: this.apiKey || process.env.OPENAI_API_KEY,
+        cloudApiEndpoint: this.baseUrl
+      };
+      ragEngine.init(ragConfig);
+
+      // Ingest knowledge base (example projects)
+      await ragEngine.ingestKnowledgeBase();
+      await ragEngine.buildIndex();
+
+      // Query for similar architectures
+      const queryText = `${prompt} architecture patterns contracts`;
+      ragContext = await ragEngine.query(queryText, 3);
+
+      if (ragContext && ragContext.length > 0) {
+        // 🔥 Relevance filtering to prevent cross-contamination
+        // (e.g., "calculator" should not retrieve "expense tracker" context)
+        const queryKeywords = prompt.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+        const contextKeywords = ragContext.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+
+        const relevantKeywords = queryKeywords.filter(q =>
+          contextKeywords.some(c => c.includes(q) || q.includes(c))
+        );
+
+        // Only inject RAG if at least 20% of query keywords appear in context
+        const relevanceRatio = queryKeywords.length > 0 ? relevantKeywords.length / queryKeywords.length : 0;
+        if (relevanceRatio < 0.2) {
+          console.log(`  🧠 RAG context filtered out (low relevance: ${relevantKeywords.length}/${queryKeywords.length} keywords matched)`);
+          ragContext = '';
+        } else {
+          console.log(`  🧠 Retrieved RAG context (${ragContext.length} chars, relevance: ${(relevanceRatio * 100).toFixed(0)}%) for architecture planning`);
+        }
+      }
+    } catch (err) {
+      console.warn(`  RAG Engine unavailable: ${err.message}`);
+      ragContext = '';
+      // Continue without RAG if it fails
+    }
+
     const systemPrompt = `You are the Architect Agent for an Electron.js + Node.js multi-agent application.
 
 Your primary job:
@@ -299,7 +336,7 @@ Rules:
 - "design" section should include UI/UX specifications for frontend projects.
 - Mirror the user's request language when possible; otherwise use English.`;
 
-    const userPrompt = JSON.stringify({
+    const userPromptData = {
       goal: prompt,
       context: context || null,
       constraints: {
@@ -314,7 +351,14 @@ Rules:
         responsive_design: true, // 總是響應式設計
         modern_ui: true // 使用現代 UI 設計
       }
-    });
+    };
+
+    // 🧠 Inject RAG context if available
+    if (ragContext && ragContext.length > 0) {
+      userPromptData.reference_architectures = `\n\n=== REFERENCE ARCHITECTURES (from knowledge base) ===\n${ragContext}\n=== END REFERENCE ARCHITECTURES ===\n\nUse these references to inform your architecture design, especially for contracts structure.`;
+    }
+
+    const userPrompt = JSON.stringify(userPromptData);
 
     // 使用 BaseAgent 的重試機制（因為 BaseAgent.run 會自動添加 system message，我們需要自定義 payload）
     // 不指定 model，讓 API Provider Manager 使用默認模型
@@ -348,7 +392,7 @@ Rules:
         // 嘗試從可能的 markdown code block 中提取 JSON
         // 優先匹配 ```json 或 ``` 包裹的 JSON
         let jsonStr = content;
-        
+
         // 嘗試提取最外層的 JSON 對象
         const jsonBlockMatch = content.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
         if (jsonBlockMatch) {
@@ -360,14 +404,14 @@ Rules:
             jsonStr = jsonObjectMatch[0];
           }
         }
-        
+
         // 清理可能的轉義字符和額外內容
         jsonStr = jsonStr.trim();
         // 移除可能的 markdown 標記
         jsonStr = jsonStr.replace(/^```json\s*/i, '').replace(/```\s*$/, '');
-        
+
         parsed = JSON.parse(jsonStr);
-        
+
         // 驗證解析結果是否包含必要的結構
         if (!parsed.coder_instructions && !parsed.plan) {
           throw new Error('Parsed JSON does not contain required fields');
@@ -375,17 +419,17 @@ Rules:
       } catch (e) {
         console.warn(`  ${this.role} JSON parsing failed: ${e.message}`);
         console.warn(`  Attempting to extract JSON from content...`);
-        
+
         // 更積極的 JSON 提取策略
         try {
           // 嘗試找到第一個 { 到最後一個 } 之間的內容
           const firstBrace = content.indexOf('{');
           const lastBrace = content.lastIndexOf('}');
-          
+
           if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
             const extractedJson = content.substring(firstBrace, lastBrace + 1);
             parsed = JSON.parse(extractedJson);
-            
+
             if (!parsed.coder_instructions && !parsed.plan) {
               throw new Error('Extracted JSON does not contain required fields');
             }
@@ -541,8 +585,8 @@ Rules:
 
       let parsed;
       try {
-        const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || 
-                         content.match(/\{[\s\S]*\}/);
+        const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) ||
+          content.match(/\{[\s\S]*\}/);
         const jsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : content;
         parsed = JSON.parse(jsonStr.trim());
       } catch (e) {

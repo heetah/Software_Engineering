@@ -13,20 +13,36 @@ async function callCloudAPI({ endpoint, apiKey, systemPrompt, userPrompt, maxTok
   }
 
   // 偵測 API 類型
-  const isGemini = endpoint.includes('generativelanguage.googleapis.com');
+  const isGemini = endpoint.includes('goog') || endpoint.includes('gemini') || endpoint.includes('generativelanguage');
 
   let requestBody, headers, apiUrl;
 
   if (isGemini) {
     // Google Gemini API 格式
-    apiUrl = `${endpoint}?key=${apiKey}`;
+    // 確保 endpoint 指向具體的 generateContent 方法
+    let baseUrl = endpoint;
+    if (baseUrl.endsWith('/v1beta') || baseUrl.endsWith('/v1')) {
+      // 如果只是 base URL，加上預設模型路徑
+      // 默認使用 gemini-2.5-flash (或根據 modelTier 調整)
+      baseUrl = `${baseUrl}/models/gemini-2.5-flash:generateContent`;
+    } else if (baseUrl.includes('/models/') && !baseUrl.includes(':generateContent')) {
+      // 如果有模型但沒方法，加上方法
+      baseUrl = `${baseUrl}:generateContent`;
+    }
 
     // 自適應模型選擇 (Adaptive Model Selection)
-    if (modelTier === 'fast' && endpoint.includes('/models/')) {
-      // 嘗試使用 Flash 模型 (速度更快，成本更低 - 類比量化模型)
-      apiUrl = apiUrl.replace(/\/models\/[^:]+:/, '/models/gemini-1.5-flash:');
+    if (modelTier === 'fast') {
+      // 如果已經指定了模型，替換成 flash
+      if (baseUrl.includes('/models/')) {
+        baseUrl = baseUrl.replace(/\/models\/[^:]+:/, '/models/gemini-2.5-flash:');
+      }
       console.log(`[API Adapter] ⚡ Using FAST model (Gemini Flash)`);
+    } else {
+      // Strong tier
+      console.log(`[API Adapter] Using Gemini model`);
     }
+
+    apiUrl = `${baseUrl}?key=${apiKey}`;
 
     headers = { 'Content-Type': 'application/json' };
     requestBody = {
@@ -41,7 +57,16 @@ async function callCloudAPI({ endpoint, apiKey, systemPrompt, userPrompt, maxTok
       }
     };
   } else {
-    // OpenAI API 格式 (GPT-4, Azure OpenAI 等)
+    // OpenAI API 格式
+    // 確保 endpoint 指向 chat/completions
+    let baseUrl = endpoint;
+    if (!baseUrl.endsWith('/chat/completions')) {
+      baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+      baseUrl = `${baseUrl}/chat/completions`;
+    }
+
+    apiUrl = baseUrl;
+
     // 自適應模型選 (Adaptive Model Selection)
     let modelName = 'gpt-4o'; // Default strong
     if (modelTier === 'fast') {
@@ -51,7 +76,6 @@ async function callCloudAPI({ endpoint, apiKey, systemPrompt, userPrompt, maxTok
       console.log(`[API Adapter] Using STRONG model (${modelName})`);
     }
 
-    apiUrl = endpoint;
     headers = {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json'

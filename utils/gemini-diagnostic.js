@@ -24,26 +24,26 @@ export async function diagnoseGeminiAPI() {
   };
 
   // 檢查環境變數
-  const apiKey = process.env.GEMINI_API_KEY;
-  const baseUrl = process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta';
+  const apiKey = process.env.GOOGLE_API_KEY;
+  const baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
   // 嘗試多個可能的模型名稱
-  const model = process.env.GEMINI_MODEL || 'gemini-pro';
+  const model = 'gemini-2.5-flash';
 
   results.hasApiKey = !!apiKey;
   results.hasBaseUrl = !!baseUrl;
 
   if (!apiKey) {
-    results.errors.push('GEMINI_API_KEY is not set in environment variables');
+    results.errors.push('GOOGLE_API_KEY is not set in environment variables');
     return results;
   }
 
   if (apiKey.length < 20) {
-    results.warnings.push('GEMINI_API_KEY seems too short, may be invalid');
+    results.warnings.push('GOOGLE_API_KEY seems too short, may be invalid');
   }
 
   // 檢查 Base URL 格式
   if (!baseUrl.includes('generativelanguage.googleapis.com')) {
-    results.warnings.push('GEMINI_BASE_URL does not contain generativelanguage.googleapis.com');
+    results.warnings.push('GOOGLE_API_KEY does not contain generativelanguage.googleapis.com');
   }
 
   // 首先嘗試列出可用的模型
@@ -51,19 +51,19 @@ export async function diagnoseGeminiAPI() {
   try {
     const listModelsUrl = `${baseUrl}/models?key=${apiKey}`;
     results.info.push('Fetching available models...');
-    
+
     const listResponse = await axios.get(listModelsUrl, {
       headers: {
         'Content-Type': 'application/json'
       },
       timeout: 10000
     });
-    
+
     if (listResponse.status === 200 && listResponse.data.models) {
       availableModels = listResponse.data.models
         .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
         .map(m => m.name.replace('models/', ''));
-      
+
       results.info.push(`✅ Found ${availableModels.length} available model(s): ${availableModels.join(', ')}`);
     }
   } catch (error) {
@@ -75,15 +75,15 @@ export async function diagnoseGeminiAPI() {
 
   // 測試 API 連接
   // 優先使用從 API 獲取的模型列表，否則嘗試常見的模型名稱
-  const possibleModels = availableModels.length > 0 
-    ? availableModels 
+  const possibleModels = availableModels.length > 0
+    ? availableModels
     : [
-        model,
-        'gemini-pro',
-        'gemini-1.5-pro',
-        'gemini-1.5-flash',
-        'gemini-pro-vision'
-      ].filter((m, i, arr) => arr.indexOf(m) === i); // 去重
+      model,
+      'gemini-pro',
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-pro-vision'
+    ].filter((m, i, arr) => arr.indexOf(m) === i); // 去重
 
   let testSuccessful = false;
   let lastError = null;
@@ -92,36 +92,36 @@ export async function diagnoseGeminiAPI() {
     try {
       const modelName = testModel.includes('/') ? testModel : `models/${testModel}`;
       const testUrl = `${baseUrl}/${modelName}:generateContent?key=${apiKey}`;
-      
+
       results.info.push(`Testing model: ${modelName}`);
-      
+
       if (!testSuccessful) {
         results.info.push(`Testing URL: ${testUrl.replace(/\?key=.*$/, '?key=***')}`);
       }
 
-    const testPayload = {
-      contents: [{
-        role: 'user',
-        parts: [{ text: 'Hello' }]
-      }],
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 10
-      }
-    };
+      const testPayload = {
+        contents: [{
+          role: 'user',
+          parts: [{ text: 'Hello' }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 10
+        }
+      };
 
-    const response = await axios.post(testUrl, testPayload, {
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      timeout: 10000
-    });
+      const response = await axios.post(testUrl, testPayload, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
 
       if (response.status === 200) {
         results.connectionTest = true;
         testSuccessful = true;
         results.info.push(`✅ Gemini API connection test successful with model: ${modelName}!`);
-        
+
         const data = response.data;
         if (data.candidates && data.candidates.length > 0) {
           const responseText = data.candidates[0].content.parts[0].text;
@@ -142,13 +142,13 @@ export async function diagnoseGeminiAPI() {
   // 如果所有模型都失敗，顯示最後的錯誤
   if (!testSuccessful && lastError) {
     results.connectionTest = false;
-    
+
     if (lastError.response) {
       const status = lastError.response.status;
       const errorData = lastError.response.data;
-      
+
       results.errors.push(`API Error (${status}): ${JSON.stringify(errorData)}`);
-      
+
       switch (status) {
         case 400:
           results.errors.push('Bad Request - Check your request format and model name');
@@ -192,7 +192,7 @@ export async function diagnoseGeminiAPI() {
  */
 export function printDiagnosticResults(results) {
   console.log('\n=== Gemini API Diagnostic Results ===\n');
-  
+
   if (results.errors.length === 0 && results.connectionTest) {
     console.log('✅ All checks passed! Gemini API is configured correctly.\n');
   } else {
@@ -224,8 +224,8 @@ export function printDiagnosticResults(results) {
 
 // 如果直接運行此文件，執行診斷
 // 檢查是否是直接運行的腳本
-const isMainModule = import.meta.url === `file://${process.argv[1]}` || 
-                     process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'));
+const isMainModule = import.meta.url === `file://${process.argv[1]}` ||
+  process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'));
 
 if (isMainModule || process.argv[1]?.includes('gemini-diagnostic')) {
   diagnoseGeminiAPI()

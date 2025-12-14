@@ -35,8 +35,14 @@ dotenv.config();
 let db;
 
 // --- AA: Vision API Setup ---
-const GOOGLE_API_KEY =
-  process.env.GOOGLE_API_KEY || "AIzaSyBnbtdTqWT80E7dyS3MUr0LTZ68lxjMWAc";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+
+// Global API Key Cache (from frontend)
+let globalApiKeys = {
+  gemini: null,
+  openai: null
+};
 // Disable AutoResizeOutputDevice
 app.commandLine.appendSwitch("disable-features", "AutoResizeOutputDevice");
 
@@ -326,6 +332,129 @@ function registerSettingsHandlers() {
   ipcMain.handle("settings:get-app-data-path", () => {
     return app.getPath("userData");
   });
+
+  // Simple in-memory storage for search mode
+  let searchMode = 'standard';
+
+  ipcMain.handle("settings:get-search-mode", () => {
+    return searchMode;
+  });
+
+  ipcMain.handle("settings:set-search-mode", (event, mode) => {
+    searchMode = mode;
+    return true;
+  });
+}
+
+function registerLibraryHandlers() {
+  const { shell } = require('electron');
+
+  ipcMain.handle("library:get-projects", async () => {
+    try {
+      const outputDir = path.join(__dirname, 'output');
+      if (!fs.existsSync(outputDir)) {
+        return [];
+      }
+
+      const entries = fs.readdirSync(outputDir, { withFileTypes: true });
+      const projects = [];
+
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const projectPath = path.join(outputDir, entry.name);
+          const stats = fs.statSync(projectPath);
+
+          // Try to read project metadata
+          let projectName = entry.name;
+          let description = '';
+
+          // First priority: read .project-meta.json
+          const metaPath = path.join(projectPath, '.project-meta.json');
+          if (fs.existsSync(metaPath)) {
+            try {
+              const metadata = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+              if (metadata.title) {
+                projectName = metadata.title;
+              }
+              if (metadata.userRequirement) {
+                description = metadata.userRequirement.substring(0, 100);
+              }
+            } catch (err) {
+              console.warn('Failed to read project metadata:', err);
+            }
+          } else {
+            // Fallback: Look for README or config files
+            const readmePath = path.join(projectPath, 'README.md');
+
+            if (fs.existsSync(readmePath)) {
+              try {
+                const readmeContent = fs.readFileSync(readmePath, 'utf-8');
+                const lines = readmeContent.split('\n');
+                if (lines.length > 0) {
+                  // Try to extract title from first heading
+                  const titleMatch = lines.find(line => line.startsWith('# '));
+                  if (titleMatch) {
+                    projectName = titleMatch.replace('# ', '').trim();
+                  }
+                  // Get description from first paragraph
+                  const descLine = lines.find(line => line.trim() && !line.startsWith('#'));
+                  if (descLine) {
+                    description = descLine.trim().substring(0, 100);
+                  }
+                }
+              } catch (err) {
+                console.warn('Failed to read README:', err);
+              }
+            }
+          }
+
+          projects.push({
+            name: projectName,
+            path: projectPath,
+            timestamp: stats.mtimeMs,
+            description: description
+          });
+        }
+      }
+
+      return projects;
+    } catch (error) {
+      console.error('Failed to get projects:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle("library:open-project", async (event, projectPath) => {
+    try {
+      await shell.openPath(projectPath);
+      return { ok: true };
+    } catch (error) {
+      console.error('Failed to open project folder:', error);
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("library:preview-project", async (event, projectPath) => {
+    try {
+      // Look for index.html in the project
+      const publicDir = path.join(projectPath, 'public');
+      const indexPath = fs.existsSync(publicDir)
+        ? path.join(publicDir, 'index.html')
+        : path.join(projectPath, 'index.html');
+
+      if (fs.existsSync(indexPath)) {
+        await shell.openPath(indexPath);
+        return { ok: true };
+      } else {
+        // Fallback to opening the folder
+        await shell.openPath(projectPath);
+        return { ok: true, fallback: true };
+      }
+    } catch (error) {
+      console.error('Failed to preview project:', error);
+      return { ok: false, error: error.message };
+    }
+  });
 }
 
 function registerCoordinatorBridge() {
@@ -365,6 +494,56 @@ function registerCoordinatorBridge() {
         throw new Error(`Initialization failed: ${initError.message}`);
       }
 
+      dotenv.config();
+
+      const originalLog = console.log;
+      const originalWarn = console.warn;
+      const originalInfo = console.info;
+
+      const shouldForwardLog = (message) => {
+        if (typeof message !== 'string') return false;
+
+        // 轉發關鍵日誌（Phase, 生成進度, Layer 等）
+        return (
+          message.includes('Phase') ||
+          message.includes('Generated') ||
+          message.includes('✅') ||
+          message.includes('Layer') ||
+          message.includes('Generating') ||
+          message.includes('Starting') ||
+          message.includes('Completed') ||
+          message.includes('Processing') ||
+          message.includes('[Generator]') ||
+          message.includes('[Coordinator]') ||
+          message.includes('Config files') ||
+          message.includes('test-plan')
+        );
+      };
+
+      console.log = (...args) => {
+        const message = args.join(' ');
+        if (shouldForwardLog(message) && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('agent-log', message);
+        }
+        originalLog.apply(console, args);
+      };
+
+      console.warn = (...args) => {
+        const message = args.join(' ');
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('agent-log', `⚠️ ${message}`);
+        }
+        originalWarn.apply(console, args);
+      };
+
+      console.info = (...args) => {
+        const message = args.join(' ');
+        if (shouldForwardLog(message) && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('agent-log', `ℹ️ ${message}`);
+        }
+        originalInfo.apply(console, args);
+      };
+
       let plan;
       try {
         plan = await coordinatorModule.runWithInstructionService(
@@ -376,6 +555,11 @@ function registerCoordinatorBridge() {
           }
         );
       } catch (processError) {
+        // 恢復原始 console 方法
+        console.log = originalLog;
+        console.warn = originalWarn;
+        console.info = originalInfo;
+
         console.error(
           "[Coordinator Bridge] Coordinator processing failed:",
           processError
@@ -397,12 +581,22 @@ function registerCoordinatorBridge() {
           responseText = plan.answerText || "";
         } else {
           // 專案生成模式：簡化訊息並強調下載
-          responseText = `專案生成已完成！\n\n您要求的檔案已準備就緒，請點擊下方按鈕下載完整壓縮檔。\n\nSession ID: ${plan.id
-            }\n資料夾位置: ${plan.workspaceDir || "N/A"}\n\n`;
+          responseText = `專案生成已完成！您要求的檔案已準備就緒，請點擊下方按鈕下載完整壓縮檔。\n\n`;
 
-          if (plan.output?.plan) {
-            responseText += `📋 計劃名稱: ${plan.output.plan.title
-              }\n📝 計劃摘要: ${plan.output.plan.summary}\n\n`;
+          if (plan.fileOps && plan.fileOps.created && plan.fileOps.created.length > 0) {
+            responseText += `生成檔案列表: \n`;
+            plan.fileOps.created.forEach(file => {
+              let icon = '📄';
+              // Use Unicode symbols instead of HTML to avoid rendering issues
+              if (file.endsWith('.html')) icon = '</>';  // HTML tag symbol
+              else if (file.endsWith('.css')) icon = '{}';  // CSS braces symbol
+              else if (file.endsWith('.js')) icon = 'JS';  // JavaScript abbreviation
+              else if (file.endsWith('.json')) icon = '{}';  // JSON braces symbol
+
+              const filename = path.basename(file);
+              responseText += `${icon} ${filename} \n`;
+            });
+            responseText += `\n`;
           }
 
           const resolvedWorkspaceDir = plan.workspaceDir
@@ -413,6 +607,15 @@ function registerCoordinatorBridge() {
 
           if (resolvedWorkspaceDir) {
             try {
+              // Save project metadata before zipping
+              const metaPath = path.join(resolvedWorkspaceDir, '.project-meta.json');
+              const metadata = {
+                title: content.substring(0, 100),
+                userRequirement: content,
+                createdAt: new Date().toISOString()
+              };
+              fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2), 'utf8');
+
               // 確保 zipWorkspaceDirectory 函式可用 (假設已定義在 main.js 上方)
               const zipPath = await zipWorkspaceDirectory(resolvedWorkspaceDir);
               downloadInfo = {
@@ -420,7 +623,6 @@ function registerCoordinatorBridge() {
                 filename: path.basename(zipPath),
                 workspaceDir: resolvedWorkspaceDir,
               };
-              responseText += `\n\n已準備好壓縮檔: ${zipPath}`;
             } catch (zipError) {
               console.error(
                 "[Coordinator Bridge] Failed to zip workspace:",
@@ -428,9 +630,6 @@ function registerCoordinatorBridge() {
               );
             }
           }
-          responseText += `\nTip: Project generated in ${
-            plan.workspaceDir || "output/" + plan.id
-          } directory`;
         }
       } else {
         responseText = "Processing completed, but no plan information returned";
@@ -823,194 +1022,193 @@ function registerVisionHandlers() {
       );
       console.log("Screenshot saved:", imagePath);
 
-      try {
-        console.log("Calling Vision API...");
-        const content = imageData.replace(/^data:image\/\w+;base64,/, "");
-        const url = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_API_KEY}`;
-        const body = {
-          requests: [
-            {
-              image: { content },
-              features: [
-                { type: "WEB_DETECTION", maxResults: 10 },
-                { type: "TEXT_DETECTION" },
-                { type: "LABEL_DETECTION", maxResults: 10 },
-                { type: "IMAGE_PROPERTIES" },
-              ],
-            },
-          ],
-        };
+      console.log("Calling Vision API...");
 
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
+      // Determine API Key: Frontend > Environment
+      const visionApiKey = globalApiKeys.gemini || GOOGLE_API_KEY;
+      if (!visionApiKey) {
+        throw new Error("Missing Google API Key for Vision API");
+      }
 
-        if (!res.ok) {
-          let textBody = "";
-          try {
-            textBody = await res.text();
-          } catch (e) {
-            console.error("Failed to read Vision API error body:", e);
-          }
-          console.error(
-            "Vision API returned non-OK status:",
-            res.status,
-            res.statusText,
-            textBody
-          );
-          throw new Error(
-            `Vision API error: ${res.status} ${res.statusText} - ${textBody}`
-          );
-        }
+      const content = imageData.replace(/^data:image\/\w+;base64,/, "");
+      const url = `https://vision.googleapis.com/v1/images:annotate?key=${visionApiKey}`;
+      const body = {
+        requests: [
+          {
+            image: { content },
+            features: [
+              { type: "WEB_DETECTION", maxResults: 10 },
+              { type: "TEXT_DETECTION" },
+              { type: "LABEL_DETECTION", maxResults: 10 },
+              { type: "IMAGE_PROPERTIES" },
+            ],
+          },
+        ],
+      };
 
-        const json = await res.json();
-        console.log("Vision API response:", json);
-        const resp = json.responses && json.responses[0];
-        if (!resp) {
-          throw new Error("Empty response from Vision API");
-        }
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-        const web = resp.webDetection || {};
-        const guesses = (web.bestGuessLabels || [])
-          .map((g) => g.label)
-          .join("; ");
-        const textAnnotations = resp.textAnnotations || [];
-        const detectedText = textAnnotations[0]?.description || "";
-        const labels = (resp.labelAnnotations || [])
-          .map(
-            (label) =>
-              `${label.description} (${Math.round(label.score * 100)}%)`
-          )
-          .join("; ");
-        const imageInfo = {
-          text: detectedText,
-          labels:
-            resp.labelAnnotations?.map((l) => ({
-              name: l.description,
-              confidence: Math.round(l.score * 100),
-            })) || [],
-          mainColors: (
-            resp.imagePropertiesAnnotation?.dominantColors?.colors || []
-          )
-            .slice(0, 3)
-            .map((c) => ({
-              rgb: `RGB(${c.color.red},${c.color.green},${c.color.blue})`,
-              percentage: Math.round(c.score * 100),
-            })),
-          webEntities: (web.webEntities || []).slice(0, 5).map((e) => ({
-            name: e.description,
-            confidence: Math.round((e.score || 0) * 100),
-          })),
-        };
-
-        const description = [
-          "我在這張圖片中看到：",
-          "",
-          imageInfo.text
-            ? "1. 文字內容：\n" +
-            imageInfo.text
-              .split("\\n")
-              .map((t) => `   ${t}`)
-              .join("\\n")
-            : null,
-          "",
-          imageInfo.labels.length > 0
-            ? "2. 主要內容：\n" +
-            imageInfo.labels
-              .map((l) => `   • ${l.name} (可信度 ${l.confidence}%)`)
-              .join("\\n")
-            : null,
-          "",
-          imageInfo.mainColors.length > 0
-            ? "3. 主要顏色：\n" +
-            imageInfo.mainColors
-              .map((c) => `   • ${c.rgb} (佔比 ${c.percentage}%)`)
-              .join("\\n")
-            : null,
-          "",
-          imageInfo.webEntities.length > 0
-            ? "4. 相關概念：\n" +
-            imageInfo.webEntities
-              .map((e) => `   • ${e.name} (相關度 ${e.confidence}%)`)
-              .join("\\n")
-            : null,
-          "",
-          "這看起來是一個" +
-          (guesses || "螢幕截圖") +
-          "，" +
-          "其中包含了" +
-          (imageInfo.labels
-            .slice(0, 3)
-            .map((l) => l.name)
-            .join("、") || "各種元素") +
-          "。",
-        ]
-          .filter(Boolean)
-          .join("\\n");
-
-        const summary = description;
+      if (!res.ok) {
+        let textBody = "";
         try {
-          const { askGemini } = await import("./services/gemini.js");
-          const geminiPrompt = `請用繁體中文分析以下圖片資訊，並提供簡潔、易懂的總結和建議。\n\n圖片資訊：\n${summary}\n\n請提供：\n1. 這張圖片的主要內容摘要\n2. 重要的觀察或見解\n3. 如果有建議或延伸思考，請一併說明\n\n請以親切、專業的語氣回答。`;
-          console.log("Calling Gemini for summary...");
-          const geminiResponse = await askGemini(geminiPrompt);
-          if (geminiResponse && geminiResponse.ok) {
-            event.reply("update-vision-result", geminiResponse.response);
-          } else {
-            console.warn(
-              "Gemini did not return ok, falling back to local summary",
-              geminiResponse
-            );
-            event.reply(
-              "update-vision-result",
-              summary + "\n\n(注意：Gemini 分析功能暫時無法使用)"
-            );
-          }
-        } catch (gemErr) {
-          console.error("Error calling Gemini:", gemErr);
+          textBody = await res.text();
+        } catch (e) {
+          console.error("Failed to read Vision API error body:", e);
+        }
+        console.error(
+          "Vision API returned non-OK status:",
+          res.status,
+          res.statusText,
+          textBody
+        );
+        throw new Error(
+          `Vision API error: ${res.status} ${res.statusText} - ${textBody}`
+        );
+      }
+
+      const json = await res.json();
+      console.log("Vision API response:", json);
+      const resp = json.responses && json.responses[0];
+      if (!resp) {
+        throw new Error("Empty response from Vision API");
+      }
+
+      const web = resp.webDetection || {};
+      const guesses = (web.bestGuessLabels || [])
+        .map((g) => g.label)
+        .join("; ");
+      const textAnnotations = resp.textAnnotations || [];
+      const detectedText = textAnnotations[0]?.description || "";
+      const labels = (resp.labelAnnotations || [])
+        .map(
+          (label) =>
+            `${label.description} (${Math.round(label.score * 100)}%)`
+        )
+        .join("; ");
+      const imageInfo = {
+        text: detectedText,
+        labels:
+          resp.labelAnnotations?.map((l) => ({
+            name: l.description,
+            confidence: Math.round(l.score * 100),
+          })) || [],
+        mainColors: (
+          resp.imagePropertiesAnnotation?.dominantColors?.colors || []
+        )
+          .slice(0, 3)
+          .map((c) => ({
+            rgb: `RGB(${c.color.red},${c.color.green},${c.color.blue})`,
+            percentage: Math.round(c.score * 100),
+          })),
+        webEntities: (web.webEntities || []).slice(0, 5).map((e) => ({
+          name: e.description,
+          confidence: Math.round((e.score || 0) * 100),
+        })),
+      };
+
+      const description = [
+        "我在這張圖片中看到：",
+        "",
+        imageInfo.text
+          ? "1. 文字內容：\n" +
+          imageInfo.text
+            .split("\\n")
+            .map((t) => `   ${t}`)
+            .join("\\n")
+          : null,
+        "",
+        imageInfo.labels.length > 0
+          ? "2. 主要內容：\n" +
+          imageInfo.labels
+            .map((l) => `   • ${l.name} (可信度 ${l.confidence}%)`)
+            .join("\\n")
+          : null,
+        "",
+        imageInfo.mainColors.length > 0
+          ? "3. 主要顏色：\n" +
+          imageInfo.mainColors
+            .map((c) => `   • ${c.rgb} (佔比 ${c.percentage}%)`)
+            .join("\\n")
+          : null,
+        "",
+        imageInfo.webEntities.length > 0
+          ? "4. 相關概念：\n" +
+          imageInfo.webEntities
+            .map((e) => `   • ${e.name} (相關度 ${e.confidence}%)`)
+            .join("\\n")
+          : null,
+        "",
+        "這看起來是一個" +
+        (guesses || "螢幕截圖") +
+        "，" +
+        "其中包含了" +
+        (imageInfo.labels
+          .slice(0, 3)
+          .map((l) => l.name)
+          .join("、") || "各種元素") +
+        "。",
+      ]
+        .filter(Boolean)
+        .join("\\n");
+
+      const summary = description;
+      try {
+        const { askGemini } = await import("./services/gemini.js");
+        const geminiPrompt = `請用繁體中文分析以下圖片資訊，並提供簡潔、易懂的總結和建議。\n\n圖片資訊：\n${summary}\n\n請提供：\n1. 這張圖片的主要內容摘要\n2. 重要的觀察或見解\n3. 如果有建議或延伸思考，請一併說明\n\n請以親切、專業的語氣回答。`;
+        console.log("Calling Gemini for summary...");
+        const geminiResponse = await askGemini(geminiPrompt, visionApiKey);
+        if (geminiResponse && geminiResponse.ok) {
+          event.reply("update-vision-result", geminiResponse.response);
+        } else {
+          console.warn(
+            "Gemini did not return ok, falling back to local summary",
+            geminiResponse
+          );
           event.reply(
             "update-vision-result",
-            summary + "\n\n(注意：無法呼叫 Gemini API)"
+            summary + "\n\n(注意：Gemini 分析功能暫時無法使用)"
           );
         }
-      } catch (error) {
-        console.error("Vision API error:", error);
-        let friendlyMessage = `Image search failed: ${error.message}`;
-        try {
-          const msg = String(error.message);
-          const firstBrace = msg.indexOf("{");
-          const lastBrace = msg.lastIndexOf("}");
-          if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-            const jsonStr = msg.slice(firstBrace, lastBrace + 1);
-            const obj = JSON.parse(jsonStr);
-            if (obj && obj.error) {
-              const serverMsg = obj.error.message || JSON.stringify(obj.error);
-              if (
-                serverMsg.toLowerCase().includes("api key expired") ||
-                (obj.error.details || []).some((d) =>
-                  (d.reason || "").toLowerCase().includes("api_key_invalid")
-                )
-              ) {
-                friendlyMessage =
-                  "Image search failed: Google Vision API key 已過期或無效。請更新/重新產生 API key，並確認已在 Google Cloud Console 啟用 Vision API 並開啟帳單。";
-              } else if (serverMsg) {
-                friendlyMessage = `Image search failed: ${serverMsg}`;
-              }
-            }
-          }
-        } catch (e) {
-          console.error("Failed to parse Vision API error body:", e);
-        }
-        dialog.showErrorBox("Error", friendlyMessage);
+      } catch (gemErr) {
+        console.error("Error calling Gemini:", gemErr);
+        event.reply(
+          "update-vision-result",
+          summary + "\n\n(注意：無法呼叫 Gemini API)"
+        );
       }
     } catch (error) {
-      console.error("Error processing screenshot:", error);
-      dialog.showErrorBox(
-        "Error",
-        `Failed to process screenshot: ${error.message}`
-      );
+      console.error("Vision API error:", error);
+      let friendlyMessage = `Image search failed: ${error.message}`;
+      try {
+        const msg = String(error.message);
+        const firstBrace = msg.indexOf("{");
+        const lastBrace = msg.lastIndexOf("}");
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          const jsonStr = msg.slice(firstBrace, lastBrace + 1);
+          const obj = JSON.parse(jsonStr);
+          if (obj && obj.error) {
+            const serverMsg = obj.error.message || JSON.stringify(obj.error);
+            if (
+              serverMsg.toLowerCase().includes("api key expired") ||
+              (obj.error.details || []).some((d) =>
+                (d.reason || "").toLowerCase().includes("api_key_invalid")
+              )
+            ) {
+              friendlyMessage =
+                "Image search failed: Google Vision API key 已過期或無效。請更新/重新產生 API key，並確認已在 Google Cloud Console 啟用 Vision API 並開啟帳單。";
+            } else if (serverMsg) {
+              friendlyMessage = `Image search failed: ${serverMsg}`;
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Failed to parse Vision API error body:", e);
+      }
+      dialog.showErrorBox("Error", friendlyMessage);
     }
   });
 }
@@ -1043,15 +1241,6 @@ function createMainWindow() {
       event.preventDefault();
     }
   });
-
-  // 預設不自動開啟 DevTools，只有當明確設定 ELECTRON_OPEN_DEVTOOLS=true 時才自動開啟
-  const shouldOpenDevTools = process.env.ELECTRON_OPEN_DEVTOOLS === "true";
-  if (shouldOpenDevTools) {
-    mainWindow.webContents.openDevTools();
-    console.log(
-      "ℹ DevTools has been opened because ELECTRON_OPEN_DEVTOOLS=true."
-    );
-  }
 }
 
 // --- AA: Create Capture Window ---
@@ -1135,6 +1324,7 @@ app.whenReady().then(async () => {
     await initDatabase();
     registerHistoryHandlers();
     registerSettingsHandlers();
+    registerLibraryHandlers();
     registerCoordinatorBridge();
     registerVisionHandlers();
 
@@ -1170,8 +1360,17 @@ app.on("window-all-closed", () => {
 });
 
 app.on("quit", () => {
-  if (db) {
-    console.log("Closing database connection...");
-    db.close();
+  db.close();
+});
+
+// Update global API keys cache from frontend
+ipcMain.on("settings:update-api-keys", (event, keys) => {
+  if (keys) {
+    if (keys.gemini) globalApiKeys.gemini = keys.gemini;
+    if (keys.openai) globalApiKeys.openai = keys.openai;
+    console.log("Global API Keys Cache Updated:", {
+      hasGemini: !!globalApiKeys.gemini,
+      hasOpenAI: !!globalApiKeys.openai
+    });
   }
 });

@@ -28,7 +28,7 @@ class APIProvider {
     this.timeout = options.timeout || config.api.timeout;
     this.maxRetries = options.maxRetries || config.api.maxRetries;
     this.retryDelay = options.retryDelay || config.api.retryDelay;
-    
+
     // 狀態追蹤
     this.isAvailable = true;
     this.lastError = null;
@@ -43,7 +43,7 @@ class APIProvider {
       case API_PROVIDER_TYPES.OPENAI:
         return 'gpt-4o-mini';
       case API_PROVIDER_TYPES.GEMINI:
-        return 'gemini-1.5-flash';
+        return 'gemini-2.5-flash';
       default:
         return 'gpt-4o-mini';
     }
@@ -54,7 +54,7 @@ class APIProvider {
    */
   isReady() {
     if (!this.isAvailable) return false;
-    
+
     if (this.last429Time) {
       const timeSince429 = Date.now() - this.last429Time;
       // 如果距離上次 429 錯誤不到 60 秒，認為不可用
@@ -64,7 +64,7 @@ class APIProvider {
       // 超過 60 秒，重置狀態
       this.last429Time = null;
     }
-    
+
     return true;
   }
 
@@ -93,7 +93,7 @@ class APIProvider {
     this.lastError = error;
     this.errorCount++;
     const statusCode = error?.response?.status;
-    
+
     // 429 錯誤特殊處理
     if (statusCode === 429) {
       this.markRateLimited();
@@ -132,7 +132,7 @@ export class APIProviderManager {
     this.providers = [];
     this.currentIndex = 0; // 用於輪詢負載均衡
     // 默認使用 failover 策略：一次只使用一個 API，優先使用 OpenAI
-    this.strategy = process.env.API_ROUTING_STRATEGY || 'failover'; // 'round-robin', 'failover', 'random'
+    this.strategy = 'failover'; // 'round-robin', 'failover', 'random'
   }
 
   /**
@@ -147,11 +147,11 @@ export class APIProviderManager {
       const openaiProvider = new APIProvider(
         'OpenAI',
         API_PROVIDER_TYPES.OPENAI,
-        process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+        'https://api.openai.com/v1',
         process.env.OPENAI_API_KEY,
         {
-          model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-          timeout: parseInt(process.env.OPENAI_TIMEOUT) || config.api.timeout,
+          model: 'gpt-4o-mini',
+          timeout: config.api.timeout,
           maxRetries: config.api.maxRetries,
           retryDelay: config.api.retryDelay
         }
@@ -161,15 +161,15 @@ export class APIProviderManager {
     }
 
     // 然後添加 Gemini 提供者（備用）
-    if (process.env.GEMINI_API_KEY) {
+    if (process.env.GOOGLE_API_KEY) {
       const geminiProvider = new APIProvider(
         'Gemini',
         API_PROVIDER_TYPES.GEMINI,
-        process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
-        process.env.GEMINI_API_KEY,
+        'https://generativelanguage.googleapis.com/v1beta',
+        process.env.GOOGLE_API_KEY,
         {
-          model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-          timeout: parseInt(process.env.GEMINI_TIMEOUT) || 60000, // Gemini 默認 60 秒
+          model: 'gemini-2.5-flash',
+          timeout: config.api.timeout, // 使用統一配置
           maxRetries: config.api.maxRetries,
           retryDelay: config.api.retryDelay
         }
@@ -196,7 +196,7 @@ export class APIProviderManager {
     }
 
     // 過濾出可用的提供者（按註冊順序：OpenAI 優先），排除已嘗試的
-    const availableProviders = this.providers.filter(p => 
+    const availableProviders = this.providers.filter(p =>
       p.isReady() && !excludeProviders.includes(p.name)
     );
 
@@ -204,11 +204,11 @@ export class APIProviderManager {
       // 如果所有提供者都不可用，嘗試使用所有提供者（可能已經恢復），但排除已嘗試的
       console.warn('[API Provider Manager] All providers temporarily unavailable, trying all providers');
       const allProviders = this.providers.filter(p => !excludeProviders.includes(p.name));
-      
+
       if (allProviders.length === 0) {
         throw new Error('No API providers configured or all providers already tried');
       }
-      
+
       // 優先返回第一個（OpenAI）
       return allProviders[0];
     }
@@ -218,15 +218,15 @@ export class APIProviderManager {
       case 'round-robin':
         this.currentIndex = (this.currentIndex + 1) % availableProviders.length;
         return availableProviders[this.currentIndex];
-      
+
       case 'failover':
         // 總是選擇第一個可用的（OpenAI 優先，因為註冊順序）
         // 這確保一次只使用一個 API
         return availableProviders[0];
-      
+
       case 'random':
         return availableProviders[Math.floor(Math.random() * availableProviders.length)];
-      
+
       case 'least-errors':
         // 選擇錯誤最少的，但如果有多個錯誤數相同，優先選擇第一個（OpenAI）
         return availableProviders.reduce((best, current) => {
@@ -237,7 +237,7 @@ export class APIProviderManager {
           }
           return best;
         });
-      
+
       default:
         // 默認使用第一個可用的（OpenAI 優先）
         return availableProviders[0];
@@ -256,15 +256,15 @@ export class APIProviderManager {
     for (let attempt = 0; attempt < maxProviderRetries; attempt++) {
       // 選擇提供者，排除已嘗試的
       const provider = this.selectProvider(triedProviders);
-      
+
       triedProviders.push(provider.name);
       provider.requestCount++;
 
       try {
         console.log(`[API Provider Manager] Using ${provider.name} (${provider.type}) to send request (attempt ${attempt + 1}/${maxProviderRetries})`);
-        
+
         const response = await this._callProvider(provider, payload, options);
-        
+
         // 成功，標記為可用
         provider.markAvailable();
         return response;
@@ -272,14 +272,14 @@ export class APIProviderManager {
         lastError = error;
         const statusCode = error?.response?.status;
         const errorCode = error?.response?.data?.error?.code;
-        
+
         provider.markError(error);
-        
+
         // 檢查錯誤類型
         const isQuotaError = statusCode === 429 || errorCode === 'insufficient_quota';
         const isAuthError = statusCode === 401 || statusCode === 403;
         const isServerError = statusCode >= 500;
-        
+
         // 如果還有其他提供者可以嘗試
         if (attempt < maxProviderRetries - 1 && triedProviders.length < this.providers.length) {
           // 如果是配額錯誤、認證錯誤或伺服器錯誤，嘗試下一個提供者
@@ -287,12 +287,12 @@ export class APIProviderManager {
             console.warn(`[API Provider Manager] ${provider.name} failed (${statusCode || errorCode}), switching to next provider...`);
             continue; // 嘗試下一個提供者
           }
-          
+
           // 其他錯誤也嘗試下一個提供者
           console.warn(`[API Provider Manager] ${provider.name} request failed (${statusCode || 'unknown'}), switching to next provider...`);
           continue;
         }
-        
+
         // 如果沒有其他提供者可以嘗試，拋出錯誤
         throw handleAPIError(error, provider.name);
       }
@@ -322,10 +322,10 @@ export class APIProviderManager {
    */
   async _callOpenAI(provider, payload, options = {}) {
     const { temperature = 0.3, maxTokens } = options;
-    
+
     // 優先使用 payload 中的 model，否則使用提供者的默認模型
     const model = payload.model || provider.model;
-    
+
     // 如果 payload 已經有 messages，直接使用
     // 否則構建標準的 OpenAI 格式
     const requestPayload = payload.messages ? {
@@ -359,13 +359,13 @@ export class APIProviderManager {
    */
   async _callGemini(provider, payload, options = {}) {
     const { temperature = 0.3, maxTokens } = options;
-    
+
     // 優先使用 payload 中的 model，否則使用提供者的默認模型
     const model = payload.model || provider.model;
-    
+
     // 轉換 OpenAI 格式的 messages 到 Gemini 格式
     let contents = [];
-    
+
     if (payload.messages) {
       // 轉換 messages 格式
       for (const msg of payload.messages) {

@@ -22,4 +22,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openGoogleLens: (imageData) => {
     ipcRenderer.send("open-google-lens", imageData);
   },
+  // General IPC invoke
+  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
 });

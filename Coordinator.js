@@ -7,6 +7,9 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+// 引入統一配置
+import { config } from "./utils/config.js";
+
 import ArchitectAgent from "./agents/architect-agent.js";
 import VerifierAgent from "./agents/verifier-agent.js";
 import TesterAgent from "./agents/tester-agent.js";
@@ -47,7 +50,7 @@ export function initializeAgents(force = false) {
   if (!force && agentCache) {
     return agentCache;
   }
-  
+
   agentCache = {
     architect: new ArchitectAgent(),
     verifier: new VerifierAgent(),
@@ -56,27 +59,30 @@ export function initializeAgents(force = false) {
     // 使用時動態創建 Coordinator 實例
     coderCoordinator: null
   };
-  
+
   return agentCache;
 }
 
 /**
  * 獲取或創建 Coder Coordinator 實例
  */
-export function getCoderCoordinator(config = {}) {
+// Rename parameter to avoid shadowing global config
+export function getCoderCoordinator(options = {}) {
   if (!agentCache) {
     agentCache = initializeAgents(true);
   }
 
-  const requestedProvider = (config.llmProvider || "auto").toLowerCase();
-  const apiKeys = config.apiKeys || {};
+  const requestedProvider = (options.llmProvider || "auto").toLowerCase();
+  const apiKeys = options.apiKeys || {};
 
   // 每次依據目前設定建立新的 CoderCoordinator，確保 API Key / Provider 最新
   agentCache.coderCoordinator = new CoderCoordinator({
-    useMockApi: config.useMockApi || false,
+    useMockApi: options.useMockApi || false,
     llmProvider: requestedProvider,
     geminiApiKey: apiKeys.gemini || null,
     openaiApiKey: apiKeys.openai || null,
+    // 傳遞統一的超時設定 (解決 worker 無法獲取 config 的問題)
+    timeout: config.api.timeout,
   });
 
   return agentCache.coderCoordinator;
@@ -109,13 +115,22 @@ export async function runWithInstructionService(
   agents,
   options = {}
 ) {
-  const { architect, verifier, tester } = agents;
+  let { architect, verifier, tester } = agents;
+
+  // 如果提供了動態選項 (API Keys / Provider)，重新實例化 Verifier 和 Tester 以應用設定
+  if (options && (options.apiKeys || options.llmProvider)) {
+    verifier = new VerifierAgent(options);
+    tester = new TesterAgent(options);
+  }
+
+  // Update global config with user options (Dynamic Config)
+  config.update(options);
 
   try {
     // 初始化 InstructionService（Architect Agent 會直接處理用戶需求）
     const instructionService = await withErrorHandling(
       'InstructionService',
-      () => Promise.resolve(new InstructionService()),
+      () => Promise.resolve(new InstructionService(options)), // Pass options containing apiKeys/llmProvider
       { userInput }
     );
 
@@ -162,20 +177,20 @@ export async function runWithInstructionService(
     // 如果需要，使用 Coder Coordinator 生成代碼
     // 嘗試從 output 中提取 coder_instructions（可能直接存在，或包裹在 markdown 中）
     let coderInstructions = plan.output?.coder_instructions;
-    
+
     // 如果 coder_instructions 不存在，嘗試從 markdown 中提取
     if (!coderInstructions && plan.output?.markdown) {
       try {
         // 嘗試從 markdown 中解析 JSON
         const markdownContent = plan.output.markdown;
-        const jsonMatch = markdownContent.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/) || 
-                         markdownContent.match(/\{[\s\S]*\}/);
-        
+        const jsonMatch = markdownContent.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/) ||
+          markdownContent.match(/\{[\s\S]*\}/);
+
         if (jsonMatch) {
           let jsonStr = jsonMatch[1] || jsonMatch[0];
           jsonStr = jsonStr.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '');
           const parsed = JSON.parse(jsonStr);
-          
+
           if (parsed.coder_instructions) {
             coderInstructions = parsed.coder_instructions;
             console.log("  Extracted coder_instructions from markdown");
@@ -185,7 +200,7 @@ export async function runWithInstructionService(
         console.warn(" Failed to extract coder_instructions from markdown:", e.message);
       }
     }
-    
+
     if (coderInstructions) {
       const coderCoordinator = getCoderCoordinator({
         useMockApi: false,
@@ -193,20 +208,20 @@ export async function runWithInstructionService(
         apiKeys: options.apiKeys || {},
       });
       const requestId = `coordinator-${plan.id}`;
-      
+
       // 構建 Coordinator 需要的 payload 格式
       const coordinatorPayload = {
         output: {
           coder_instructions: coderInstructions
         }
       };
-      
+
       const coderResult = await withErrorHandling(
         'CoderCoordinator.generateFromArchitectPayload',
         () => coderCoordinator.generateFromArchitectPayload(coordinatorPayload, requestId),
         { planId: plan.id }
       );
-      
+
       // 直接寫入檔案系統（Cursor 常用方式）
       try {
         const result = await withErrorHandling(
@@ -236,9 +251,9 @@ export async function runWithInstructionService(
           );
           console.log(`\nProject generated (fallback) at ${fallbackResult.outDir}, files: ${fallbackResult.files.length}`);
         } catch (fallbackError) {
-          errorLogger.error("Both direct write and Markdown fallback failed", { 
-            directError: e.message, 
-            fallbackError: fallbackError.message 
+          errorLogger.error("Both direct write and Markdown fallback failed", {
+            directError: e.message,
+            fallbackError: fallbackError.message
           });
         }
       }
@@ -327,7 +342,7 @@ export async function runWithInstructionService(
     console.log("\n" + "=".repeat(60));
     console.log("Verifier Agent: Generate test plan");
     console.log("=".repeat(60));
-    
+
     let testPlan = null;
     try {
       const verifierResult = await withErrorHandling(
@@ -338,16 +353,16 @@ export async function runWithInstructionService(
       testPlan = verifierResult.plan;
       console.log(`Test Plan generated: ${verifierResult.path}`);
       console.log(`Test files: ${testPlan?.testFiles?.length || 0}`);
-      
+
       if (testPlan?.testFiles && testPlan.testFiles.length > 0) {
         testPlan.testFiles.forEach(tf => {
           console.log(`  - ${tf.filename} (${tf.testLevel}, ${tf.inputsType})`);
         });
       }
     } catch (err) {
-      errorLogger.warn("Verifier Agent 執行失敗", { 
-        error: err.message, 
-        sessionId: plan.id 
+      errorLogger.warn("Verifier Agent execution failed", {
+        error: err.message,
+        sessionId: plan.id
       });
       console.warn(`\nVerifier Agent execution failed: ${err.message}`);
       console.warn("   Test Plan generation skipped, but project generation completed");
@@ -358,14 +373,14 @@ export async function runWithInstructionService(
       console.log("\n" + "=".repeat(60));
       console.log("Tester Agent: Generate test code and execute tests");
       console.log("=".repeat(60));
-      
+
       try {
         const testResult = await withErrorHandling(
           'TesterAgent.runTesterAgent',
           () => tester.runTesterAgent(plan.id),
           { sessionId: plan.id }
         );
-        
+
         const { testReport, errorReport } = testResult;
         console.log(`\nTests executed successfully!`);
         console.log(`Test statistics:`);
@@ -373,7 +388,7 @@ export async function runWithInstructionService(
         console.log(`   - Total tests: ${testReport.totals.tests}`);
         console.log(`   - Passed: ${testReport.totals.passed}`);
         console.log(`   - Failed: ${testReport.totals.failed} ${testReport.totals.failed > 0 ? '' : ''}`);
-        
+
         if (testReport.totals.failed > 0) {
           console.log(`\nThere are ${testReport.totals.failed} failed tests`);
           if (errorReport.failures && errorReport.failures.length > 0) {
@@ -393,14 +408,14 @@ export async function runWithInstructionService(
         } else {
           console.log(`\nAll tests passed!`);
         }
-        
+
         // 將測試結果添加到 plan 中
         plan.testReport = testReport;
         plan.errorReport = errorReport;
       } catch (err) {
-        errorLogger.warn("Tester Agent execution failed", { 
-          error: err.message, 
-          sessionId: plan.id 
+        errorLogger.warn("Tester Agent execution failed", {
+          error: err.message,
+          sessionId: plan.id
         });
         console.warn(`\nTester Agent execution failed: ${err.message}`);
         console.warn("   Test execution skipped, but project and test plan generated");
@@ -418,12 +433,12 @@ export async function runWithInstructionService(
   } catch (err) {
     // 使用統一的錯誤處理
     errorLogger.log(err, { userInput });
-    
+
     // 如果是自定義錯誤，直接拋出
     if (err instanceof CoordinatorError) {
       throw err;
     }
-    
+
     // Otherwise wrap as CoordinatorError
     throw new CoordinatorError(
       "Process execution failed",
@@ -467,7 +482,7 @@ function writeProjectDirectly(result, outDir = "./output/generated_project") {
 
       // 獲取檔案內容
       const content = file.template || file.content || "";
-      
+
       if (!content || content.trim() === "") {
         errors.push({ file: file.path, error: "Empty content" });
         return;
@@ -484,7 +499,7 @@ function writeProjectDirectly(result, outDir = "./output/generated_project") {
 
   // 如果有錯誤，記錄但不中斷
   if (errors.length > 0) {
-    console.warn(`\n⚠️  ${errors.length} file(s) failed to write:`);
+    console.warn(`\n  ${errors.length} file(s) failed to write:`);
     errors.forEach(({ file, error }) => {
       console.warn(`  - ${file}: ${error}`);
     });
@@ -504,7 +519,7 @@ function writeProjectDirectly(result, outDir = "./output/generated_project") {
  */
 function formatCoderResultAsMarkdown(result) {
   let markdown = "# Generated project files\n\n";
-  
+
   if (result.notes && result.notes.length > 0) {
     markdown += "## Description\n\n";
     result.notes.forEach(note => {
@@ -512,7 +527,7 @@ function formatCoderResultAsMarkdown(result) {
     });
     markdown += "\n";
   }
-  
+
   if (result.files && result.files.length > 0) {
     result.files.forEach(file => {
       markdown += `<!-- file: ${file.path} -->\n`;
@@ -521,7 +536,7 @@ function formatCoderResultAsMarkdown(result) {
       markdown += `\n\`\`\`\n\n`;
     });
   }
-  
+
   return markdown;
 }
 
@@ -532,7 +547,7 @@ if (typeof process !== 'undefined' && process.argv && process.argv[1]) {
   const scriptPath = process.argv[1].replace(/\\/g, '/');
   const isElectron = typeof process !== 'undefined' && process.versions && process.versions.electron;
   const isCoordinatorScript = scriptPath.includes('Coordinator.js') || scriptPath.endsWith('Coordinator.js');
-  
+
   // 只在非 Electron 環境且直接執行 Coordinator.js 時才運行 main()
   if (isCoordinatorScript && !isElectron) {
     main().catch(err => console.error("Coordinator Error:", err));
