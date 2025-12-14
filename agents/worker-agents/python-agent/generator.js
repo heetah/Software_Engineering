@@ -11,9 +11,9 @@ class PythonGenerator {
 
   async generate({ skeleton, fileSpec, context }) {
     console.log(`[Generator] Processing ${fileSpec.path}`);
-
+    
     // 優先級 1: 使用 template（Architect 明確指定的內容）
-    if (typeof fileSpec.template === 'string' && fileSpec.template.trim()) {
+    if (fileSpec.template && fileSpec.template.trim()) {
       console.log(`[Generator] ✅ Using template (${fileSpec.template.length} chars)`);
       return {
         content: fileSpec.template,
@@ -21,33 +21,33 @@ class PythonGenerator {
         method: 'template'
       };
     }
-
+    
     // 優先級 2: 使用 contracts 結構（動態生成）
     const hasContracts = context.contracts && (
       (context.contracts.dom && context.contracts.dom.length > 0) ||
       (context.contracts.api && context.contracts.api.length > 0)
     );
-
+    
     if (hasContracts) {
       console.log(`[Generator] ✓ Using contracts-based generation`);
       console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
-
+      
       if (this.useMockApi) {
         return this.generateWithMock({ skeleton, fileSpec, context });
       } else {
         return this.generateWithCloudAPI({ skeleton, fileSpec, context });
       }
     }
-
+    
     // 優先級 3: AI 生成（無 contracts 也無 template）
     console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
-
+    
     if (this.useMockApi) {
       return this.generateWithMock({ skeleton, fileSpec, context });
     } else {
       return this.generateWithCloudAPI({ skeleton, fileSpec, context });
     }
-  } async generateWithCloudAPI({ skeleton, fileSpec, context }) {
+  }  async generateWithCloudAPI({ skeleton, fileSpec, context }) {
     const prompt = this.buildPrompt({ skeleton, fileSpec, context });
 
     try {

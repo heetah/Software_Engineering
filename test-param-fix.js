@@ -13,7 +13,7 @@ async function resetPreloadFile() {
   const preloadPath = path.join(process.cwd(), 'output', TEST_SESSION, 'preload.js');
   let content = await fs.readFile(preloadPath, 'utf-8');
   
-  // 確保是錯誤版本
+  // 確保是錯誤版本（如果已經修復，改回錯誤版本）
   content = content
     .replace("ipcRenderer.invoke('save-note', { filename, content })", 
              "ipcRenderer.invoke('save-note', filename, content)")
@@ -29,7 +29,7 @@ async function resetPreloadFile() {
 async function testAutoFix() {
   console.log("=".repeat(60));
   console.log("測試自動修復參數格式錯誤");
-  console.log("=".repeat(60));
+  console.log("=".repeat(60) + "\n");
   
   // 1. 重置為錯誤版本
   await resetPreloadFile();
@@ -47,6 +47,13 @@ async function testAutoFix() {
     console.log("❌ 沒有檢測到參數格式錯誤，測試失敗");
     return;
   }
+  
+  // 顯示問題詳情
+  console.log("發現的問題:");
+  for (const mm of validation1.issues.parameterMismatches) {
+    console.log(`  ⚠️  ${mm.endpoint}: ${mm.format1?.raw || mm.format1?.type} vs ${mm.format2?.raw || mm.format2?.type}`);
+  }
+  console.log();
   
   // 3. 自動修復
   console.log("🔧 第二步：自動修復...\n");
@@ -92,29 +99,3 @@ async function testAutoFix() {
 }
 
 testAutoFix().catch(console.error);
-      console.log('   系統已驗證可以自動修復契約不一致問題\n');
-    } else {
-      console.log('\n⚠️  部分問題仍未解決');
-      console.log('   這些問題可能需要 AI 介入或手動修復\n');
-    }
-  } catch (error) {
-    console.error('❌ 測試失敗:', error);
-    console.error(error.stack);
-  }
-}
-
-console.log('\n📋 測試說明:');
-console.log('   • 本測試會檢查專案的契約一致性');
-console.log('   • 如發現問題，會嘗試自動修復');
-console.log('   • 修復完成後會重新驗證\n');
-console.log('═'.repeat(70));
-
-testAutoFix()
-  .then(() => {
-    console.log('\n✅ 測試完成！');
-    process.exit(0);
-  })
-  .catch(error => {
-    console.error('\n❌ 測試異常:', error.message);
-    process.exit(1);
-  });

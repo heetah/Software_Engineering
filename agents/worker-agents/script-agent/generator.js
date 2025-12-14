@@ -18,8 +18,39 @@ class ScriptGenerator {
   async generate({ skeleton, fileSpec, context }) {
     console.log(`[Generator] Processing ${fileSpec.path}`);
 
+    // 🔥 Advanced RAG Integration (LlamaIndex / LangChain)
+    try {
+      if (context.allFiles && context.allFiles.length > 0) {
+        // Dynamically import the ESM module
+        const { default: ragEngine } = await import('../../rag-engine/index.js');
+
+        // 0. Initialize with current config (API Keys)
+        ragEngine.init(this.config);
+
+        // 1. Ingest Knowledge Base (Static Example Code)
+        await ragEngine.ingestKnowledgeBase();
+
+        // 2. Ingest known files to RAG Engine (demo purpose: real-time ingest)
+        for (const file of context.allFiles) {
+          if (file.content) {
+            await ragEngine.ingestFile(file.path, file.content);
+          }
+        }
+        await ragEngine.buildIndex();
+
+        // Query Semantic Context
+        const query = `${fileSpec.description || ''} ${fileSpec.path}`;
+        context.semanticContext = await ragEngine.query(query);
+        if (context.semanticContext) {
+          console.log(`[Generator] 🧠 Retrieved Semantic Context (${context.semanticContext.length} chars)`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Generator] RAG Engine warning: ${err.message}`);
+    }
+
     // 優先級 1: 使用 template（Architect 明確指定的內容）
-    if (typeof fileSpec.template === 'string' && fileSpec.template.trim()) {
+    if (fileSpec.template && fileSpec.template.trim()) {
       console.log(`[Generator] ✅ Using template (${fileSpec.template.length} chars)`);
       return {
         content: fileSpec.template,
@@ -136,14 +167,14 @@ FORBIDDEN:
         fixed = fixed.replace(/const\s*{\s*[\w,\s]+\s*}\s*=\s*require\(['"]\.\/config['"]\);?\n?/g, '');
         fixes.push('Removed invalid require("./config") - config.js is a frontend file');
       }
-
+      
       // 移除 config.xxx 的使用
       fixed = fixed.replace(/config\.enableDevTools/g, 'false');
       fixed = fixed.replace(/config\.settings\.defaultWindowSize\.width/g, '800');
       fixed = fixed.replace(/config\.settings\.defaultWindowSize\.height/g, '600');
       fixed = fixed.replace(/config\.width/g, '800');
       fixed = fixed.replace(/config\.height/g, '600');
-
+      
       if (fixed !== code && !fixes.includes('Replaced config.xxx references')) {
         fixes.push('Replaced config.xxx references with hardcoded values');
       }
@@ -152,7 +183,7 @@ FORBIDDEN:
     // 2. 檢測空函數體並警告
     const emptyFunctionPattern = /(?:async\s+)?function\s+\w+\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\n?\s*)*\}/g;
     const emptyArrowPattern = /\w+\s*=\s*(?:async\s+)?\([^)]*\)\s*=>\s*\{\s*(?:\/\/[^\n]*\n?\s*)*\}/g;
-
+    
     if (emptyFunctionPattern.test(fixed) || emptyArrowPattern.test(fixed)) {
       console.warn('[PostProcess] ⚠️ Detected empty function bodies in generated code');
       fixes.push('WARNING: Empty function bodies detected - may need manual fix');
@@ -236,19 +267,19 @@ document.addEventListener('DOMContentLoaded', () => {
           const consumers = api.consumers || [];
           const producers = api.producers || [];
           // 顯示此檔案是 consumer 或 producer 的 API，或者 consumers 為空的 API
-          return consumers.length === 0 ||
-            consumers.includes(filePath) ||
-            producers.includes(filePath);
+          return consumers.length === 0 || 
+                 consumers.includes(filePath) || 
+                 producers.includes(filePath);
         });
 
         if (relevantApis.length > 0) {
           const isElectronIPC = relevantApis.some(api => api.method === 'ipc-handle');
-
+          
           if (isElectronIPC) {
             prompt += `📡 IPC CHANNELS (Electron):\n\n`;
             relevantApis.forEach(api => {
               const methodName = this.channelToMethodName(api.endpoint);
-
+              
               // 格式化 request schema
               let requestStr = '';
               if (api.requestSchema && api.requestSchema.properties) {
@@ -260,7 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
               } else {
                 requestStr = 'void';
               }
-
+              
               // 格式化 response schema
               let responseStr = '';
               if (api.responseSchema) {
@@ -281,10 +312,10 @@ document.addEventListener('DOMContentLoaded', () => {
               } else {
                 responseStr = 'void';
               }
-
+              
               prompt += `   ✅ ${methodName}(${requestStr}) -> ${responseStr}\n`;
               prompt += `      Purpose: ${api.purpose}\n`;
-
+              
               // 顯示詳細的 request/response 格式
               if (api.requestSchema && api.requestSchema.properties) {
                 prompt += `      Request: ${JSON.stringify(api.requestSchema.properties, null, 2).replace(/\n/g, '\n             ')}\n`;
@@ -438,7 +469,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ========== 🔴 FINAL MANDATORY RULES (CANNOT BE IGNORED) ==========
     prompt += `\n🔴🔴🔴 FINAL MANDATORY RULES - READ CAREFULLY 🔴🔴🔴\n\n`;
-
+    
     // 針對 Electron main.js 的特殊規則
     if (filePath.includes('main.js') || filePath.endsWith('main.js')) {
       prompt += `⛔ ELECTRON MAIN PROCESS RULES (you are generating main.js):\n`;
@@ -448,7 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
       prompt += `4. Use hardcoded values: width: 800, height: 600 (NOT config.width)\n`;
       prompt += `5. For IPC handlers, write COMPLETE implementations with fs.readFile/writeFile\n\n`;
     }
-
+    
     // 針對 renderer script 的規則
     if (filePath.includes('public/') || filePath.includes('renderer')) {
       prompt += `⛔ RENDERER PROCESS RULES (you are generating frontend JavaScript):\n`;
@@ -456,7 +487,7 @@ document.addEventListener('DOMContentLoaded', () => {
       prompt += `2. Match DOM IDs EXACTLY with index.html - if HTML has id="taskInput", use getElementById('taskInput')\n`;
       prompt += `3. ALWAYS implement FULL function bodies with real logic\n\n`;
     }
-
+    
     prompt += `⛔ UNIVERSAL RULES (apply to ALL files):\n`;
     prompt += `1. Every function MUST have COMPLETE working code inside - no empty bodies\n`;
     prompt += `2. NO comments like "// implementation omitted" or "// TODO"\n`;
