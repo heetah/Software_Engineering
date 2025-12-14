@@ -31,11 +31,11 @@
         <div class="sidebar-header-row" id="sidebar-header">
 
           <button class="menu-button menu-button--mini" id="tutorial-btn" title="新手教學">
-            🎓
+            ❓
           </button>
 
           <button class="menu-button menu-button--mini" id="refresh-session-btn" title="開啟新對話">
-            🔄
+            ♻️
           </button>
 
         </div>
@@ -105,33 +105,6 @@
             </div>
 
             <div class="settings-card">
-              <h3 class="settings-card__title">資料管理</h3>
-              <p class="settings-card__description">
-                管理您的對話紀錄與應用程式資料。
-              </p>
-
-              <div class="settings-action-group">
-                <label class="settings-label">資料儲存位置</label>
-                <p class="settings-label-description">
-                  您的對話資料庫 (chat-history.db) 儲存於此。您可以手動備份此資料夾。
-                </p>
-                <div class="input-area is-readonly">
-                  <input type="text" class="input-field" id="data-path-display" readonly placeholder="正在載入路徑...">
-                </div>
-              </div>
-
-              <div class="settings-action-group">
-                <label class="settings-label">清除所有對話紀錄</label>
-                <p class="settings-label-description">
-                  這將永久刪除所有會話與訊息。此操作無法復原。
-                </p>
-                <button class="action-button action-button--danger" id="clear-history-button">
-                  清除所有紀錄
-                </button>
-              </div>
-            </div>
-
-            <div class="settings-card">
               <h3 class="settings-card__title">LLM 選擇</h3>
               <p class="settings-card__description">
                 選擇用於生成專案程式碼的後端 LLM 服務（僅影響 Coder Agent）。
@@ -193,6 +166,36 @@
                 </button>
               </div>
             </div>
+
+
+            <div class="settings-card">
+              <h3 class="settings-card__title">資料管理</h3>
+              <p class="settings-card__description">
+                管理您的對話紀錄與應用程式資料。
+              </p>
+
+              <div class="settings-action-group">
+                <label class="settings-label">資料儲存位置</label>
+                <p class="settings-label-description">
+                  您的對話資料庫 (chat-history.db) 儲存於此。您可以手動備份此資料夾。
+                </p>
+                <div class="input-area is-readonly">
+                  <input type="text" class="input-field" id="data-path-display" readonly placeholder="正在載入路徑...">
+                </div>
+              </div>
+
+              <div class="settings-action-group">
+                <label class="settings-label">清除所有對話紀錄</label>
+                <p class="settings-label-description">
+                  這將永久刪除所有會話與訊息。此操作無法復原。
+                </p>
+                <button class="action-button action-button--danger" id="clear-history-button">
+                  清除所有紀錄
+                </button>
+              </div>
+            </div>
+
+
 
             <div class="settings-card" id="about-app-card">
               <h3 class="settings-card__title">關於 App</h3>
