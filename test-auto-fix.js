@@ -12,16 +12,16 @@ async function resetPreloadFile() {
   // 先恢復錯誤版本以便測試
   const preloadPath = path.join(process.cwd(), 'output', TEST_SESSION, 'preload.js');
   let content = await fs.readFile(preloadPath, 'utf-8');
-  
+
   // 確保是錯誤版本
   content = content
-    .replace("ipcRenderer.invoke('save-note', { filename, content })", 
-             "ipcRenderer.invoke('save-note', filename, content)")
-    .replace("ipcRenderer.invoke('load-note', { filename })", 
-             "ipcRenderer.invoke('load-note', filename)")
-    .replace("ipcRenderer.invoke('generate-note', { prompt })", 
-             "ipcRenderer.invoke('generate-note', prompt)");
-  
+    .replace("ipcRenderer.invoke('save-note', { filename, content })",
+      "ipcRenderer.invoke('save-note', filename, content)")
+    .replace("ipcRenderer.invoke('load-note', { filename })",
+      "ipcRenderer.invoke('load-note', filename)")
+    .replace("ipcRenderer.invoke('generate-note', { prompt })",
+      "ipcRenderer.invoke('generate-note', prompt)");
+
   await fs.writeFile(preloadPath, content, 'utf-8');
   console.log("✅ 已重置 preload.js 為錯誤版本\n");
 }
@@ -30,33 +30,33 @@ async function testAutoFix() {
   console.log("=".repeat(60));
   console.log("測試自動修復參數格式錯誤");
   console.log("=".repeat(60));
-  
+
   // 1. 重置為錯誤版本
   await resetPreloadFile();
-  
+
   const validator = new ContractValidator();
   const fixer = new ContractAutoFixer();
-  
+
   // 2. 驗證問題
   console.log("📋 第一步：驗證問題...\n");
   const validation1 = await validator.validateSession(TEST_SESSION);
   console.log(`驗證結果: ${validation1.isValid ? '✅ 通過' : '❌ 失敗'}`);
   console.log(`參數不匹配: ${validation1.issues.parameterMismatches?.length || 0} 個\n`);
-  
+
   if (!validation1.issues.parameterMismatches?.length) {
     console.log("❌ 沒有檢測到參數格式錯誤，測試失敗");
     return;
   }
-  
+
   // 3. 自動修復
   console.log("🔧 第二步：自動修復...\n");
   const fixResult = await fixer.autoFix(TEST_SESSION, validation1);
-  
+
   console.log(`修復結果:`);
   console.log(`  成功: ${fixResult.successCount}`);
   console.log(`  失敗: ${fixResult.failCount}`);
   console.log(`  總嘗試: ${fixResult.totalAttempted}\n`);
-  
+
   if (fixResult.fixed.length > 0) {
     console.log("修復詳情:");
     for (const fix of fixResult.fixed) {
@@ -64,13 +64,13 @@ async function testAutoFix() {
     }
     console.log();
   }
-  
+
   // 4. 再次驗證
   console.log("📋 第三步：驗證修復結果...\n");
   const validation2 = await validator.validateSession(TEST_SESSION);
   console.log(`驗證結果: ${validation2.isValid ? '✅ 通過' : '❌ 仍有問題'}`);
   console.log(`剩餘參數不匹配: ${validation2.issues.parameterMismatches?.length || 0} 個\n`);
-  
+
   // 5. 顯示修復後的文件內容
   console.log("📄 修復後的 preload.js 關鍵部分:");
   const preloadPath = path.join(process.cwd(), 'output', TEST_SESSION, 'preload.js');
@@ -81,7 +81,7 @@ async function testAutoFix() {
       console.log(`  ${line.trim()}`);
     }
   }
-  
+
   console.log("\n" + "=".repeat(60));
   if (validation2.isValid || (validation2.issues.parameterMismatches?.length || 0) === 0) {
     console.log("🎉 測試通過！自動修復功能正常工作！");
@@ -92,16 +92,6 @@ async function testAutoFix() {
 }
 
 testAutoFix().catch(console.error);
-      console.log('   系統已驗證可以自動修復契約不一致問題\n');
-    } else {
-      console.log('\n⚠️  部分問題仍未解決');
-      console.log('   這些問題可能需要 AI 介入或手動修復\n');
-    }
-  } catch (error) {
-    console.error('❌ 測試失敗:', error);
-    console.error(error.stack);
-  }
-}
 
 console.log('\n📋 測試說明:');
 console.log('   • 本測試會檢查專案的契約一致性');
