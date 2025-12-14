@@ -1,6 +1,7 @@
 /**
- * @file Electron Main Process
- * Integrates AI Copilot Assistant and Screenshot Tool
+ * 主程式 (main.js)
+ * 負責初始化資料庫、註冊 Coordinator 橋接、建立主視窗等功能
+ * 已修正：移除 "Processing..." 干擾訊息，新增 F12 開發者工具快捷鍵
  */
 
 import {
@@ -251,7 +252,7 @@ function registerHistoryHandlers() {
       id: row.id,
       role: row.role,
       createdAt: row.created_at,
-      payload: JSON.parse(row.payload_json),
+      payload: JSON.parse(row.payload_json)
     }));
   });
 
@@ -293,6 +294,9 @@ function registerHistoryHandlers() {
       buttons: ["取消", "全部清除"],
       defaultId: 0,
       cancelId: 0,
+      title: '確認清除歷史記錄',
+      message: '您確定要清除所有歷史記錄嗎？',
+      detail: '此操作無法復原，所有會話和訊息都將被永久刪除。'
     });
     if (response !== 1) return { ok: false, cancelled: true };
     try {

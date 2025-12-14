@@ -15,8 +15,11 @@ import VerifierAgent from "./agents/verifier-agent.js";
 import TesterAgent from "./agents/tester-agent.js";
 import ContractValidator from "./agents/contract-validator.js";
 import ContractAutoFixer from "./agents/contract-auto-fixer.js";
+import ContractRepairAgent from "./agents/contract-repair-agent.js";
 // 將 Coder 產出的 Markdown 生成專案
 import { writeProjectFromMarkdown } from "./agents/project-writer.js";
+// Gemini Service for AI-powered repairs
+import { askGemini } from "./services/gemini.js";
 // InstructionService 用於會話管理和結構化計劃生成
 import InstructionService from "./agents/instruction-service.js";
 // Coder Agent Coordinator（CommonJS 模組）
@@ -254,43 +257,81 @@ export async function runWithInstructionService(
           });
         }
       }
-
+      
       // ===== Contract Validation & Auto-Fix: 驗證並自動修復契約不一致 =====
       console.log("\n" + "=".repeat(60));
       console.log("Contract Validator: Checking & Auto-Fixing contracts");
       console.log("=".repeat(60));
-
+      
       try {
         const contractValidator = new ContractValidator();
         const contractAutoFixer = new ContractAutoFixer();
-
-        // 檢查並自動修復
+        
+        // 第一層：快速程式化驗證和修復
         const checkResult = await withErrorHandling(
           'ContractAutoFixer.checkAndFix',
           () => contractAutoFixer.checkAndFix(plan.id, contractValidator),
           { sessionId: plan.id }
         );
-
+        
         if (checkResult.fixResult) {
-          // 已經執行過修復
-          if (checkResult.needsAI) {
-            console.log("\n Some contract issues cannot be automatically fixed, suggestions:");
-            console.log("   1. Check the error messages above");
-            console.log("   2. Manually fix or re-generate affected files");
-            console.log("   3. If the issue is complex, consider re-generating the entire project\n");
-          } else {
-            console.log("\n All contract issues have been automatically fixed!");
-            console.log(`   Success: ${checkResult.fixResult.successCount}, Failed: ${checkResult.fixResult.failCount}\n`);
-          }
+          console.log(`\n📊 程式化修復結果: 成功 ${checkResult.fixResult.successCount}，失敗 ${checkResult.fixResult.failCount}`);
         }
-
-        // 如果完全沒問題，只顯示驗證報告
-        if (!checkResult.needsFix) {
-          const validationReport = contractValidator.generateReport(checkResult.validationResult);
+        
+        // 第二層：AI 深度修復（無論程式化修復是否成功都執行）
+        console.log("\n" + "=".repeat(60));
+        console.log("🤖 AI Contract Repair: 深度分析並修復");
+        console.log("=".repeat(60));
+        
+        // 重新驗證以獲取最新問題
+        const finalValidation = await contractValidator.validateSession(plan.id);
+        
+        if (!finalValidation.isValid || checkResult.needsAI) {
+          // 創建一個簡單的 GeminiService 包裝
+          const geminiService = {
+            generateContent: async (prompt) => {
+              const result = await askGemini(prompt);
+              if (!result.ok) {
+                throw new Error(result.error || 'Gemini API error');
+              }
+              return { response: { text: () => result.response } };
+            }
+          };
+          
+          const contractRepairAgent = new ContractRepairAgent(geminiService);
+          
+          const repairResult = await withErrorHandling(
+            'ContractRepairAgent.repair',
+            () => contractRepairAgent.repair(plan.id, finalValidation),
+            { sessionId: plan.id }
+          );
+          
+          if (repairResult.success) {
+            console.log("\n✅ AI 修復完成！");
+            console.log(`   修復文件數: ${repairResult.summary.fixedFileCount}`);
+            console.log(`   總變更數: ${repairResult.summary.totalChanges}`);
+            console.log(`   修復的文件: ${repairResult.summary.files.join(', ')}\n`);
+            
+            // 最終驗證
+            const postRepairValidation = await contractValidator.validateSession(plan.id);
+            if (postRepairValidation.isValid) {
+              console.log("🎉 最終驗證通過！專案契約完全一致！\n");
+            } else {
+              console.log("⚠️  仍有少量問題，但已大幅改善\n");
+              const report = contractValidator.generateReport(postRepairValidation);
+              console.log(report);
+            }
+          } else {
+            console.log("\n⚠️  AI 修復失敗，請檢查錯誤訊息\n");
+          }
+        } else {
+          console.log("\n✅ 專案契約完全一致，無需 AI 修復！\n");
+          const validationReport = contractValidator.generateReport(finalValidation);
           console.log(validationReport);
         }
+        
       } catch (validationError) {
-        errorLogger.warn("Contract validation/auto-fix failed", {
+        errorLogger.warn("Contract validation/repair failed", { 
           error: validationError.message,
           sessionId: plan.id
         });

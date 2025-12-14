@@ -81,25 +81,19 @@
     <div class="content-area">
 
       <div class="page is-active" id="page-chat">
-
         <div class="chat-display" id="chat-display">
-        </div>
-
-        <div id="input-area-container">
-          <div class="input-area">
-            <textarea class="input-field" id="text-input" placeholder="在這裡輸入訊息..." rows="1"></textarea>
-
-            <input type="file" id="file-upload-input" style="display: none;">
-
-            <div class="input-actions">
-              <span class="char-counter" id="char-counter">0</span>
-              <button class="action-button action-button--icon" id="file-upload-button" title="上傳檔案">
-                📎
-              </button>
-              <button class="action-button action-button--send" id="send-button" title="發送">
-                ➤
-              </button>
-            </div>
+          </div>
+        <div class="input-area">
+          <textarea class="input-field" id="text-input" placeholder="在這裡輸入訊息..." rows="1"></textarea>
+          <input type="file" id="file-upload-input" style="display: none;">
+          <div class="input-actions">
+            <span class="char-counter" id="char-counter">0</span>
+            <button class="action-button action-button--icon" id="file-upload-button" title="上傳檔案">
+              📎
+            </button>
+            <button class="action-button action-button--send" id="send-button" title="發送">
+              ➤
+            </button>
           </div>
         </div>
       </div>
@@ -109,7 +103,7 @@
           <h1 class="page-title">設定</h1>
 
           <div class="settings-grid">
-
+            
             <div class="settings-card">
               <h3 class="settings-card__title">顯示</h3>
               <p class="settings-card__description">
@@ -136,7 +130,7 @@
               <div class="settings-action-group">
                 <label class="settings-label">資料儲存位置</label>
                 <p class="settings-label-description">
-                  您的對話資料庫 (chat-history.db) 儲存於此。您可以手動備份此資料夾。
+                  您的對話資料庫 (chat-history.db) 儲存於此。
                 </p>
                 <div class="input-area is-readonly">
                   <input type="text" class="input-field" id="data-path-display" readonly placeholder="正在載入路徑...">
@@ -146,7 +140,7 @@
               <div class="settings-action-group">
                 <label class="settings-label">清除所有對話紀錄</label>
                 <p class="settings-label-description">
-                  這將永久刪除所有會話與訊息。此操作無法復原。
+                  此操作將永久刪除所有會話與訊息。
                 </p>
                 <button class="action-button action-button--danger" id="clear-history-button">
                   清除所有紀錄

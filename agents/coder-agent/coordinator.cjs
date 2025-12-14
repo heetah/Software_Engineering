@@ -25,6 +25,9 @@ class Coordinator {
   constructor(config = {}) {
     // 依賴分析器
     this.dependencyAnalyzer = new DependencyAnalyzer();
+    
+    // 動態 Contracts 提取器
+    this.contractsExtractor = new ContractsExtractor();
 
     // 動態 Contracts 提取器
     this.contractsExtractor = new ContractsExtractor();
@@ -120,7 +123,7 @@ class Coordinator {
       // logger.info('Phase -1: Running Contracts Agent preprocessing', requestId);
       // const contractsAgent = new ContractsAgent();
       // const enhancedPayload = await contractsAgent.processPayload(payload);
-
+      
       // 跳過 ContractsAgent，直接使用 Architect 的輸出
       const enhancedPayload = payload;
       logger.info('Phase -1: Skipped (using Architect contracts directly)', requestId);
@@ -515,7 +518,7 @@ class Coordinator {
         if (successfulLayerResults.length > 0) {
           const extracted = this.contractsExtractor.extractFromFiles(successfulLayerResults, requestId);
           dynamicContracts = this.contractsExtractor.mergeContracts(dynamicContracts, extracted, requestId);
-
+          
           logger.info(`🔄 Dynamic contracts updated after Layer ${layerIdx + 1}`, requestId, {
             domElements: dynamicContracts.dom.length,
             apiEndpoints: dynamicContracts.api.length,
