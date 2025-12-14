@@ -20,6 +20,17 @@ const settingsButton = document.getElementById('settings-button');
 const historyList = document.getElementById('history-list');
 const pageChat = document.getElementById('page-chat');
 const pageSettings = document.getElementById('page-settings');
+const helpButton = document.getElementById('help-button');
+const pageHelp = document.getElementById('page-help');
+
+// Library page elements
+const libraryButton = document.getElementById('library-button');
+const pageLibrary = document.getElementById('page-library');
+const libraryContainer = document.getElementById('library-container');
+const projectCount = document.getElementById('project-count');
+const sortProjectsBtn = document.getElementById('sort-projects-btn');
+const sortLabel = document.getElementById('sort-label');
+const sortIcon = document.getElementById('sort-icon');
 
 // 設定頁面元素
 const dataPathDisplay = document.getElementById('data-path-display');
@@ -68,6 +79,16 @@ historyButton.addEventListener('click', () => {
 
 chatButton.addEventListener('click', () => setActivePage('page-chat'));
 settingsButton.addEventListener('click', () => setActivePage('page-settings'));
+helpButton.addEventListener('click', () => setActivePage('page-help'));
+libraryButton.addEventListener('click', () => {
+  setActivePage('page-library');
+  loadProjectLibrary();
+});
+
+// Sort button
+if (sortProjectsBtn) {
+  sortProjectsBtn.addEventListener('click', toggleProjectSort);
+}
 
 if (clearHistoryButton) {
   clearHistoryButton.addEventListener('click', () => {
@@ -229,7 +250,7 @@ async function bootstrapHistory() {
       await createAndActivateSession();
     }
   }
-  
+
   updateCharCount();
   autoResizeTextarea();
   loadSettingsInfo();
@@ -299,7 +320,7 @@ async function sendMessage() {
   const session = await ensureSession();
   
   appendMessage(messageText, 'user', 'text');
-  
+
   textInput.value = '';
   autoResizeTextarea();
   updateCharCount();
@@ -321,7 +342,7 @@ async function sendMessage() {
       openai: currentOpenAIApiKey || null
     }
   });
-  
+
   setActivePage('page-chat');
 }
 
@@ -359,7 +380,7 @@ async function handleFileUpload(event) {
  * 在聊天視窗中追加一條訊息。
  * (已修改：將 Copy 按鈕一律放入氣泡內)
  */
-function appendMessage(text, sender, messageType = 'text') {
+function appendMessage(text, sender, messageType = 'text', options = {}) {
   const messageGroup = document.createElement('div');
   messageGroup.classList.add('message-group', `message-group--${sender}`);
 
@@ -440,7 +461,8 @@ ipcRenderer.on('message-from-agent', (_event, response) => {
 
   const type = response?.type || 'text';
   const content = typeof response === 'string' ? response : response?.content || '';
-  
+  const downloadInfo = response?.download;
+
   if (response?.type === 'error') {
     appendMessage(`Error: ${content}`, 'ai', 'text');
     return;
@@ -455,7 +477,10 @@ ipcRenderer.on('message-from-agent', (_event, response) => {
     return;
   }
 
-  persistMessage(currentSession.id, 'ai', content);
+  persistMessage(currentSession.id, 'ai', content, {
+    type: messageType,
+    download: downloadInfo
+  });
 });
 
 /* 設定頁面功能 */
@@ -515,8 +540,13 @@ function updateCharCount() {
 function setActivePage(pageIdToShow) {
   pageChat.classList.remove('is-active');
   pageSettings.classList.remove('is-active');
+  pageHelp.classList.remove('is-active');
+  pageLibrary.classList.remove('is-active');
+
   chatButton.classList.remove('is-active');
   settingsButton.classList.remove('is-active');
+  helpButton.classList.remove('is-active');
+  libraryButton.classList.remove('is-active');
 
   if (pageIdToShow === 'page-chat') {
     pageChat.classList.add('is-active');
@@ -524,6 +554,12 @@ function setActivePage(pageIdToShow) {
   } else if (pageIdToShow === 'page-settings') {
     pageSettings.classList.add('is-active');
     settingsButton.classList.add('is-active');
+  } else if (pageIdToShow === 'page-help') {
+    pageHelp.classList.add('is-active');
+    helpButton.classList.add('is-active');
+  } else if (pageIdToShow === 'page-library') {
+    pageLibrary.classList.add('is-active');
+    libraryButton.classList.add('is-active');
   }
 }
 
@@ -536,7 +572,17 @@ function getSessionEnvelope(session) {
   };
 }
 
-function persistMessage(sessionId, role, content) {
+function persistMessage(sessionId, role, content, options = {}) {
+  const payload = {
+    role,
+    content,
+    type: options.type || 'text',
+  };
+
+  if (options.download) {
+    payload.download = options.download;
+  }
+
   ipcRenderer
     .invoke('history:add-message', { sessionId, role, content })
     .catch((error) => console.error('Unable to persist message', error));

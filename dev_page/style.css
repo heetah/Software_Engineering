@@ -67,7 +67,9 @@ html.dark-mode {
  * ====================================================================
  */
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -127,9 +129,11 @@ body {
   display: flex;
   flex-direction: column;
 }
+
 .chat-display::-webkit-scrollbar {
   width: 8px;
 }
+
 .chat-display::-webkit-scrollbar-thumb {
   background: var(--color-text-light); /* 使用變數 */
   border-radius: 4px;
@@ -141,6 +145,42 @@ body {
  * 4. 側邊欄元件
  * ====================================================================
  */
+
+/* [新增] 側邊欄頂部容器 */
+.sidebar-header {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 20px;
+  padding: 0 5px;
+}
+
+/* [新增] 側邊欄頂部按鈕樣式 */
+.sidebar-header-btn {
+  flex: 1;
+  max-width: 45%;
+  height: 44px;
+  border: none;
+  border-radius: 12px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex);
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-header-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 8px 8px 16px var(--color-shadow-dark);
+}
+
+.sidebar-header-btn:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-concave);
+}
 
 .sidebar__menu {
   margin-top: 20px; /* 稍微上移 */
@@ -163,23 +203,28 @@ body {
   box-shadow: var(--shadow-convex); /* 按鈕保留凸起 */
   transition: all 0.2s ease-in-out;
 }
+
 .menu-button span:first-child {
   margin-right: 15px;
 }
+
 .menu-button.is-active {
   background: var(--gradient-accent);
   color: var(--color-accent-text);
   box-shadow: var(--shadow-accent);
 }
+
 .menu-button:not(.is-active):hover {
   color: var(--color-text);
   transform: translateY(-1px); /* 微互動 */
 }
+
 .menu-button:active {
   border-radius: 13px;
   box-shadow: var(--shadow-concave);
   transform: translateY(1px);
 }
+
 .menu-button .dropdown-arrow {
   position: absolute;
   right: 20px;
@@ -188,6 +233,7 @@ body {
   font-size: 10px;
   transition: transform 0.3s ease;
 }
+
 .menu-button.is-open .dropdown-arrow {
   transform: translateY(-50%) rotate(180deg);
 }
@@ -199,10 +245,12 @@ body {
   margin: -10px 0 10px 0;
   padding-left: 10px; /* 縮排 */
 }
+
 .history-list.is-open {
   max-height: 300px;
   overflow-y: auto;
 }
+
 .history-list .history-item {
     display: flex;
     align-items: center;
@@ -247,6 +295,7 @@ body {
   /* 可以給一個極輕微的背景區分 */
   background-color: rgba(0,0,0,0.03);
 }
+
 .history-list .history-item:hover {
   color: var(--color-text);
   background-color: rgba(0,0,0,0.03);
@@ -314,6 +363,8 @@ body {
   padding: 15px 20px; 
   
   border-radius: 20px;
+
+  /* [Modified] Bubble Effect Base - Reverted surface shine */
   background: var(--color-bg);
   box-shadow: var(--shadow-convex);
   color: var(--color-text);
@@ -450,6 +501,7 @@ body {
   color: var(--color-text);
   resize: none;
 }
+
 .input-field::placeholder {
   color: var(--color-text-light);
 }
@@ -478,9 +530,11 @@ body {
   box-shadow: var(--shadow-convex);
   transition: all 0.2s ease-in-out;
 }
+
 .action-button--icon:hover {
   color: var(--color-text);
 }
+
 .action-button--icon:active {
   border-radius: 50%;
   box-shadow: var(--shadow-concave);
@@ -499,6 +553,7 @@ body {
   box-shadow: var(--shadow-accent);
   transition: all 0.2s ease-in-out;
 }
+
 .action-button--send:active {
   border-radius: 15px;
   /* 這裡可以維持凹陷，或用變數 */
@@ -516,17 +571,36 @@ body {
   height: 100%;
   display: none;
 }
+
 .page#page-chat {
   flex-direction: column;
 }
+
 .page.is-active {
   display: flex;
   animation: fadeInUp 0.3s ease-out;
 }
 
 @keyframes fadeInUp {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 200%;
+  }
+
+  100% {
+    background-position: -200% -200%;
+  }
 }
 
 /*
@@ -583,6 +657,7 @@ body {
 .settings-action-group {
   margin-bottom: 25px;
 }
+
 .settings-action-group:last-child {
   margin-bottom: 0;
 }
@@ -803,18 +878,20 @@ body {
  * ====================================================================
  */
 
- .toggle-switch {
-  display: inline-block;
-  width: 60px;
-  height: 34px;
-  position: relative;
-  cursor: pointer;
+.toggle-label {
+  font-size: 14px;
+  color: var(--color-text);
+  font-weight: 500;
+  flex: 1;
 }
 
 .toggle-switch__input {
   opacity: 0;
   width: 0;
   height: 0;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
 }
 
 .toggle-switch__slider {
@@ -823,7 +900,7 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  border-radius: 34px;
+  border-radius: 28px;
   background-color: var(--color-bg);
   box-shadow: var(--shadow-concave);
   transition: all 0.3s ease;
@@ -882,8 +959,18 @@ body {
 .message-bubble--thinking .dot:nth-child(2) { animation-delay: -0.16s; }
 
 @keyframes bounce-wave {
-  0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
-  40% { transform: scale(1.0); opacity: 1; }
+
+  0%,
+  80%,
+  100% {
+    transform: scale(0);
+    opacity: 0.5;
+  }
+
+  40% {
+    transform: scale(1.0);
+    opacity: 1;
+  }
 }
 
 /* 程式碼文字框 */

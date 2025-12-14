@@ -1,270 +1,409 @@
-# 🧪 LLM 驅動自動化測試系統（Version B）
-## Verified Agent + Tester Agent（Jest 測試碼生成與執行）
+#  Multi-Agent AI Copilot
 
-本專案實作一套由 LLM 驅動的全自動化測試生成系統，由兩個核心 Agent 組成：
-1. Verified Agent：解析架構並產生測試計劃（test-plan.json）
-2. Tester Agent（Version B）：依 test-plan.json 生成可執行 Jest 測試碼並執行測試
+> 一個由大型語言模型驅動的智能專案生成系統，採用多代理架構自動化完成從需求分析到程式碼生成的完整流程。
 
-##### 目前 Verified Agent 與 Tester Agent 第一版已完成。
+![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)
 
-# 📦 系統流程架構: 
+##  功能特色
+
+- **多代理協作** - 四個專業 AI 代理分工合作，各司其職
+- **Neumorphism UI** - 優雅的新擬態設計，支援深色/淺色主題
+- **一鍵生成** - 從需求描述到完整專案，全自動化生成
+- **智能測試** - 自動生成測試計劃並執行驗證
+- **項目管理** - 內建專案庫，管理所有生成的專案
+- **多 API 支援** - 支援 OpenAI 和 Gemini，自動故障轉移
+
+## 界面預覽
+
+應用程式採用現代化的 Neumorphism 設計風格，配合 SVG 圖標系統，提供優雅且直觀的使用體驗。
+
+### 應用程式演示
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src=".github/assets/chat-interface.png" alt="聊天介面">
+      <p align="center"><b>智能對話介面</b></p>
+    </td>
+    <td width="50%">
+      <img src=".github/assets/project-library.png" alt="專案庫">
+      <p align="center"><b>專案庫管理</b></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src=".github/assets/generating.gif" alt="程式碼生成">
+      <p align="center"><b>程式碼生成過程</b></p>
+    </td>
+    <td width="50%">
+      <img src=".github/assets/settings.png" alt="設定頁面">
+      <p align="center"><b>設定與配置</b></p>
+    </td>
+  </tr>
+</table>
+
+### 主要特色
+- **新手教學** - 互動式教學系統，快速上手
+- **智能對話** - 自然語言描述需求即可
+- **專案庫** - 卡片式佈局，輕鬆管理歷史專案
+- **靈活設定** - 自訂 API、模型、溫度等參數
+
+## 系統架構
+
+### 核心代理
+
+系統由四個核心 AI 代理組成，協同完成專案生成：
+
 ```
-      Architect Agent
-            ↓
-      architecture.json
-            ↓
-      Verified Agent
-            ↓  使用 templates.js（Verified 區塊）
-      產生 test-plan.json
-            ↓
-      Tester Agent（Version B）
-            ↓  使用 templates.js（Tester 區塊）
-      生成 *.test.js（真實可執行測試）
-            ↓
-      執行 Jest
-            ↓
-      test-report.json
-      error-report.json
-```
-
-# 📁 專案資料夾結構（重點）
-```
-      /agent
-        verified-agent.js
-        tester-agent.js
-        templates.js
-
-      /data/sessions/<sessionId>/
-        architecture.json
-        test-plan.json
-        generated-tests/
-            *.test.js
-        jest-report.json
-        test-report.json
-        error-report.json
-
-```
-# 🧩 templates.js（模板中心）
-
-## templates.js 將所有 Agent 共享的模板集中管理，分成三大區塊：
-
-1. 共用（Shared）
-```
-TEST_PLAN_SCHEMA_DESCRIPTION
-```
-test-plan.json 的標準格式說明。
-
-2. Verified Agent Templates
-用以產生 test-plan.json，包括：
-```
-VERIFIER_CLARIFICATION_TEMPLATE
-VERIFIER_TEST_PLAN_OUTPUT_TEMPLATE
-VERIFIER_TEST_PLAN_TIPS
-```
-Version B 已強化：
-filename 必須是 .test.js
-framework = "jest"
-需指定 inputsType（http/function）
-需指定 importTarget
-每個 case 需要足夠生成 Jest 測試的資訊
-
-3. Tester Agent Templates
-```
-Tester Agent 使用這些模板來生成可執行的測試碼與分析結果：
-TESTER_CODEGEN_PROMPT_TEMPLATE
-→ 用 LLM 產生真正可執行的 Jest 測試碼
-→ 支援 HTTP（supertest）與 function 測試
-TESTER_ERROR_ANALYSIS_TEMPLATE
-→ 用 LLM 推測 Jest 失敗原因
-TESTER_REPORT_MARKDOWN_TEMPLATE
-→（可選）產生人類可讀的測試報告
+┌─────────────────┐
+│  Architect      │  分析需求，生成系統架構
+│  Agent          │  輸出: architecture.json
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│  Coder          │  根據架構生成程式碼
+│  Coordinator    │  輸出: 完整專案檔案
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│  Verifier       │  生成測試計劃
+│  Agent          │  輸出: test-plan.json
+└────────┬────────┘
+         ↓
+┌─────────────────┐
+│  Tester         │  執行測試並生成報告
+│  Agent          │  輸出: 測試報告
+└─────────────────┘
 ```
 
-##### 舊版模擬測試模板已移除。
+### 1. **Architect Agent** - 架構設計師
+- **分析用戶需求並生成系統架構**
+- **輸出結構化的 `architecture.json`**
+- **包含完整的程式碼生成指令**
 
-# 🤖 Verified Agent（已完成）
+### 2. **Coder Coordinator** - 程式碼協調器
+- **根據架構指令生成實際專案檔案**
+- **支援多種專案類型和技術棧**
+- **協調多個 Worker Agent 完成代碼生成**
 
-## Verified Agent 的主要功能：
-1. 讀取 architecture.json
-2. 使用 templates.js（Verified 區塊）生成 test-plan.json
-每個 testFile 都有：  
-.test.js 檔名
-framework = "jest"
-inputsType（決定使用 supertest 或直接呼叫 function）
-importTarget（匯入模組路徑）
-完整的 cases
-3. 輸出檔案：
-/data/sessions/<sessionId>/test-plan.json
+### 3. **Verifier Agent** - 驗證代理
+- **解析架構並生成測試計劃**
+- **輸出標準化的 `test-plan.json`**
+- **定義測試案例和預期結果**
 
-# 🔧 Tester Agent（第一版已完成）
+### 4. **Tester Agent** - 測試代理
+- **根據測試計劃生成 Jest 測試碼**
+- **自動執行測試並生成報告**
+- **提供失敗案例的錯誤分析**
 
-## Tester Agent（Version B）功能如下：
-1. 讀取 test-plan.json
-2. 為每個 testFile 呼叫 LLM → 產生可執行 Jest 測試碼
-3. 將測試碼寫入 generated-tests/
-例如：
-/data/sessions/<id>/generated-tests/user-service.test.js
-4. 執行 Jest
-npx jest --json --outputFile jest-report.json
-5. 解析 jest-report.json
-6. 輸出:
-test-report.json
-error-report.json
-7. （可選）如果有錯誤，用 LLM 產生錯誤原因（suggestedCause）
+## 專案結構
 
-🧠 test-plan.json（Version B 範例）
 ```
-  {
-    "sessionId": "example-session-id",
-    "sourceArchitectureFile": "architecture.json",
-    "generatedAt": "2025-11-16T12:00:00Z",
-    "testFiles": [
+Software_Engineering/
+├── dev_page/                    # Electron 前端介面
+│   ├── icons/                      # SVG 圖標庫
+│   │   ├── info.svg               # 資訊圖標
+│   │   ├── refresh.svg            # 刷新圖標
+│   │   └── ...                    # 其他圖標
+│   ├── icons.css                  # 圖標樣式系統
+│   ├── icon-helper.js             # 圖標輔助函數
+│   ├── main-window.html           # 主視窗 HTML
+│   ├── main-window.js             # 渲染器進程腳本
+│   └── style.css                  # Neumorphism 樣式
+│
+├── agents/                      # 多代理系統核心
+│   ├── architect-agent.js         # 架構代理
+│   ├── verifier-agent.js          # 驗證代理
+│   ├── tester-agent.js            # 測試代理
+│   ├── instruction-service.js     # 會話管理服務
+│   ├── project-writer.js          # 專案檔案寫入器
+│   ├── templates.js               # 提示模板中心
+│   │
+│   ├── coder-agent/               # 程式碼生成代理
+│   │   ├── coordinator.cjs        # Coder 協調器
+│   │   ├── config-generator.js    # 配置生成器
+│   │   └── processor.js           # 檔案處理器
+│   │
+│   ├── worker-agents/             # 工作代理集合
+│   │   ├── markup-agent/          # HTML/Markdown 生成
+│   │   ├── script-agent/          # JavaScript 生成
+│   │   ├── style-agent/           # CSS/SCSS 生成
+│   │   ├── python-agent/          # Python 代碼生成
+│   │   └── system-agent/          # 系統檔案生成
+│   │
+│   └── shared/                    # 共用模組
+│       ├── api-standards.cjs      # API 標準規範
+│       ├── errors.js              # 錯誤定義
+│       └── logger.js              # 日誌記錄器
+│
+├── utils/                       # 工具模組
+│   ├── api-provider-manager.js    # API 提供者管理
+│   ├── config.js                  # 配置管理
+│   ├── error-handler.js           # 錯誤處理
+│   └── token-tracker.js           # Token 追蹤器
+│
+├── data/                        # 資料儲存
+│   └── sessions/                  # 會話資料
+│       └── <sessionId>/           # 每個會話的獨立目錄
+│           ├── architecture.json  # 專案架構
+│           ├── test-plan.json     # 測試計劃
+│           ├── generated-tests/   # 生成的測試檔案
+│           └── test-report.json   # 測試報告
+│
+├── output/                      # 生成的專案輸出
+│   └── <sessionId>/               # 每個會話生成的專案
+│
+├── Coordinator.js                 # 主協調器
+└── main.js                        # Electron 主程式
+```
+
+## 快速開始
+
+### 環境需求
+
+- Node.js >= 18.0.0
+- npm 或 yarn
+
+### 安裝
+
+```bash
+# 克隆專案
+git clone https://github.com/yourusername/multi-agent-copilot.git
+cd multi-agent-copilot
+
+# 安裝依賴
+npm install
+```
+
+### 配置
+
+建立 `.env` 檔案並配置 API 金鑰：
+
+```env
+# OPENAI_API_KEY=your_openai_api_key
+# GOOGLE_API_KEY=your_google_api_key
+```
+
+### 啟動應用
+
+```bash
+# 啟動 Electron 應用程式
+npm start
+```
+
+### 使用方式
+
+1. **輸入需求** - 在聊天介面中用自然語言描述您的專案需求
+   ```
+   例如：「生成一個計算機網站，要有加減乘除功能」
+   ```
+
+2. **查看進度** - 實時查看各個代理的執行狀態
+   - Architect Agent 執行中...
+   - Coder Agent 準備配置...
+   - Verifier Agent 執行中...
+
+3. **下載專案** - 生成完成後，點擊下載按鈕獲取壓縮檔
+
+4. **管理專案** - 在專案庫中查看、預覽、管理所有生成的專案
+
+## UI 設計特色
+
+### Neumorphism 風格
+
+應用程式採用新擬態（Neumorphism）設計風格：
+
+- **柔和陰影** - 營造立體感和深度
+- **幾何簡潔** - 清晰的形狀和佈局
+- **微互動** - 細膩的懸停和點擊效果
+- **雙主題** - 支援淺色和深色模式
+
+### SVG 圖標系統
+
+統一的圖標設計語言：
+
+- 可縮放矢量圖形，任何解析度都清晰
+- CSS 可控顏色，完美適配主題
+- 簡潔線條風格，符合 Neumorphism 美學
+- 內嵌 SVG，無需額外載入時間
+
+查看 [`dev_page/icons/README.md`](dev_page/icons/README.md) 了解圖標系統詳情。
+
+## 資料格式
+
+### architecture.json
+
+架構代理生成的專案架構：
+
+```json
+{
+  "id": "session-id",
+  "createdAt": "2025-12-13T06:00:00.000Z",
+  "prompt": "生成計算機網站",
+  "output": {
+    "coder_instructions": {
+      "role": "Coder Agent",
+      "summary": "建立一個簡單的計算機網站",
+      "directives": ["使用 HTML5", "CSS3 樣式", "原生 JavaScript"],
+      "files": [
+        {"path": "index.html", "description": "主頁面"},
+        {"path": "style.css", "description": "樣式表"},
+        {"path": "script.js", "description": "計算邏輯"}
+      ]
+    }
+  }
+}
+```
+
+### test-plan.json
+
+驗證代理生成的測試計劃：
+
+```json
+{
+  "sessionId": "session-id",
+  "generatedAt": "2025-12-13T06:05:00.000Z",
+  "testFiles": [
     {
-      "id": "user-service-unit",
-      "filename": "user-service.unit.test.js",
-      "description": "UserService 單元測試",
-      "targetModule": "UserService",
+      "filename": "calculator.unit.test.js",
       "testLevel": "unit",
       "framework": "jest",
-      "inputsType": "http",
-      "importTarget": "../src/app",
       "cases": [
         {
-          "caseId": "UserService-create-success",
-          "name": "成功建立使用者",
-          "type": "normal",
-          "preconditions": ["email 未被註冊"],
-          "inputs": {
-            "method": "POST",
-            "path": "/users",
-            "body": {
-              "name": "John",
-              "email": "test@example.com"
-            }
-          },
-          "expected": {
-            "statusCode": 201,
-            "body": { "userId": "non-empty-string" }
-          }
+          "caseId": "add-success",
+          "name": "加法運算測試",
+          "inputs": {"a": 5, "b": 3, "op": "+"},
+          "expected": {"result": 8}
         }
       ]
     }
   ]
 }
-
 ```
 
-Tester Agent 將依此生成真正可執行的 Jest 測試。
+## 🔧 進階使用
 
-📄 Jest 測試檔案範例（由 Tester Agent 自動生成）
+### 命令列執行
 
-```
-const request = require("supertest");
-const app = require("../src/app");
-
-describe("UserService", () => {
-  it("成功建立使用者", async () => {
-    const res = await request(app)
-      .post("/users")
-      .send({ name: "John", email: "test@example.com" });
-
-    expect(res.statusCode).toBe(201);
-    expect(res.body.userId).toBeDefined();
-  });
-});
-
+```bash
+node Coordinator.js "生成待辦事項應用程式"
 ```
 
-📊 測試結果報告
-```
-test-report.json
-{
-  "sessionId": "example-session-id",
-  "summary": {
-    "total": 5,
-    "passed": 4,
-    "failed": 1,
-    "passRate": 0.8
-  },
-  "modules": [
-    { "module": "UserService", "total": 3, "passed": 2, "failed": 1 }
-  ]
-}
+### 程式化呼叫
+
+```javascript
+import { runWithInstructionService, initializeAgents } from './Coordinator.js';
+
+const agents = initializeAgents();
+const plan = await runWithInstructionService("生成計算機網站", agents);
+console.log(`Session ID: ${plan.id}`);
 ```
 
-```
-error-report.json
-{
-  "errors": [
-    {
-      "file": "user-service.unit.test.js",
-      "targetModule": "UserService",
-      "caseId": "UserService-duplicate-email",
-      "errorMessage": "Expected 400 but received 500"
-    }
-  ]
-}
-```
+### 自訂代理溫度
 
-# 🚀 已完成的變更摘要（TL;DR）
+不同代理使用不同的溫度參數：
 
+- **Architect**: 0.3 - 保持創意但結構化
+- **Coder**: 0.2 - 精確的程式碼生成
+- **Tester**: 0.1 - 嚴格的測試邏輯
 
-| 模組 | 狀態 |
-| ------ | ------ |
-| templates.js   | ✔ 已完成重構   |
-| Verified Agent | ✔ 第一版完成 |
-| Tester Agent   | ✔ 第一版完成	   |
-| 模擬測試 | ❌ 已移除 |
+可透過 `.env` 檔案調整。
 
-# 目前遇到的問題
+## 測試支援
 
-## 一、資料結構不符預期
-  * 你的 Architect Agent 產生的是單一 session JSON 檔（如 data/sessions/<sessionId>.
-    json），內容並沒有 modules 或 architecture.modules 欄位。
-  * Verifier Agent 預期要有 modules（或 architecture.modules），否則無法產生
-    test-plan.json。
+### 測試類型
 
-## 二、流程斷鏈
-  * 因為缺少 modules，Verifier Agent 會報錯「session 檔未包含可用的 modules（期待 modules  或 architecture.modules）」。
-  * 不確定什麼是 module，也不確定如何讓流程順利進行。
+1. **函數測試** - 直接測試函數邏輯
+   ```javascript
+   const result = Calculator(5, 3, "+");
+   expect(result).toBe(8);
+   ```
 
-# 目前的解決辦法
+2. **HTTP 測試** - 使用 supertest 測試 API
+   ```javascript
+   const res = await request(app).post("/api/calculate").send({...});
+   expect(res.status).toBe(200);
+   ```
 
-## 方案一：調整 Architect Agent 輸出
-  * 讓 Architect Agent 產生標準的 architecture.json
-    * 路徑：data/sessions/<sessionId>/architecture.json
-    * 格式需包含 modules 陣列，每個 module 需有 apis（API/函式）描述。
-    * 參考範例（function 版）：
-```
-{
-  "systemName": "Arithmetic Operations Program",
-  "modules": [
-    {
-      "name": "ArithmeticCore",
-      "type": "service",
-      "importTarget": "./output/<sessionId>/app.js",
-      "apis": [
-        {
-          "name": "add",
-          "method": "FUNCTION",
-          "inputs": { "a": "number", "b": "number" },
-          "outputs": { "result": "number" }
-        }
-        // ...其他 API
-      ]
-    }
-  ]
-}
-```
-##### 這樣 Verifier Agent 就能順利產生 test-plan.json，Tester Agent 也能自動產生並執行測試。
+### 測試層級
 
-## 方案二：讓 Verifier Agent 自動推導 modules
- * 修改 Verifier Agent，若 session JSON 沒有 modules，則自動從其他資訊（如 app.js 的     
-   function 名稱）推導出最小 modules 結構。
- * 這樣即使 Architect Agent 沒有產生標準 architecture.json，流程也不會中斷。
+- **單元測試 (unit)** - 測試單一模組
+- **整合測試 (integration)** - 測試模組互動
+- **端對端測試 (e2e)** - 測試完整流程
 
-## 建議
- * 最佳做法：讓 Architect Agent 直接產生標準 architecture.json（含 modules 與 apis），這樣流 
-   程最穩定、維護最容易。
- * 備用做法：若 Architect Agent 無法調整，則讓 Verifier Agent 增強推導能力，從 session JSON  
-   其他欄位自動組出 modules。
+## 錯誤處理
+
+多層錯誤處理機制：
+
+1. **API 層級** - 自動重試和故障轉移
+2. **代理層級** - 統一錯誤格式和日誌
+3. **協調器層級** - 用戶友好的錯誤訊息
+
+### 錯誤類型
+
+- `CoordinatorError` - 協調器錯誤
+- `AgentError` - 代理執行錯誤
+- `APIError` - API 呼叫錯誤
+
+## 效能優化
+
+### API 配置
+
+- **超時**: 20 秒（可調整）
+- **重試**: 2 次
+- **延遲**: 500ms
+
+### API 優先順序
+
+自動優先使用 Gemini API，若不可用則切換至 OpenAI API。
+
+## 開發指南
+
+### 新增代理
+
+1. 建立類別，繼承 `BaseAgent`
+2. 實作必要方法
+3. 在 `Coordinator.js` 註冊
+
+### 擴展模板
+
+在 `agents/templates.js` 添加新模板。
+
+### 自訂配置
+
+透過 `.env` 或 `utils/config.js` 調整系統行為。
+
+## 更新日誌
+
+### v1.0.0 (2025-12-13)
+
+- Neumorphism UI 設計
+- SVG 圖標系統
+- 專案庫功能
+- 換行顯示修復
+- 互動式新手教學
+
+## 授權
+
+MIT License - 詳見 [LICENSE](LICENSE) 檔案
+
+## 貢獻
+
+歡迎提交 Issue 和 Pull Request！
+
+### 貢獻指南
+
+1. Fork 本專案
+2. 建立功能分支 (`git checkout -b feature/amazing-feature`)
+3. 提交變更 (`git commit -m 'Add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 開啟 Pull Request
+
+## 聯絡資訊
+
+如有問題或建議，請透過 [Issue](https://github.com/yourusername/multi-agent-copilot/issues) 聯繫。
+
+---
+
