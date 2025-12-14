@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'sha256-EyYHOa9iZFkWSakqzgVsSQQGx+OAVKONnrBeEEK/b6A='; style-src 'self' 'unsafe-inline'; font-src 'self' data:;">
+
+  <title>Multi-Agent AI Copilot</title>
+  <link rel="stylesheet" href="style.css">
+
+  <script>
+    (function () {
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme === 'dark') {
+        document.documentElement.classList.add('dark-mode');
+      }
+    })();
+  </script>
+</head>
+
+<body>
+
+  <div class="app-layout">
+
+    <div class="sidebar">
+      <div class="sidebar__menu">
+
+        <div class="sidebar-header-row" id="sidebar-header">
+
+          <button class="menu-button menu-button--mini" id="tutorial-btn" title="新手教學">
+            ❓
+          </button>
+
+          <button class="menu-button menu-button--mini" id="refresh-session-btn" title="開啟新對話">
+            ♻️
+          </button>
+
+        </div>
+        <button class="menu-button is-active" id="chat-button">
+          <span>💬</span> 聊天
+        </button>
+
+        <button class="menu-button" id="history-button">
+          <span>☰</span> 歷史紀錄
+          <span class="dropdown-arrow">▼</span>
+        </button>
+
+        <div class="history-list" id="history-list">
+        </div>
+
+        <button class="menu-button" id="settings-button">
+          <span>⚙️</span> 設定
+        </button>
+      </div>
+    </div>
+
+    <div class="content-area">
+
+      <div class="page is-active" id="page-chat">
+
+        <div class="chat-display" id="chat-display">
+        </div>
+
+        <div class="input-area" id="input-area-container">
+          <textarea class="input-field" id="text-input" placeholder="在這裡輸入訊息..." rows="1"></textarea>
+
+          <input type="file" id="file-upload-input" style="display: none;">
+
+          <div class="input-actions">
+            <span class="char-counter" id="char-counter">0</span>
+            <button class="action-button action-button--icon" id="file-upload-button" title="上傳檔案">
+              📎
+            </button>
+            <button class="action-button action-button--send" id="send-button" title="發送">
+              ➤
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="page" id="page-settings">
+        <div class="page-content-wrapper">
+          <h1 class="page-title">設定</h1>
+
+          <div class="settings-grid">
+
+            <div class="settings-card">
+              <h3 class="settings-card__title">顯示</h3>
+              <p class="settings-card__description">
+                調整應用程式的外觀主題。
+              </p>
+              <div class="settings-action-group">
+                <label class="settings-label" for="theme-toggle-input">深色模式</label>
+                <p class="settings-label-description">
+                  切換使用黑色背景並以暖色調為輔的深色主題。
+                </p>
+                <label class="toggle-switch" for="theme-toggle-input">
+                  <input type="checkbox" id="theme-toggle-input" class="toggle-switch__input">
+                  <span class="toggle-switch__slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-card">
+              <h3 class="settings-card__title">LLM 選擇</h3>
+              <p class="settings-card__description">
+                選擇用於生成專案程式碼的後端 LLM 服務（僅影響 Coder Agent）。
+              </p>
+
+              <div class="settings-action-group">
+                <label class="settings-label">模型提供者</label>
+                <p class="settings-label-description">
+                  選擇要優先使用的模型服務。如果環境中沒有對應的 API Key，請求可能會失敗。
+                </p>
+                <div class="settings-toggle-group" id="llm-provider-group">
+                  <label class="settings-toggle-option">
+                    <input type="radio" name="llm-provider" value="auto" id="llm-provider-auto"
+                      class="toggle-switch__input">
+                    <span class="toggle-label">自動（優先 Gemini，其次 OpenAI）</span>
+                    <span class="toggle-switch">
+                      <span class="toggle-switch__slider"></span>
+                    </span>
+                  </label>
+                  <label class="settings-toggle-option">
+                    <input type="radio" name="llm-provider" value="gemini" id="llm-provider-gemini"
+                      class="toggle-switch__input">
+                    <span class="toggle-label">只使用 Gemini</span>
+                    <span class="toggle-switch">
+                      <span class="toggle-switch__slider"></span>
+                    </span>
+                  </label>
+                  <label class="settings-toggle-option">
+                    <input type="radio" name="llm-provider" value="openai" id="llm-provider-openai"
+                      class="toggle-switch__input">
+                    <span class="toggle-label">只使用 OpenAI</span>
+                    <span class="toggle-switch">
+                      <span class="toggle-switch__slider"></span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="settings-action-group">
+                <label class="settings-label">API Key 設定</label>
+                <p class="settings-label-description">
+                  這些金鑰僅在本機儲存並用於呼叫對應的 LLM 服務，不會上傳到伺服器。
+                </p>
+
+                <div class="settings-input-group">
+                  <label class="settings-input-label" for="gemini-api-key-input">Gemini API Key</label>
+                  <input type="password" id="gemini-api-key-input" class="input-field settings-input-field"
+                    placeholder="輸入 Gemini API Key" autocomplete="off">
+                </div>
+
+                <div class="settings-input-group">
+                  <label class="settings-input-label" for="openai-api-key-input">OpenAI API Key</label>
+                  <input type="password" id="openai-api-key-input" class="input-field settings-input-field"
+                    placeholder="輸入 OpenAI API Key" autocomplete="off">
+                </div>
+
+                <button class="action-button action-button--save" id="save-api-keys-button">
+                  儲存
+                </button>
+              </div>
+            </div>
+
+
+            <div class="settings-card">
+              <h3 class="settings-card__title">資料管理</h3>
+              <p class="settings-card__description">
+                管理您的對話紀錄與應用程式資料。
+              </p>
+
+              <div class="settings-action-group">
+                <label class="settings-label">資料儲存位置</label>
+                <p class="settings-label-description">
+                  您的對話資料庫 (chat-history.db) 儲存於此。您可以手動備份此資料夾。
+                </p>
+                <div class="input-area is-readonly">
+                  <input type="text" class="input-field" id="data-path-display" readonly placeholder="正在載入路徑...">
+                </div>
+              </div>
+
+              <div class="settings-action-group">
+                <label class="settings-label">清除所有對話紀錄</label>
+                <p class="settings-label-description">
+                  這將永久刪除所有會話與訊息。此操作無法復原。
+                </p>
+                <button class="action-button action-button--danger" id="clear-history-button">
+                  清除所有紀錄
+                </button>
+              </div>
+            </div>
+
+
+
+            <div class="settings-card" id="about-app-card">
+              <h3 class="settings-card__title">關於 App</h3>
+              <p class="settings-card__description">
+                版本資訊與進階操作指南。
+              </p>
+
+              <div class="settings-action-group">
+                <label class="settings-label">隱私權聲明</label>
+                <p class="settings-label-description">
+                  本應用程式採「離線優先」設計。您的 API Key 與對話紀錄皆加密儲存於本機資料庫 (SQLite)，不會上傳至任何第三方伺服器（除 LLM 請求外）。
+                </p>
+              </div>
+
+              <div class="settings-action-group">
+                <label class="settings-label">工程師快捷鍵</label>
+                <p class="settings-label-description">
+                  • <b>Ctrl + R</b> (Cmd + R): 重新載入應用程式 (Reset)<br>
+                  • <b>F12</b> (Cmd+Opt+I): 開啟開發者工具 (DevTools) 來除錯
+                </p>
+              </div>
+
+              <div class="settings-action-group">
+                <label class="settings-label">進階輸入技巧</label>
+                <p class="settings-label-description">
+                  支援 <b>Drag & Drop</b>：您可以直接將程式碼檔案 (.js, .py) 或截圖直接拖曳到對話框中，AI 會自動讀取內容。
+                </p>
+              </div>
+
+              <div class="settings-action-group">
+                <p class="settings-label-description" style="opacity: 0.3; margin-top: 10px;">
+                  AI Copilot Assistant v1.0.0
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="tutorial-overlay" class="tutorial-overlay">
+        <div id="tutorial-spotlight" class="tutorial-spotlight"></div>
+
+        <div id="tutorial-bubble" class="message-bubble tutorial-bubble">
+          <div id="tutorial-text" class="tutorial-text"></div>
+
+          <div class="tutorial-actions">
+            <button id="tutorial-next-btn" class="action-button action-button--pill">下一步</button>
+          </div>
+        </div>
+      </div>
+
+      <script src="main-window.js"></script>
+</body>
+
+</html>
