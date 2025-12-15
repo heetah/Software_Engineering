@@ -10,12 +10,13 @@
 html {
   /* ================== 淺色 (Light) 主題 ================== */
   --color-bg: #e4e9f2;
-  --color-text: #3d4a5f; /* 原本是 #627aa2，改深一點增加對比 */
+  --color-text: #3d4a5f;
+  /* 原本是 #627aa2，改深一點增加對比 */
   --color-text-light: #99a3b5;
 
   --color-shadow-dark: #c8d0e0;
   /* 移除亮部陰影變數的使用，但保留變數定義以防萬一，設為透明或同背景 */
-  --color-shadow-light: transparent; 
+  --color-shadow-light: transparent;
 
   --color-accent-1: #8692fd;
   --color-accent-2: #6272f4;
@@ -26,7 +27,7 @@ html {
   --color-danger-2: #f46262;
   --color-danger-text: #ffffff;
   --color-danger-shadow-inset-dark: #c14b4b;
-  
+
   /* ================== 樣式定義 (修改點：移除亮部陰影) ================== */
 
   /* 僅保留單邊深色陰影 */
@@ -47,8 +48,9 @@ html.dark-mode {
   --color-text: #cccccc;
   --color-text-light: #888888;
 
-  --color-shadow-dark: #1a1a1a; /* 加深陰影 */
-  
+  --color-shadow-dark: #1a1a1a;
+  /* 加深陰影 */
+
   --color-accent-1: #f0c54d;
   --color-accent-2: #d4a03a;
   --color-accent-text: #2c2c2c;
@@ -100,12 +102,13 @@ body {
 .sidebar {
   width: 260px;
   flex-shrink: 0;
-  padding: 20px 10px; /* 左右 padding 稍微減少 */
+  padding: 20px 10px;
+  /* 左右 padding 稍微減少 */
   display: flex;
   flex-direction: column;
   /* 移除背景和陰影，讓它融入背景 */
-  background: transparent; 
-  box-shadow: none; 
+  background: transparent;
+  box-shadow: none;
   /* border-radius 也可以移除或保留 */
   transition: all 0.2s ease-in-out;
 }
@@ -117,7 +120,8 @@ body {
   padding: 20px 40px;
   border-radius: 20px;
   background: var(--color-bg);
-  box-shadow: var(--shadow-concave); /* 內容區維持凹陷感 */
+  box-shadow: var(--shadow-concave);
+  /* 內容區維持凹陷感 */
   transition: all 0.2s ease-in-out;
 }
 
@@ -135,7 +139,8 @@ body {
 }
 
 .chat-display::-webkit-scrollbar-thumb {
-  background: var(--color-text-light); /* 使用變數 */
+  background: var(--color-text-light);
+  /* 使用變數 */
   border-radius: 4px;
   opacity: 0.5;
 }
@@ -183,7 +188,18 @@ body {
 }
 
 .sidebar__menu {
-  margin-top: 20px; /* 稍微上移 */
+  margin-top: 20px;
+}
+
+/* [新增] 側邊欄頂部按鈕容器 (讓按鈕並排) */
+.sidebar-header-row {
+  display: flex;
+  gap: 12px;
+  /* 按鈕之間的間距 */
+  margin-bottom: 15px;
+  /* 與下方聊天按鈕的距離 */
+  padding-left: 2px;
+  /* 微調對齊 */
 }
 
 .menu-button {
@@ -200,7 +216,8 @@ body {
   position: relative;
   border-radius: 15px;
   background: var(--color-bg);
-  box-shadow: var(--shadow-convex); /* 按鈕保留凸起 */
+  box-shadow: var(--shadow-convex);
+  /* 按鈕保留凸起 */
   transition: all 0.2s ease-in-out;
 }
 
@@ -216,7 +233,8 @@ body {
 
 .menu-button:not(.is-active):hover {
   color: var(--color-text);
-  transform: translateY(-1px); /* 微互動 */
+  transform: translateY(-1px);
+  /* 微互動 */
 }
 
 .menu-button:active {
@@ -243,7 +261,8 @@ body {
   overflow: hidden;
   transition: max-height 0.15s ease-out;
   margin: -10px 0 10px 0;
-  padding-left: 10px; /* 縮排 */
+  padding-left: 10px;
+  /* 縮排 */
 }
 
 .history-list.is-open {
@@ -252,53 +271,58 @@ body {
 }
 
 .history-list .history-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 14px 10px 16px;
-    font-size: 14px;
-    color: var(--color-text-light);
-    text-decoration: none;
-    border-radius: 15px;
-    transition: all 0.2s ease;
-    margin-bottom: 5px;
-  }
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 10px 16px;
+  font-size: 14px;
+  color: var(--color-text-light);
+  text-decoration: none;
+  border-radius: 15px;
+  transition: all 0.2s ease;
+  margin-bottom: 5px;
+}
+
 .history-list .history-item__title {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .history-list .history-item__close {
-    width: 22px;
-    height: 22px;
-    border: none;
-    border-radius: 50%;
-    cursor: pointer;
-    background: transparent;
-    color: var(--color-text-light);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-  }
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  background: transparent;
+  color: var(--color-text-light);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
 .history-list .history-item__close:hover {
-    color: var(--color-text);
-    background-color: rgba(0,0,0,0.06);
-  }
+  color: var(--color-text);
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
 .history-list .history-item__close:active {
-    background-color: rgba(0,0,0,0.12);
-  }
+  background-color: rgba(0, 0, 0, 0.12);
+}
+
 .history-list .history-item.is-active {
   color: var(--color-text);
   font-weight: 600;
   /* 可以給一個極輕微的背景區分 */
-  background-color: rgba(0,0,0,0.03);
+  background-color: rgba(0, 0, 0, 0.03);
 }
 
 .history-list .history-item:hover {
   color: var(--color-text);
-  background-color: rgba(0,0,0,0.03);
+  background-color: rgba(0, 0, 0, 0.03);
 }
 
 /*
@@ -326,7 +350,7 @@ body {
   width: 36px;
   height: 36px;
   flex-shrink: 0;
-  margin-right: 15px; 
+  margin-right: 15px;
   margin-top: 0;
   display: flex;
   justify-content: center;
@@ -350,7 +374,7 @@ body {
 .message-content {
   display: flex;
   flex-direction: column;
-  flex: 1; 
+  flex: 1;
   min-width: 0;
   max-width: 100%;
 }
@@ -358,20 +382,70 @@ body {
 /* 氣泡本體 */
 .message-bubble {
   position: relative;
-  
-  /* [修改點 1] 還原底部內距，不再需要為按鈕留空間 */
-  padding: 15px 20px; 
-  
+  padding: 15px 20px;
+  /* padding-bottom: 25px; - Removed */
   border-radius: 20px;
 
   /* [Modified] Bubble Effect Base - Reverted surface shine */
   background: var(--color-bg);
   box-shadow: var(--shadow-convex);
+
   color: var(--color-text);
   word-wrap: break-word;
   width: fit-content;
   max-width: 100%;
-  
+  transition: all 0.2s ease-in-out;
+  overflow: hidden;
+  z-index: 1;
+}
+
+/* [New] 泡泡膜反光動畫 (波光粼粼) */
+.message-bubble::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 20px;
+  /* Match parent */
+  padding: 2px;
+  /* Border width */
+
+  /* 虹彩漸層 (Iridescent Gradient) */
+  /* 水波紋漸層 (Water Ripple Gradient) */
+  background: linear-gradient(125deg,
+      rgba(255, 255, 255, 0) 30%,
+      rgba(255, 255, 255, 0.4) 35%,
+      /* 第一道細波紋 */
+      rgba(255, 255, 255, 0) 40%,
+      rgba(255, 255, 255, 0.8) 50%,
+      /* 主波紋 (強光) */
+      rgba(255, 255, 255, 0) 60%,
+      rgba(255, 255, 255, 0.3) 65%,
+      /* 尾韻波紋 */
+      rgba(255, 255, 255, 0) 70%);
+
+  background-size: 200% 200%;
+  opacity: 0.9;
+  /* 稍微降低整體不透明度讓波紋更柔和 */
+  mix-blend-mode: normal;
+  pointer-events: none;
+  /* 4s ease-in-out: 頻率更像水流呼吸，忽快忽慢 */
+  animation: shimmer 4s ease-in-out infinite;
+
+  /* Masking to create border effect */
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+
+  /* Ensure shimmer is behind text but above background */
+  z-index: -1;
 }
 
 /* User 氣泡靠右 */
@@ -390,87 +464,97 @@ body {
 }
 
 /* --- 4. Copy 按鈕 (Soft UI 圖示風格) --- */
-/* 修改 .message-actions */
 .message-actions {
-  /* [修改點 2] 取消絕對定位，讓它自然排列 */
-  position: relative; 
-  margin-top: 4px; /* 與氣泡保持一點距離 */
-  
-  /* 預設隱藏，保持畫面乾淨 */
-  opacity: 1; 
-  transition: opacity 0.2s ease;
-  
-  /* 確保按鈕本身沒有多餘的留白 */
+  /* 改為相對定位，位於氣泡下方 */
+  position: relative;
+  margin-top: 6px;
+  margin-left: 5px;
+  margin-right: 5px;
   padding: 0;
-  height: auto;
+  opacity: 0.6;
+  transition: opacity 0.3s ease;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-/* [修改點 3] 當滑鼠移入「整個訊息群組」時，才顯示複製按鈕 */
+/* 懸停訊息群組時按鈕變明顯 */
 .message-group:hover .message-actions {
   opacity: 1;
 }
 
-/* 3. 對齊設定：與氣泡內文字切齊 */
-
-/* AI (左對齊) */
+/* AI 按鈕靠左 (預設) */
 .message-group--ai .message-actions {
   justify-content: flex-start;
-  /* [對齊關鍵] 左邊補 20px，等於氣泡的 padding-left */
-  padding-left: 16px; 
 }
 
-/* User (右對齊) */
+/* User 按鈕靠右 */
 .message-group--user .message-actions {
+  padding-left: 0px;
+  padding-right: 0px;
   justify-content: flex-end;
-  /* [對齊關鍵] 右邊補 20px，等於氣泡的 padding-right */
-  padding-right: 20px; 
+  /* margin-right 已經在上方設定 */
+  width: 100%;
+  /* 讓 flex-end 生效 */
 }
 
-/* 按鈕本體：純文字風格 */
+/* 按鈕本體樣式 (透明文字風格) */
 .message-actions .action-button {
-  /* 基礎重設 */
   border: none;
   outline: none;
   cursor: pointer;
-  
-  /* 移除背景與陰影 (關鍵修改) */
-  background: transparent;
-  box-shadow: none;
-  
-  /* 設定文字樣式 */
-  font-size: 15px;
-  color: var(--color-text-light); /* 淺灰色 */
+
+  /* [形狀修改] 改為膠囊狀，寬度自動 */
+  width: auto;
+  height: auto;
+  padding: 4px 10px;
+  /* 給文字一點呼吸空間 */
+  border-radius: 8px;
+  /* 圓角矩形 */
+
+  /* [字體修改] */
+  font-size: 11px;
+  /* 字體稍微縮小 */
+  color: var(--color-text-light);
+  /* [關鍵] 淺灰色文字 */
   font-weight: normal;
-  
-  /* 點擊區域 */
-  padding: 4px 6px;
-  border-radius: 4px; /* 雖然沒背景，但保留圓角以防未來加 hover 背景 */
-  
-  /* 只保留顏色的過渡效果 */
-  transition: color 0.2s ease, opacity 0.2s ease;
-}
 
-/* 懸停狀態 (Hover) */
-.message-actions .action-button:hover {
-  /* [修改點 1] 移除 transform，不再浮起來 */
-  transform: none;
-  
-  /* [修改點 2] 移除陰影與背景，僅加深文字顏色作為回饋 */
-  box-shadow: none;
+  /* [修改點] 移除背景與陰影，去除去框框感 */
   background: transparent;
-  
-  /* 文字變深一點，讓使用者知道可以點 */
-  color: var(--color-text); 
+  box-shadow: none;
+
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 點擊狀態 (Active) */
-.message-actions .action-button:active {
-  transform: none;
+/* 懸停狀態 */
+.message-actions .action-button:hover {
+  /* 懸停時字體稍微變深，增加可讀性 */
+  color: var(--color-text);
+  transform: translateY(-1px);
+  /* 移除懸停陰影 */
   box-shadow: none;
-  
-  /* 點擊時稍微變淡，提供視覺回饋 */
-  opacity: 0.6;
+  background: rgba(0, 0, 0, 0.05);
+  /* 極輕微背景提示 */
 }
+
+/* 點擊狀態 */
+.message-actions .action-button:active {
+  transform: translateY(0);
+  box-shadow: none;
+  opacity: 0.7;
+}
+
+/* 長條形文字按鈕 (Pill Shape) */
+.message-actions .action-button--pill {
+  width: auto;
+  height: 30px;
+  border-radius: 15px;
+  padding: 0 12px;
+  font-size: 13px;
+  gap: 6px;
+}
+
 
 
 /*
@@ -557,7 +641,7 @@ body {
 .action-button--send:active {
   border-radius: 15px;
   /* 這裡可以維持凹陷，或用變數 */
-  box-shadow: inset 2px 2px 5px rgba(0,0,0,0.3);
+  box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.3);
 }
 
 /*
@@ -772,14 +856,14 @@ body {
 }
 
 /* 當 radio 被選中時，滑塊移動到右側 */
-.settings-toggle-option .toggle-switch__input:checked ~ .toggle-switch .toggle-switch__slider::before {
+.settings-toggle-option .toggle-switch__input:checked~.toggle-switch .toggle-switch__slider::before {
   transform: translateX(22px);
   background: var(--color-accent-text);
   box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 /* 選中狀態的背景色 */
-.settings-toggle-option .toggle-switch__input:checked ~ .toggle-switch .toggle-switch__slider {
+.settings-toggle-option .toggle-switch__input:checked~.toggle-switch .toggle-switch__slider {
   background: var(--gradient-accent);
   box-shadow: var(--shadow-accent);
 }
@@ -808,6 +892,7 @@ body {
   background: var(--color-bg);
   padding: 4px;
 }
+
 .input-area.is-readonly .input-field {
   padding: 8px 12px;
   font-size: 14px;
@@ -822,8 +907,8 @@ body {
   background: var(--gradient-danger);
   color: var(--color-danger-text);
   box-shadow: var(--shadow-danger);
-  border: none; 
-  outline: none; 
+  border: none;
+  outline: none;
   padding: 10px 20px;
   border-radius: 12px;
   font-size: 14px;
@@ -842,6 +927,7 @@ body {
   /* 單邊陰影 */
   box-shadow: 6px 6px 16px var(--color-shadow-dark);
 }
+
 .action-button--danger:active {
   background: var(--gradient-danger);
   box-shadow: var(--shadow-danger-inset);
@@ -878,20 +964,18 @@ body {
  * ====================================================================
  */
 
-.toggle-label {
-  font-size: 14px;
-  color: var(--color-text);
-  font-weight: 500;
-  flex: 1;
+.toggle-switch {
+  display: inline-block;
+  width: 60px;
+  height: 34px;
+  position: relative;
+  cursor: pointer;
 }
 
 .toggle-switch__input {
   opacity: 0;
   width: 0;
   height: 0;
-  margin: 0;
-  padding: 0;
-  pointer-events: none;
 }
 
 .toggle-switch__slider {
@@ -900,7 +984,7 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  border-radius: 28px;
+  border-radius: 34px;
   background-color: var(--color-bg);
   box-shadow: var(--shadow-concave);
   transition: all 0.3s ease;
@@ -915,13 +999,13 @@ body {
   bottom: 4px;
   border-radius: 50%;
   /* 預設(關閉)使用強調色 */
-  background: var(--gradient-accent); 
+  background: var(--gradient-accent);
   box-shadow: var(--shadow-accent);
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 /* 選中時，滑塊移動 */
-.toggle-switch__input:checked + .toggle-switch__slider::before {
+.toggle-switch__input:checked+.toggle-switch__slider::before {
   transform: translateX(26px);
   background: var(--gradient-accent);
   box-shadow: var(--shadow-accent);
@@ -955,8 +1039,13 @@ body {
   animation: bounce-wave 1.4s infinite ease-in-out both;
 }
 
-.message-bubble--thinking .dot:nth-child(1) { animation-delay: -0.32s; }
-.message-bubble--thinking .dot:nth-child(2) { animation-delay: -0.16s; }
+.message-bubble--thinking .dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.message-bubble--thinking .dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
 
 @keyframes bounce-wave {
 
@@ -978,21 +1067,480 @@ body {
   background: var(--color-bg);
   box-shadow: var(--shadow-concave);
   padding: 20px;
-  position: relative; /* 內嵌 Copy 定位 */
-  
+  position: relative;
+  /* 內嵌 Copy 定位 - 已移除 */
+
   white-space: pre-wrap;
   font-family: Consolas, 'Courier New', monospace;
   font-size: 14px;
   color: var(--color-text);
-  
-  /* 因為 Copy 按鈕在右下，上方不需要特別留空，但下方需要 */
-  padding-bottom: 35px; 
+
+  /* 按鈕移出去了，不再需要額外底部 padding */
+  /* padding-bottom: 35px; */
 }
 
-/* 程式碼框內的 Copy 按鈕 (繼承 message-actions 樣式，只需微調) */
-.message-bubble--code .message-actions {
-  /* 保持右下角 */
-  right: 8px;
-  bottom: 8px;
-  top: auto;
+/* 程式碼框內的 Copy 按鈕 (已移出，此區塊可移除或保留為空) */
+/* .message-bubble--code .message-actions { ... } */
+
+/* Log Container Styles */
+.log-container {
+  margin-top: 15px;
+  width: 100%;
+  max-width: 100%;
+}
+
+.log-details {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+html.dark-mode .log-details {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.log-summary {
+  padding: 12px 16px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--color-text-light);
+  font-size: 0.9rem;
+  font-weight: 500;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s ease;
+}
+
+.log-summary:hover {
+  color: var(--color-text);
+}
+
+.log-summary::marker {
+  color: var(--color-text-light);
+}
+
+.log-content {
+  padding: 0 16px 16px 16px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: var(--color-text-light);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 250px;
+  overflow-y: auto;
+  line-height: 1.5;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+html.dark-mode .log-content {
+  color: var(--color-text-light);
+}
+
+.log-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.log-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.log-content::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.log-entry {
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 4px;
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+/*
+ * ====================================================================
+ * 11. 新手教學系統 (Onboarding System)
+ * ====================================================================
+ */
+
+.tutorial-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+  overflow: hidden;
+}
+
+.tutorial-overlay.is-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tutorial-spotlight {
+  position: absolute;
+  border-radius: 16px;
+  background: transparent;
+  box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.85);
+  border: 2px solid rgba(var(--color-accent-1), 0.6);
+  transition: all 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+  pointer-events: none;
+}
+
+.tutorial-bubble {
+  position: absolute;
+  z-index: 10000;
+  width: 280px;
+  max-width: 90vw;
+  background: var(--color-bg);
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), var(--shadow-convex);
+  transition: all 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+  pointer-events: auto;
+}
+
+.tutorial-text {
+  margin-bottom: 12px;
+  line-height: 1.6;
+  font-size: 15px;
+}
+
+.tutorial-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* [修正版] 新手教學下一步按鈕 (流動光澤邊框) */
+#tutorial-next-btn {
+  position: relative;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  border: none;
+  outline: none;
+  background: var(--color-bg);
+  border-radius: 20px;
+  padding: 8px 24px;
+  z-index: 1;
+  overflow: hidden;
+  box-shadow: var(--shadow-convex);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+#tutorial-next-btn::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 20px;
+  padding: 2px;
+  background: linear-gradient(125deg,
+      rgba(255, 255, 255, 0) 30%,
+      var(--color-accent-1) 45%,
+      rgba(255, 255, 255, 1) 50%,
+      var(--color-accent-2) 55%,
+      rgba(255, 255, 255, 0) 70%);
+  background-size: 200% 200%;
+  animation: shimmer 3s ease-in-out infinite;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  z-index: -1;
+  pointer-events: none;
+}
+
+#tutorial-next-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), var(--shadow-convex);
+  color: var(--color-accent-2);
+}
+
+#tutorial-next-btn:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-concave);
+}
+
+#tutorial-next-btn.is-finish::after {
+  background: linear-gradient(125deg,
+      var(--color-accent-1) 0%,
+      #ffffff 50%,
+      var(--color-accent-2) 100%);
+  background-size: 200% 200%;
+  -webkit-mask: none;
+  mask: none;
+  z-index: -1;
+  opacity: 0.8;
+}
+
+/*
+ * ====================================================================
+ * 14. Library / Project Gallery Page
+ * ====================================================================
+ */
+
+/* Library Controls Bar */
+.library-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  padding: 15px 20px;
+  border-radius: 15px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex);
+}
+
+.library-stats {
+  font-size: 14px;
+  color: var(--color-text-light);
+  font-weight: 600;
+}
+
+.library-sort-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 12px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+}
+
+.library-sort-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 6px 6px 14px var(--color-shadow-dark);
+}
+
+.library-sort-btn:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-concave);
+}
+
+/* Library Container - Grid Layout */
+.library-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 25px;
+  padding-bottom: 20px;
+}
+
+/* Project Card */
+.project-card {
+  position: relative;
+  border-radius: 20px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex);
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  animation: fadeInUp 0.4s ease-out;
+}
+
+.project-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 8px 8px 20px var(--color-shadow-dark);
+}
+
+/* Card Thumbnail */
+.project-card__thumbnail {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  background: linear-gradient(135deg,
+      var(--color-accent-1) 0%,
+      var(--color-accent-2) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+  overflow: hidden;
+}
+
+.project-card__thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Glassmorphism Overlay on Thumbnail */
+.project-card__thumbnail::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 60%;
+  background: linear-gradient(to top,
+      rgba(0, 0, 0, 0.6) 0%,
+      transparent 100%);
+  pointer-events: none;
+}
+
+/* Card Info Section */
+.project-card__info {
+  padding: 20px;
+  position: relative;
+}
+
+.project-card__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0 0 8px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-card__meta {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--color-text-light);
+  margin-bottom: 12px;
+}
+
+.project-card__date {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.project-card__description {
+  font-size: 13px;
+  color: var(--color-text-light);
+  line-height: 1.5;
+  margin: 0 0 15px 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Card Actions */
+.project-card__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.project-card__btn {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-convex);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.project-card__btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 4px 4px 10px var(--color-shadow-dark);
+  color: var(--color-accent-2);
+}
+
+.project-card__btn:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-concave);
+}
+
+.project-card__btn--primary {
+  background: var(--gradient-accent);
+  color: var(--color-accent-text);
+  box-shadow: var(--shadow-accent);
+}
+
+.project-card__btn--primary:hover {
+  color: var(--color-accent-text);
+  transform: translateY(-2px);
+  box-shadow: 6px 6px 15px var(--color-accent-shadow);
+}
+
+/* Empty State */
+.library-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 80px 20px;
+  color: var(--color-text-light);
+}
+
+.library-empty__icon {
+  font-size: 64px;
+  margin-bottom: 20px;
+  opacity: 0.5;
+}
+
+.library-empty__text {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: var(--color-text);
+}
+
+.library-empty__hint {
+  font-size: 14px;
+  color: var(--color-text-light);
+}
+
+/* Responsive Adjustments */
+@media (max-width: 1200px) {
+  .library-container {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .library-container {
+    grid-template-columns: 1fr;
+  }
+
+  .library-controls {
+    flex-direction: column;
+    gap: 15px;
+    align-items: stretch;
+  }
+
+  .library-sort-btn {
+    justify-content: center;
+  }
 }
