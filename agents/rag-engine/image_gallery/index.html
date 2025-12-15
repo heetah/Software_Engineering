@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Gallery</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>Photo Gallery</h1>
+
+        <div class="gallery-grid" id="gallery">
+            <!-- Images will be dynamically generated -->
+        </div>
+
+        <div id="lightbox" class="lightbox">
+            <span class="close" onclick="closeLightbox()">&times;</span>
+            <span class="prev" onclick="changeImage(-1)">&#10094;</span>
+            <span class="next" onclick="changeImage(1)">&#10095;</span>
+            <img id="lightboxImg" src="" alt="">
+            <div class="lightbox-caption" id="caption"></div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>
