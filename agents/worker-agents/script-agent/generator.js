@@ -328,6 +328,18 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             prompt += `❌ DO NOT use: fetch() or HTTP requests\n`;
             prompt += `✅ USE ONLY window.electronAPI methods with EXACT signatures above\n\n`;
+            
+            // 🔴 參數格式一致性規則
+            prompt += `🔴 CRITICAL IPC PARAMETER FORMAT RULES:\n`;
+            prompt += `1. If main.js handler uses object destructuring: ipcMain.handle('channel', async (event, { param1, param2 }) => ...)\n`;
+            prompt += `   Then preload.js MUST pass object: ipcRenderer.invoke('channel', { param1, param2 })\n`;
+            prompt += `   And renderer MUST call: window.electronAPI.method({ param1, param2 })\n\n`;
+            prompt += `2. If main.js handler uses multiple parameters: ipcMain.handle('channel', async (event, param1, param2) => ...)\n`;
+            prompt += `   Then preload.js MUST pass separately: ipcRenderer.invoke('channel', param1, param2)\n`;
+            prompt += `   And renderer MUST call: window.electronAPI.method(param1, param2)\n\n`;
+            prompt += `3. MATCH the parameter style EXACTLY - check the contract requestSchema format!\n`;
+            prompt += `4. If requestSchema shows: { properties: { param1, param2 } } → Use OBJECT format: { param1, param2 }\n`;
+            prompt += `5. If requestSchema shows multiple required params → Use SEPARATE parameters: param1, param2\n\n`;
           }
         }
       }
@@ -470,6 +482,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // ========== 🔴 FINAL MANDATORY RULES (CANNOT BE IGNORED) ==========
     prompt += `\n🔴🔴🔴 FINAL MANDATORY RULES - READ CAREFULLY 🔴🔴🔴\n\n`;
     
+    // 針對 Electron preload.js 的特殊規則
+    if (filePath.includes('preload.js') || filePath.endsWith('preload.js')) {
+      prompt += `⛔ ELECTRON PRELOAD SCRIPT RULES (you are generating preload.js):\n`;
+      prompt += `1. ❌ FORBIDDEN: export class, export function, export const, export default\n`;
+      prompt += `2. ❌ FORBIDDEN: import statements (this is a Node.js context, not ES6 modules)\n`;
+      prompt += `3. ✅ REQUIRED: Use const { contextBridge, ipcRenderer } = require('electron')\n`;
+      prompt += `4. ✅ REQUIRED: Use contextBridge.exposeInMainWorld() to expose APIs\n`;
+      prompt += `5. 🔴 CRITICAL IPC PARAMETER FORMAT:\n`;
+      prompt += `   - If main.js uses: ipcMain.handle('channel', async (event, { param1, param2 }) => ...)\n`;
+      prompt += `   - Then preload.js MUST use: methodName: async ({ param1, param2 }) => ipcRenderer.invoke('channel', { param1, param2 })\n`;
+      prompt += `   - Example: calculate: async ({ expression }) => ipcRenderer.invoke('calculate', { expression })\n`;
+      prompt += `6. 🔴 MATCH the parameter destructuring EXACTLY between main.js handler and preload.js method\n`;
+      prompt += `7. This file runs in Node.js context with access to require(), NOT browser ES6 modules\n\n`;
+    }
+    
     // 針對 Electron main.js 的特殊規則
     if (filePath.includes('main.js') || filePath.endsWith('main.js')) {
       prompt += `⛔ ELECTRON MAIN PROCESS RULES (you are generating main.js):\n`;
@@ -477,15 +504,27 @@ document.addEventListener('DOMContentLoaded', () => {
       prompt += `2. NEVER write: if (config.enableDevTools) - config object doesn't have this property\n`;
       prompt += `3. ALWAYS implement FULL function bodies - empty functions like handleGetTasks() { } will crash the app\n`;
       prompt += `4. Use hardcoded values: width: 800, height: 600 (NOT config.width)\n`;
-      prompt += `5. For IPC handlers, write COMPLETE implementations with fs.readFile/writeFile\n\n`;
+      prompt += `5. For IPC handlers, write COMPLETE implementations with fs.readFile/writeFile\n`;
+      prompt += `6. 🔴 CRITICAL FILE PATH: Use path.join(__dirname, 'public', 'index.html')\n`;
+      prompt += `   - ❌ WRONG: path.join(__dirname, '..', 'public', 'index.html')\n`;
+      prompt += `   - ✅ CORRECT: path.join(__dirname, 'public', 'index.html')\n`;
+      prompt += `   - The public/ folder is at the SAME level as main.js, NOT one level up\n\n`;
     }
     
     // 針對 renderer script 的規則
-    if (filePath.includes('public/') || filePath.includes('renderer')) {
+    if (filePath.includes('public/') || filePath.includes('renderer') || filePath.includes('script.js')) {
       prompt += `⛔ RENDERER PROCESS RULES (you are generating frontend JavaScript):\n`;
-      prompt += `1. Use window.electronAPI (exposed by preload.js) for IPC calls\n`;
-      prompt += `2. Match DOM IDs EXACTLY with index.html - if HTML has id="taskInput", use getElementById('taskInput')\n`;
-      prompt += `3. ALWAYS implement FULL function bodies with real logic\n\n`;
+      prompt += `1. ❌ FORBIDDEN: export class, export function, export const (unless HTML has <script type="module">)\n`;
+      prompt += `2. ✅ REQUIRED: Use window.electronAPI (exposed by preload.js) for IPC calls\n`;
+      prompt += `3. ✅ REQUIRED: Match DOM IDs EXACTLY with index.html - if HTML has id="taskInput", use getElementById('taskInput')\n`;
+      prompt += `4. ALWAYS implement FULL function bodies with real logic\n`;
+      prompt += `5. For browser scripts without type="module", use plain functions and classes WITHOUT export keyword\n`;
+      prompt += `6. 🔴 CALCULATOR LOGIC (if building a calculator):\n`;
+      prompt += `   - Use waitingForNewNumber flag ONLY after pressing equals (=), NOT after operators\n`;
+      prompt += `   - When operator (+,-,*,/) is pressed: APPEND to display, don't reset\n`;
+      prompt += `   - When equals (=) is pressed: calculate result, then set waitingForNewNumber = true\n`;
+      prompt += `   - When number is pressed after equals: START NEW expression (replace display)\n`;
+      prompt += `   - Example flow: 5 → 5, + → 5+, 3 → 5+3, = → 8 (waitingForNewNumber=true), 2 → 2 (new expression)\n\n`;
     }
     
     prompt += `⛔ UNIVERSAL RULES (apply to ALL files):\n`;

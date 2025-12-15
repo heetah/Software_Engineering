@@ -527,7 +527,7 @@ function registerVisionHandlers() {
       console.log("Opening Google Image Search with image (direct mode)...");
 
       const { shell } = require("electron");
-
+      
       // 將圖片儲存到臨時檔案
       const tempPath = path.join(__dirname, "temp");
       if (!fs.existsSync(tempPath)) {
