@@ -1,47 +1,20 @@
-// Verifier Agent: 驗證 coder agent 輸出並產生測試計劃
-//
-// ============================================================
+// Verifier Agent: 產生測試計劃 (test-plan.json)
+// [Modified for tester/verifier agent integration]
 // 主要流程：
-// ============================================================
-// 1. 讀取 architecture.json
-//    - 位置：./data/sessions/<sessionId>/architecture.json
-//    - 內容：Architect Agent 生成的系統架構與檔案列表
-//
-// 2. 驗證檔案存在性（verifyFiles）
-//    - 檢查 ./output/<sessionId>/ 中的檔案
-//    - 比對 architecture.json 中的 files 清單
-//    - 過濾出所有 .js 檔案（排除 node_modules）
-//
-// 3. 分析 JS 檔案特徵（analyzeJavaScriptFile）
-//    - 檢測函式定義（function/arrow function）
-//    - 檢測 DOM 操作（document/window API）
-//    - 檢測事件監聽器（addEventListener）
-//    - 分析函式內部是否包含 DOM 操作
-//    - 判斷測試策略：
-//      * unit: 純邏輯，無 DOM 操作
-//      * integration: 有 DOM 但無純邏輯函式
-//      * hybrid: 同時有純邏輯和 DOM 操作函式
-//
-// 4. 生成測試計劃（generateTestPlans）
-//    - 為每個 .js 檔案呼叫 LLM
-//    - 提供源碼、分析結果給 LLM
-//    - LLM 生成結構化測試計劃（Markdown 格式）
-//    - 儲存為：./data/sessions/<sessionId>/<basename>_testplan.md
-//
-// 5. 產生驗證報告（writeVerificationReport）
-//    - 彙整所有檔案驗證結果
-//    - 列出測試計劃路徑
-//    - 儲存為：./data/sessions/<sessionId>/verify_report.md
-//
-// ============================================================
-// 階段性產出：
-// ============================================================
-// - <basename>_testplan.md：每個 JS 檔案的測試計劃
-// - verify_report.md：驗證摘要報告
-//
-// ============================================================
+// 1. 載入 architecture.json
+// 2. 載入 templates.js
+// 3. 建立 LLM Prompt
+// 4. 呼叫 LLM 取得原始 JSON 字串
+// 5. 驗證並解析 LLM 回傳的 JSON
+// 6. 寫出 test-plan.json 檔案
 
-
+// ===== Import Modules =====
+// 引入必要模組
+// 1. fs：檔案系統操作
+// 2. path：路徑操作
+// 3. fileURLToPath：取得模組檔案路徑
+// 4. BaseAgent：基底 Agent 類別
+// 5. dotenv：載入環境變數
 // ===== Import Modules =====
 import fs from "fs";
 import path from "path";
@@ -57,12 +30,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * VerifierAgent 負責：
- * - 驗證 coder agent 產生的檔案
- * - 為每個 .js 檔案產生測試計劃（存為 .md）
- * - 產生驗證報告
- * 不負責：產生 Jest 測試檔案或執行測試
+ * VerifierAgent 只負責：根據 architecture.json + templates.js 規則 產生結構化 test-plan.json
+ * 不執行測試。輸出固定 JSON 結構，供 Tester Agent 解析使用。
  */
+// Verifier Agent 主類別
+// ===== VerifierAgent Class =====
 export default class VerifierAgent extends BaseAgent {
   constructor() {
     super("Verifier Agent", "Markdown", "verifier", {
@@ -128,25 +100,29 @@ export default class VerifierAgent extends BaseAgent {
 /**
  * 讀取架構 JSON
  * @param {string} sessionId
- * @returns {Promise<object>} architectureData
+ * @returns {object} architectureData
  */
+// 讀取 ../data/sessions/<sessionId>/architecture.json
 export async function loadArchitecture(sessionId) {
-  const archFile = path.resolve(__dirname, `../data/sessions/${sessionId}/architecture.json`);
+  const base = path.resolve(__dirname, "../data/sessions");
+  // 若 sessionId 是檔名（含 .json），改取同名資料夾
+  const isFileId = sessionId.endsWith(".json");
+  const pureId = isFileId ? path.basename(sessionId, ".json") : sessionId;
+  const sessionDir = path.join(base, pureId);
+  const archFile = path.join(sessionDir, "architecture.json");
   if (!fs.existsSync(archFile)) {
-    throw new Error(`architecture.json 不存在：${archFile}`);
+    throw new Error(`architecture.json is missing: ${archFile}`);
   }
   try {
     return JSON.parse(await fs.promises.readFile(archFile, "utf-8"));
   } catch (e) {
-    throw new Error(`解析 architecture.json 失敗：${e.message}`);
+    throw new Error(`Failed to parse architecture.json: ${e.message}`);
   }
 }
 
 /**
- * 驗證 coder agent 產生的檔案
- * @param {string} sessionId
- * @param {object} architectureData
- * @returns {Promise<object>} 包含存在/缺失檔案與 .js 檔案列表
+ * 讀取模板規則（templates.js）文字
+ * @returns {string} templateText
  */
 export async function verifyFiles(sessionId, architectureData) {
   const outputDir = path.resolve(__dirname, `../output/${sessionId}`);
@@ -173,14 +149,15 @@ export async function verifyFiles(sessionId, architectureData) {
       missing.push(fileInfo.path);
     }
   }
-
-  return { existing, missing, jsFiles };
+  return fs.readFileSync(tplFile, "utf-8");
 }
 
 /**
- * 分析 JavaScript 檔案的測試需求
- * @param {string} sourceCode - 源碼內容
- * @returns {Object} 分析結果
+ * 建立 LLM Prompt
+ * @param {object} architectureData
+ * @param {string} templateText
+ * @param {string} sessionId
+ * @returns {string} prompt
  */
 export function analyzeJavaScriptFile(sourceCode) {
   const analysis = {
@@ -351,11 +328,10 @@ export function analyzeJavaScriptFile(sourceCode) {
 }
 
 /**
- * 為每個 .js 檔案產生測試計劃
- * @param {string} sessionId
- * @param {Array} jsFiles
+ * 呼叫 LLM 取得原始 JSON 字串
+ * @param {string} prompt
  * @param {VerifierAgent} agent
- * @returns {Promise<Array>} 測試計劃結果列表
+ * @returns {string} rawOutput
  */
 export async function generateTestPlans(sessionId, jsFiles, agent) {
   const results = [];
@@ -478,11 +454,10 @@ Generate the test plan following this structure.`;
 }
 
 /**
- * 儲存測試計劃為 Markdown 檔案
+ * 驗證並解析 LLM 回傳的 JSON
+ * @param {string} raw
  * @param {string} sessionId
- * @param {string} basename
- * @param {string} testPlanContent
- * @returns {Promise<string>} 儲存路徑
+ * @returns {object} testPlan
  */
 export async function saveTestPlan(sessionId, basename, testPlanContent) {
   const dataDir = path.resolve(__dirname, `../data/sessions/${sessionId}`);
@@ -495,11 +470,10 @@ export async function saveTestPlan(sessionId, basename, testPlanContent) {
 }
 
 /**
- * 寫出驗證報告
+ * 寫出 test-plan.json
  * @param {string} sessionId
- * @param {object} verification
- * @param {Array} testPlans
- * @returns {Promise<string>} 報告路徑
+ * @param {object} testPlan
+ * @returns {string} outputPath
  */
 export async function writeVerificationReport(sessionId, verification, testPlans) {
   const dataDir = path.resolve(__dirname, `../data/sessions/${sessionId}`);
@@ -559,9 +533,9 @@ export async function writeVerificationReport(sessionId, verification, testPlans
 }
 
 /**
- * 主流程入口（獨立函式版本）
+ * 主流程入口
  * @param {string} sessionId
- * @returns {Promise<{reportPath:string, testPlans:Array}>}
+ * @returns {Promise<{path:string, plan:object}>}
  */
 export async function runVerifierAgent(sessionId) {
   if (!sessionId) throw new Error("缺少 sessionId");
@@ -588,12 +562,13 @@ export async function runVerifierAgent(sessionId) {
     
     return { reportPath, testPlans };
   } catch (err) {
-    console.error(`[ERROR] Verifier Agent 失敗: ${err.message}`);
+    console.error(`❌ Verifier Agent failed: ${err.message}`);
     throw err;
   }
 }
 
-// 向後相容的別名
+// Deprecated alias for backward compatibility
+// ===== Deprecated Alias =====
 export async function runVerifiedAgent(sessionId) {
   return runVerifierAgent(sessionId);
 }
@@ -615,14 +590,7 @@ const isMainModule = () => {
 
 if (isMainModule()) {
   const sid = process.argv[2];
-  if (!sid) {
-    console.error('[ERROR] 使用方式： node verifier-agent.js <sessionId>');
-    process.exit(1);
-  }
-  runVerifierAgent(sid).catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+  runVerifierAgent(sid).catch(() => process.exit(1));
 }
 
 

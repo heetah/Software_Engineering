@@ -1,156 +1,23 @@
 // agents/tester-agent.js
-// Tester Agent：讀取測試計劃、修補源碼、產生 Jest 測試、執行測試、產生報告
-//
-// ============================================================
+// Tester Agent：負責根據 test-plan.json 產生測試碼、執行 Jest、產生報告
 // 主要流程：
-// ============================================================
-// 1. 讀取測試計劃（loadTestPlans）
-//    - 掃描 ./data/sessions/<sessionId>/*_testplan.md
-//    - 解析每個測試計劃的內容
-//
-// 2. 建立映射關係（createJsTestPlanMapping）
-//    - 讀取 architecture.json
-//    - 匹配 JS 檔案與對應的測試計劃
-//    - 結構：[{ jsFile, testPlan, analysis }]
-//
-// 3. 修補源碼（patchSourceCode）
-//    - 分析源碼需求（從測試計劃提取）
-//    - 處理 DOM 操作：
-//      * 提取 addEventListener 相關代碼
-//      * 封裝到 initializeEventListeners() 函式
-//      * 使用 typeof jest === 'undefined' 判斷是否自動執行
-//    - 添加 module.exports：
-//      * 導出所有檢測到的函式
-//      * 導出 initializeEventListeners（如有 DOM）
-//    - 儲存到：./data/sessions/<sessionId>/patched/<filename>
-//
-// 4. 生成測試檔案（generateJestTests）
-//    - 根據 testStrategy 決定生成方式：
-//      * unit: generateUnitTest() → <basename>.test.js
-//      * integration: generateIntegrationTest() → <basename>.test.js
-//      * hybrid: 兩者都生成 → <basename>.unit.test.js + <basename>.integration.test.js
-//    - 呼叫 LLM 生成測試代碼
-//    - 儲存到：./data/sessions/<sessionId>/__tests__/
-//
-// 5. 設置 Jest 配置（setupJestConfig）
-//    - 根據測試模式生成配置：
-//      * unit: testEnvironment='node'
-//      * integration: testEnvironment='jsdom'
-//      * hybrid: 使用 projects 配置分離環境
-//    - 生成：jest.config.cjs, jest.setup.cjs
-//
-// 6. 執行測試（runJestTests）
-//    - 在 session 目錄執行 npx jest --json
-//    - 解析 Jest JSON 輸出
-//
-// 7. 產生報告（writeTestReport）
-//    - 轉換 Jest 結果為 Markdown
-//    - 儲存為：./data/sessions/<sessionId>/test_report.md
-//
-// ============================================================
-// 階段性產出：
-// ============================================================
-// - ./data/sessions/<sessionId>/patched/*.js：修補後的源碼
-// - ./data/sessions/<sessionId>/__tests__/*.test.js：Jest 測試檔案
-// - ./data/sessions/<sessionId>/jest.config.cjs：Jest 配置
-// - ./data/sessions/<sessionId>/test_report.md：測試報告
-//
-// ============================================================
-// 潛在問題來源：
-// ============================================================
-// [Verifier Agent 階段遺留問題]
-// 1. 測試計劃格式不完整
-//    - 缺少 testStrategy, needsJSDOM 標記
-//    - extractAnalysisFromTestPlan() 無法正確解析
-//    - 結果：使用預設策略（unit），生成錯誤的測試
-//
-// 2. 測試計劃中的測試案例定義不清
-//    - LLM 無法理解要測試什麼
-//    - 生成的測試與源碼不匹配
-//
-// [Tester Agent - 源碼修補階段]
-// 3. patchSourceCode() 提取邏輯錯誤
-//    - 複雜的事件監聽器結構無法正確提取
-//    - 案例：DOMContentLoaded 包含 querySelector 邏輯
-//    - 結果：修補後的源碼語法錯誤
-//
-// 4. 函式內部 DOM 操作檢測不完整
-//    - 無法檢測所有 DOM API 調用
-//    - 結果：純邏輯測試嘗試測試有 DOM 的函式
-//
-// 5. module.exports 注入位置錯誤
-//    - 插入到錯誤的代碼位置
-//    - 破壞原有代碼結構
-//
-// [Tester Agent - 測試生成階段]
-// 6. LLM 不遵循 prompt 中的路徑指示
-//    - 案例：require('../patched/script.js') 被生成為 require('./public/script.js')
-//    - 結果：測試無法 import 模組
-//
-// 7. LLM 混用測試策略
-//    - 在 integration 測試中使用 jest.fn() mock
-//    - 在 unit 測試中嘗試訪問真實 DOM
-//    - 結果：測試執行失敗
-//
-// 8. 測試環境配置錯誤
-//    - hybrid 策略未正確生成 projects 配置
-//    - 所有測試在同一環境執行
-//    - 結果：環境不匹配導致失敗
-//
-// 9. 測試檔案命名衝突
-//    - 多次執行未清理舊測試檔案
-//    - .unit.test.js 和 .test.js 同時存在
-//    - 結果：Jest 執行重複或錯誤的測試
-//
-// [Tester Agent - 測試執行階段]
-// 10. Jest 配置與測試不匹配
-//     - 配置 node 環境但測試需要 jsdom
-//     - 結果：document is not defined
-//
-// 11. 依賴未安裝
-//     - jest, jest-environment-jsdom 未安裝
-//     - 結果：Jest 無法執行
-//
-// 12. 源碼路徑錯誤
-//     - 測試中 require 的路徑不存在
-//     - 結果：Cannot find module
-//
-// 13. 源碼在 require 時就執行副作用
-//     - 案例：app.listen() 在模組層級執行
-//     - 結果：端口被佔用，測試失敗
-//
-// [Tester Agent - 報告生成階段]
-// 14. Jest 輸出解析失敗
-//     - Jest 因嚴重錯誤無法生成 JSON
-//     - 結果：無法產生測試報告
-//
-// 15. 測試檔案完全無法執行
-//     - 語法錯誤導致 Jest 無法解析
-//     - 結果：該測試檔案的所有測試都不出現在報告中
-//     - 案例：server.test.js 4個測試全部消失
-//
-// ============================================================
-// 測試策略分類：
-// ============================================================
-// unit (Node環境):
-//   - 測試純邏輯函式
-//   - 使用 jest.fn() mock DOM 方法
-//   - 不需要真實 DOM
-//
-// integration (JSDOM環境):
-//   - 測試 DOM 互動流程
-//   - 使用 beforeEach 設置真實 HTML
-//   - 手動調用 initializeEventListeners()
-//   - 測試 click/submit 等事件
-//
-// hybrid (Projects配置):
-//   - 同時生成 .unit.test.js 和 .integration.test.js
-//   - 使用 Jest projects 在不同環境執行
-//   - 純邏輯函式 → unit tests
-//   - DOM 依賴函式 → integration tests
-//
-// ============================================================
+// 1. 載入 test-plan.json
+// 2. 針對每個 testFile 產生測試碼並寫入檔案
+// 3. 執行 jest 並取得報告
+// 4. 建立測試報告與錯誤報告
+// 5. 對失敗案例進行原因分析並補充建議
+// 6. 寫出報告檔案
 
+// ===== Import Modules =====
+// 引入必要模組
+// 1. fs：檔案系統操作
+// 2. path：路徑操作
+// 3. fileURLToPath：取得模組檔案路徑
+// 4. child_process.exec：執行外部命令
+// 5. util.promisify：將 callback 轉成 Promise
+// 6. BaseAgent：基底 Agent 類別
+// 7. dotenv：載入環境變數
+// 8. templates.js：引入 Tester Agent 專用模板
 // ===== Import Modules =====
 import fs from "fs";
 import path from "path";
@@ -159,7 +26,11 @@ import { exec as execCallback } from "child_process";
 import { promisify } from "util";
 import BaseAgent from "./agent-base.js";
 import dotenv from "dotenv";
-import { buildJestLLMPrompt } from "./jest-prompt-template.js";
+import {
+  TESTER_CODEGEN_PROMPT_TEMPLATE,
+  TESTER_ERROR_ANALYSIS_TEMPLATE,
+  TESTER_REPORT_MARKDOWN_TEMPLATE
+} from "./templates.js";
 
 // 載入環境變數
 dotenv.config();
@@ -171,13 +42,9 @@ const exec = promisify(execCallback);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/**
- * TesterAgent 負責：
- * - 讀取測試計劃（*_testplan.md）
- * - 產生 Jest 測試檔案
- * - 執行 Jest
- * - 產生測試報告
- */
+// ===== TesterAgent Class =====
+// Tester Agent 主類別
+// ===== TesterAgent Class =====
 export default class TesterAgent extends BaseAgent {
   constructor() {
     super("Tester Agent", "JavaScript", "tester", {
@@ -240,25 +107,15 @@ export default class TesterAgent extends BaseAgent {
       console.error(err.stack);
       throw err;
     }
+    return endpoint;
   }
-}
 
-// ====== 核心功能函式 ======
-
-/**
- * 讀取架構 JSON
- * @param {string} sessionId
- * @returns {Promise<object>} architectureData
- */
-export async function loadArchitecture(sessionId) {
-  const archFile = path.resolve(__dirname, `../data/sessions/${sessionId}/architecture.json`);
-  if (!fs.existsSync(archFile)) {
-    throw new Error(`architecture.json 不存在：${archFile}`);
-  }
-  try {
-    return JSON.parse(await fs.promises.readFile(archFile, "utf-8"));
-  } catch (e) {
-    throw new Error(`解析 architecture.json 失敗：${e.message}`);
+  // ===== File & Plan Utilities =====
+  //讀取 ../data/sessions/<sessionId>/test-plan.json
+  async loadTestPlan(sessionId) {
+    const planPath = path.resolve(__dirname, `../data/sessions/${sessionId}/test-plan.json`);
+    const raw = await fs.promises.readFile(planPath, "utf-8");
+    return JSON.parse(raw);
   }
 }
 
@@ -1255,12 +1112,38 @@ export async function ensureTestDependencies(sessionId, testCodes) {
     let packageJson;
     
     try {
-      packageJson = JSON.parse(await fs.promises.readFile(packageJsonPath, 'utf-8'));
-    } catch {
-      packageJson = {
-        name: `test-session-${sessionId.substring(0, 8)}`,
-        version: '1.0.0',
-        devDependencies: {}
+      const raw = await fs.promises.readFile(reportPath, "utf-8");
+      const data = JSON.parse(raw);
+      return data;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  // ===== Reporting =====
+  // 建立測試報告與錯誤報告物件
+  // 從 jest-report.json 生成 testReport 與 errorReport 物件
+  // testReport 包含每個測試檔案的通過/失敗狀態與統計
+  // errorReport 包含失敗案例的詳細資訊
+  buildReports(sessionId, jestJson) {
+    const now = new Date().toISOString();
+    const testResults = Array.isArray(jestJson?.testResults) ? jestJson.testResults : [];
+    let totalTests = 0;
+    let totalPassed = 0;
+    let totalFailed = 0;
+    const files = [];
+    const failures = [];
+
+    for (const tr of testResults) {
+      const assertionResults = Array.isArray(tr.assertionResults) ? tr.assertionResults : [];
+      const passed = assertionResults.filter(a => a.status === "passed").length;
+      const failed = assertionResults.filter(a => a.status === "failed").length;
+      const fileItem = {
+        filename: tr.name || tr.testFilePath || "unknown",
+        status: failed > 0 ? "failed" : "passed",
+        passed,
+        failed,
+        assertions: assertionResults.map(a => ({ title: a.title, status: a.status }))
       };
     }
     
@@ -1780,10 +1663,8 @@ if (typeof window !== 'undefined' && typeof jest === 'undefined') {
         patchedCode = remainingCode + initFunction;
         patches.push('Extracted DOM initialization to initializeEventListeners()');
       }
-    } catch (extractError) {
-      console.log(`[WARN] DOM 提取失敗，保留原始碼: ${extractError.message}`);
-      // 如果提取失敗，保持原始碼不變
     }
+    return enriched;
   }
   
   // Phase 1 改進：包裝 server.listen() 以避免測試時啟動伺服器
@@ -2038,19 +1919,6 @@ export async function runJestTests(sessionId) {
     } catch {
       return { success: false, results: null, rawOutput: stdout };
     }
-  } catch (err) {
-    // Jest 失敗時也會輸出結果到 stdout
-    if (err.stdout) {
-      try {
-        const results = JSON.parse(err.stdout);
-        return { success: false, results };
-      } catch {
-        return { success: false, results: null, error: err.message };
-      }
-    }
-    return { success: false, results: null, error: err.message };
-  }
-}
 
 /**
  * 寫出測試報告
@@ -2184,12 +2052,6 @@ const isMainModule = () => {
 
 if (isMainModule()) {
   const sid = process.argv[2];
-  if (!sid) {
-    console.error('❌ 使用方式： node tester-agent.js <sessionId>');
-    process.exit(1);
-  }
-  runTesterAgent(sid).catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+  const agent = new TesterAgent();
+  agent.runTesterAgent(sid).then(() => process.exit(0)).catch(() => process.exit(1));
 }

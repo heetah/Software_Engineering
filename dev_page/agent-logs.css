@@ -48,20 +48,22 @@
 .log-content {
     max-height: 300px;
     overflow-y: auto;
-    padding: 8px 12px 12px 12px;
-    background: rgba(0, 0, 0, 0.02);
+    padding: 12px;
+    background: #000000;
+    color: #ffffff;
     font-family: 'Consolas', 'Courier New', monospace;
     scrollbar-width: thin;
+    border-top: 1px solid #333;
 }
 
 .log-content::-webkit-scrollbar {
-    width: 6px;
+    width: 8px;
+    background: #1e1e1e;
 }
 
 .log-content::-webkit-scrollbar-thumb {
-    background: var(--color-text-light);
-    border-radius: 3px;
-    opacity: 0.5;
+    background: #555;
+    border-radius: 4px;
 }
 
 .log-entry {
@@ -102,85 +104,93 @@
 
 .log-text {
     flex: 1;
-    color: var(--color-text);
+    color: #e0e0e0;
 }
 
 /* Phase entries - highlighted */
 .log-entry--phase {
-    background: linear-gradient(135deg, rgba(134, 146, 253, 0.15), rgba(98, 114, 244, 0.15));
-    border-left: 3px solid var(--color-accent-1);
+    background: rgba(134, 146, 253, 0.2);
+    border-left: 3px solid #8692fd;
     font-weight: 600;
+    color: #ffffff;
 }
 
 html.dark-mode .log-entry--phase {
-    background: linear-gradient(135deg, rgba(240, 197, 77, 0.15), rgba(212, 160, 58, 0.15));
-    border-left-color: var(--color-accent-1);
+    background: rgba(240, 197, 77, 0.2);
+    border-left-color: #f0c54d;
 }
 
 /* Layer processing */
 .log-entry--layer {
-    background: rgba(98, 114, 244, 0.08);
+    background: rgba(255, 255, 255, 0.05);
     font-style: italic;
-    color: var(--color-text-light);
+    color: #bbbbbb;
 }
 
 /* Success (file generated) */
 .log-entry--success {
-    background: rgba(76, 175, 80, 0.1);
-    color: #2e7d32;
+    background: rgba(76, 175, 80, 0.15);
+    color: #81c784;
 }
 
 html.dark-mode .log-entry--success {
-    color: #81c784;
+    color: #a5d6a7;
 }
 
 /* Agent entries */
 .log-entry--agent {
-    background: rgba(156, 39, 176, 0.08);
+    background: rgba(156, 39, 176, 0.15);
+    color: #e1bee7;
 }
 
 .log-entry--coordinator {
-    background: rgba(255, 152, 0, 0.08);
+    background: rgba(255, 152, 0, 0.15);
+    color: #ffe0b2;
 }
 
 .log-entry--architect {
-    background: rgba(33, 150, 243, 0.08);
+    background: rgba(33, 150, 243, 0.15);
+    color: #bbdefb;
 }
 
 .log-entry--verifier {
-    background: rgba(76, 175, 80, 0.08);
+    background: rgba(76, 175, 80, 0.15);
+    color: #c8e6c9;
 }
 
 .log-entry--tester {
-    background: rgba(255, 87, 34, 0.08);
+    background: rgba(255, 87, 34, 0.15);
+    color: #ffccbc;
 }
 
 /* Config files */
 .log-entry--config {
-    background: rgba(158, 158, 158, 0.08);
+    background: rgba(158, 158, 158, 0.15);
     font-size: 11px;
+    color: #cfcfcf;
 }
 
 /* Contracts */
 .log-entry--contracts {
-    background: rgba(63, 81, 181, 0.08);
+    background: rgba(63, 81, 181, 0.15);
+    color: #c5cae9;
 }
 
 /* Warning */
 .log-entry--warning {
     background: rgba(255, 193, 7, 0.15);
     border-left: 3px solid #ffa726;
-    color: #f57c00;
+    color: #ffcc80;
 }
 
 html.dark-mode .log-entry--warning {
-    color: #ffb74d;
+    color: #ffe0b2;
 }
 
 /* Info (default) */
 .log-entry--info {
     background: transparent;
-    color: var(--color-text-light);
+    color: #bdbdbd;
     font-size: 11px;
 }
 

@@ -116,6 +116,14 @@ export async function runWithInstructionService(
   options = {}
 ) {
   let { architect, verifier, tester } = agents;
+  const { onLog } = options;
+
+  const logProgress = (message) => {
+    console.log(message);
+    if (typeof onLog === 'function') {
+      onLog(message);
+    }
+  };
 
   // 如果提供了動態選項 (API Keys / Provider)，重新實例化 Verifier 和 Tester 以應用設定
   if (options && (options.apiKeys || options.llmProvider)) {
@@ -134,16 +142,18 @@ export async function runWithInstructionService(
       { userInput }
     );
 
-    // Architect Agent 直接處理用戶需求並生成計劃或單純問答回覆
     // （不再需要 Requirement Agent，Architect Agent 會同時處理需求分析和架構設計）
     const plan = await withErrorHandling(
       'InstructionService.createPlan',
-      () => instructionService.createPlan({
-        prompt: userInput,
-        context: {
-          timestamp: new Date().toISOString()
-        }
-      }),
+      async () => {
+        logProgress(`[Coordinator] Analyzing requirements and creating plan...`);
+        return await instructionService.createPlan({
+          prompt: userInput,
+          context: {
+            timestamp: new Date().toISOString()
+          }
+        });
+      },
       { userInput }
     );
 
@@ -153,7 +163,7 @@ export async function runWithInstructionService(
       return plan;
     }
 
-    console.log(`\nPlan created, Session ID: ${plan.id}`);
+    logProgress(`\nPlan created, Session ID: ${plan.id}`);
     console.log(`Workspace directory: ${plan.workspaceDir || 'N/A'}`);
     console.log(`File operations: Created=${plan.fileOps.created.length}, Skipped=${plan.fileOps.skipped.length}, Errors=${plan.fileOps.errors.length}`);
 
@@ -222,8 +232,11 @@ export async function runWithInstructionService(
         { planId: plan.id }
       );
 
+
+
       // 直接寫入檔案系統（Cursor 常用方式）
       try {
+        logProgress(`[Coordinator] Generating project files...`);
         const result = await withErrorHandling(
           'writeProjectDirectly',
           () => Promise.resolve(
@@ -231,7 +244,7 @@ export async function runWithInstructionService(
           ),
           { workspaceDir: plan.workspaceDir }
         );
-        console.log(`\nProject generated at ${result.outDir}`);
+        logProgress(`\nProject generated at ${result.outDir}`);
         console.log(`Total files: ${result.files.length}`);
         console.log(`\nGenerated files:`);
         result.files.forEach(file => {
@@ -259,9 +272,9 @@ export async function runWithInstructionService(
       }
 
       // ===== Contract Validation & Auto-Fix: 驗證並自動修復契約不一致 =====
-      console.log("\n" + "=".repeat(60));
-      console.log("Contract Validator: Checking & Auto-Fixing contracts");
-      console.log("=".repeat(60));
+      logProgress("\n" + "=".repeat(60));
+      logProgress("Contract Validator: Checking & Auto-Fixing contracts");
+      logProgress("=".repeat(60));
 
       try {
         const contractValidator = new ContractValidator();
@@ -339,9 +352,9 @@ export async function runWithInstructionService(
     }
 
     // ===== Verifier Agent: 生成測試計劃 =====
-    console.log("\n" + "=".repeat(60));
-    console.log("Verifier Agent: Verify files and generate test plans");
-    console.log("=".repeat(60));
+    logProgress("\n" + "=".repeat(60));
+    logProgress("Verifier Agent: Generate test plan");
+    logProgress("=".repeat(60));
 
     let testPlan = null;
     try {
@@ -350,18 +363,17 @@ export async function runWithInstructionService(
         () => verifier.runVerifierAgent(plan.id),
         { sessionId: plan.id }
       );
-      testPlan = verifierResult; // 直接使用整個結果物件
-      console.log(`\n✓ Verification complete`);
-      console.log(`  Report: ${verifierResult.reportPath}`);
-      console.log(`  Test plans: ${testPlan?.testPlans?.length || 0}`);
+      testPlan = verifierResult.plan;
+      console.log(`Test Plan generated: ${verifierResult.path}`);
+      console.log(`Test files: ${testPlan?.testFiles?.length || 0}`);
 
-      if (testPlan?.testPlans && testPlan.testPlans.length > 0) {
-        testPlan.testPlans.forEach(tp => {
-          console.log(`  - ${tp.file} -> ${tp.testPlanPath}`);
+      if (testPlan?.testFiles && testPlan.testFiles.length > 0) {
+        testPlan.testFiles.forEach(tf => {
+          console.log(`  - ${tf.filename} (${tf.testLevel}, ${tf.inputsType})`);
         });
       }
     } catch (err) {
-      errorLogger.warn("Verifier Agent 執行失敗", {
+      errorLogger.warn("Verifier Agent execution failed", {
         error: err.message,
         sessionId: plan.id
       });
@@ -370,11 +382,10 @@ export async function runWithInstructionService(
     }
 
     // ===== Tester Agent: 生成測試碼並執行測試 =====
-    if (testPlan && testPlan.testPlans && testPlan.testPlans.length > 0) {
-      console.log("\n" + "=".repeat(60));
-      console.log("Tester Agent: Smart patching, syntax fix, and testing");
-      console.log("Features: Phase 2 (Syntax fix, Deps) + Phase 3 (Smart exports)");
-      console.log("=".repeat(60));
+    if (testPlan && testPlan.testFiles && testPlan.testFiles.length > 0) {
+      logProgress("\n" + "=".repeat(60));
+      logProgress("Tester Agent: Generate test code and execute tests");
+      logProgress("=".repeat(60));
 
       try {
         const testResult = await withErrorHandling(
@@ -435,22 +446,20 @@ export async function runWithInstructionService(
               if (failures.length > 5) {
                 console.log(`  ... There are ${failures.length - 5} more failed cases`);
               }
+            });
+            if (errorReport.failures.length > 5) {
+              console.log(`  ... There are ${errorReport.failures.length - 5} more failed cases`);
             }
           } else {
             console.log(`\nAll tests passed!`);
           }
-
-          // 將測試結果添加到 plan 中（轉換為原格式）
-          plan.testReport = {
-            totals: {
-              files: results.numTotalTestSuites || 0,
-              tests: results.numTotalTests || 0,
-              passed: results.numPassedTests || 0,
-              failed: results.numFailedTests || 0
-            }
-          };
-          plan.errorReport = { failures: failures || [] };
+        } else {
+          console.log(`\nAll tests passed!`);
         }
+
+        // 將測試結果添加到 plan 中
+        plan.testReport = testReport;
+        plan.errorReport = errorReport;
       } catch (err) {
         errorLogger.warn("Tester Agent execution failed", {
           error: err.message,
