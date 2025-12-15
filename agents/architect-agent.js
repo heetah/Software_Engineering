@@ -34,6 +34,7 @@ export default class ArchitectAgent extends BaseAgent {
     return `
 Based on the following requirement specification, generate a detailed system architecture:
 ${requirementOutput}
+
 Output JSON with:
 {
   "modules": [],
@@ -53,9 +54,11 @@ Output JSON with:
    */
   async detectIntent({ prompt, context }) {
     const systemPrompt = `You are an intent classifier for a multi-agent coding assistant.
+
 Your task:
 - Decide whether the user wants to GENERATE / MODIFY a software project ("project" mode),
   or is ONLY asking a general question / explanation ("qa" mode).
+
 Output rules:
 - Output EXACTLY one lowercase word: "project" or "qa".
 - "project": user clearly asks to build/create/modify an app, website, system, codebase, or tests.
@@ -158,11 +161,13 @@ Output rules:
    */
   async generatePlan({ prompt, context }) {
     const systemPrompt = `You are the Architect Agent for an Electron.js + Node.js multi-agent application.
+
 Your primary job:
 - Translate high-level goals into explicit, actionable instructions directed at the Coder Agent.
 - Produce a precise, implementable plan and a clear "handoff" message that tells the Coder Agent exactly what to do next.
 - For web applications, automatically infer and include frontend design requirements (UI/UX, layout, styling, responsive design).
 - For simple prompts, expand them with reasonable assumptions about design, functionality, and user experience.
+
 Output JSON schema:
 {
   "coder_instructions": {
@@ -209,6 +214,7 @@ Output JSON schema:
     "components": string[] (e.g., ["navigation bar", "footer", "cards"])
   }
 }
+
 Rules:
 - Return ONLY a JSON object matching the schema (no extra prose, no markdown code blocks).
 - "coder_instructions" must be written as imperative tasks for the Coder Agent.
@@ -352,10 +358,12 @@ Rules:
    */
   async refinePlan({ previous, feedback }) {
     const systemPrompt = `You are the Architect Agent for an Electron.js + Node.js multi-agent application.
+
 Your primary job:
 - Translate high-level goals into explicit, actionable instructions directed at the Coder Agent.
 - Produce a precise, implementable plan and a clear "handoff" message that tells the Coder Agent exactly what to do next.
 - Keep scope focused on Backend(1): GPT integration, Architect Agent behavior, and dev-process command generation.
+
 Output JSON schema:
 {
   "coder_instructions": {
@@ -387,6 +395,7 @@ Output JSON schema:
   },
   "markdown": string
 }
+
 Rules:
 - Return ONLY a JSON object matching the schema (no extra prose).
 - "coder_instructions" must be written as imperative tasks for the Coder Agent.
