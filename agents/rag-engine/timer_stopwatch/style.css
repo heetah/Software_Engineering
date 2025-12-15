@@ -1,0 +1,270 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.container {
+    width: 100%;
+    max-width: 500px;
+}
+
+.timer-card {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 25px;
+    padding: 40px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 40px;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 15px;
+    background: #f5f5f5;
+    border: 2px solid #e0e0e0;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    color: #666;
+    transition: all 0.3s ease;
+}
+
+.tab-btn:hover {
+    background: #ebebeb;
+}
+
+.tab-btn.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-color: transparent;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.display {
+    margin-bottom: 40px;
+    text-align: center;
+}
+
+.time-inputs {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.time-inputs input {
+    width: 100px;
+    padding: 20px;
+    font-size: 48px;
+    font-weight: 700;
+    color: #667eea;
+    text-align: center;
+    border: 3px solid #e0e0e0;
+    border-radius: 15px;
+    outline: none;
+    transition: all 0.3s ease;
+}
+
+.time-inputs input:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.time-inputs input::-webkit-inner-spin-button,
+.time-inputs input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.separator {
+    font-size: 48px;
+    font-weight: 700;
+    color: #667eea;
+}
+
+.time-display {
+    font-size: 64px;
+    font-weight: 700;
+    color: #667eea;
+    padding: 30px;
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+    border-radius: 20px;
+}
+
+.controls {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-tertiary {
+    padding: 15px 30px;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    flex: 1;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+}
+
+.btn-secondary {
+    background: #ffa502;
+    color: white;
+    flex: 1;
+}
+
+.btn-secondary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(255, 165, 2, 0.3);
+}
+
+.btn-tertiary {
+    background: #e0e0e0;
+    color: #666;
+    flex: 0.8;
+}
+
+.btn-tertiary:hover {
+    background: #d0d0d0;
+}
+
+.laps {
+    margin-top: 30px;
+    padding-top: 30px;
+    border-top: 2px solid #e0e0e0;
+}
+
+.laps h3 {
+    font-size: 18px;
+    color: #333;
+    margin-bottom: 15px;
+}
+
+#lapsList {
+    list-style: none;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.lap-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 15px;
+    background: #f5f5f5;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.lap-number {
+    font-weight: 600;
+    color: #667eea;
+}
+
+.lap-time {
+    color: #666;
+    font-family: monospace;
+}
+
+#lapsList::-webkit-scrollbar {
+    width: 6px;
+}
+
+#lapsList::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+#lapsList::-webkit-scrollbar-thumb {
+    background: #667eea;
+    border-radius: 10px;
+}
+
+@media (max-width: 640px) {
+    .timer-card {
+        padding: 25px;
+    }
+
+    .time-inputs input {
+        width: 80px;
+        font-size: 36px;
+        padding: 15px;
+    }
+
+    .separator {
+        font-size: 36px;
+    }
+
+    .time-display {
+        font-size: 48px;
+    }
+
+    .controls {
+        flex-direction: column;
+    }
+
+    .btn-tertiary {
+        flex: 1;
+    }
+}

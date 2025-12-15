@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timer & Stopwatch</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="timer-card">
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="timer">Timer</button>
+                <button class="tab-btn" data-tab="stopwatch">Stopwatch</button>
+            </div>
+
+            <div id="timer" class="tab-content active">
+                <div class="display">
+                    <div class="time-inputs">
+                        <input type="number" id="hours" min="0" max="23" value="0" placeholder="00">
+                        <span class="separator">:</span>
+                        <input type="number" id="minutes" min="0" max="59" value="5" placeholder="00">
+                        <span class="separator">:</span>
+                        <input type="number" id="seconds" min="0" max="59" value="0" placeholder="00">
+                    </div>
+                </div>
+                <div class="controls">
+                    <button id="timerStart" class="btn-primary" onclick="startTimer()">Start</button>
+                    <button id="timerPause" class="btn-secondary" onclick="pauseTimer()"
+                        style="display: none;">Pause</button>
+                    <button id="timerReset" class="btn-tertiary" onclick="resetTimer()">Reset</button>
+                </div>
+            </div>
+
+            <div id="stopwatch" class="tab-content">
+                <div class="display">
+                    <div class="time-display">
+                        <span id="stopwatchDisplay">00:00:00.00</span>
+                    </div>
+                </div>
+                <div class="controls">
+                    <button id="stopwatchStart" class="btn-primary" onclick="startStopwatch()">Start</button>
+                    <button id="stopwatchPause" class="btn-secondary" onclick="pauseStopwatch()"
+                        style="display: none;">Pause</button>
+                    <button id="stopwatchReset" class="btn-tertiary" onclick="resetStopwatch()">Reset</button>
+                </div>
+                <div class="laps" id="lapsContainer" style="display: none;">
+                    <h3>Laps</h3>
+                    <ul id="lapsList"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>
