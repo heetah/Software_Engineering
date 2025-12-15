@@ -1,5 +1,5 @@
 @charset "UTF-8";
-/* dev_page/scss/style.scss (精簡版 - 無亮部陰影、Copy 內嵌) */
+/* dev_page/scss/style.scss (完整整合版 v2.1) */
 
 /*
  * ====================================================================
@@ -11,11 +11,9 @@ html {
   /* ================== 淺色 (Light) 主題 ================== */
   --color-bg: #e4e9f2;
   --color-text: #3d4a5f;
-  /* 原本是 #627aa2，改深一點增加對比 */
   --color-text-light: #99a3b5;
 
   --color-shadow-dark: #c8d0e0;
-  /* 移除亮部陰影變數的使用，但保留變數定義以防萬一，設為透明或同背景 */
   --color-shadow-light: transparent;
 
   --color-accent-1: #8692fd;
@@ -28,9 +26,7 @@ html {
   --color-danger-text: #ffffff;
   --color-danger-shadow-inset-dark: #c14b4b;
 
-  /* ================== 樣式定義 (修改點：移除亮部陰影) ================== */
-
-  /* 僅保留單邊深色陰影 */
+  /* ================== 樣式定義 ================== */
   --shadow-convex: 6px 6px 12px var(--color-shadow-dark);
   --shadow-concave: inset 4px 4px 8px var(--color-shadow-dark);
 
@@ -49,7 +45,6 @@ html.dark-mode {
   --color-text-light: #888888;
 
   --color-shadow-dark: #1a1a1a;
-  /* 加深陰影 */
 
   --color-accent-1: #f0c54d;
   --color-accent-2: #d4a03a;
@@ -98,18 +93,14 @@ body {
   gap: 20px;
 }
 
-/* (修改點 1：移除側邊欄大框) */
 .sidebar {
   width: 260px;
   flex-shrink: 0;
   padding: 20px 10px;
-  /* 左右 padding 稍微減少 */
   display: flex;
   flex-direction: column;
-  /* 移除背景和陰影，讓它融入背景 */
   background: transparent;
   box-shadow: none;
-  /* border-radius 也可以移除或保留 */
   transition: all 0.2s ease-in-out;
 }
 
@@ -121,7 +112,6 @@ body {
   border-radius: 20px;
   background: var(--color-bg);
   box-shadow: var(--shadow-concave);
-  /* 內容區維持凹陷感 */
   transition: all 0.2s ease-in-out;
 }
 
@@ -140,7 +130,6 @@ body {
 
 .chat-display::-webkit-scrollbar-thumb {
   background: var(--color-text-light);
-  /* 使用變數 */
   border-radius: 4px;
   opacity: 0.5;
 }
@@ -151,7 +140,7 @@ body {
  * ====================================================================
  */
 
-/* [新增] 側邊欄頂部容器 */
+/* 側邊欄頂部容器 */
 .sidebar-header {
   display: flex;
   gap: 10px;
@@ -160,7 +149,7 @@ body {
   padding: 0 5px;
 }
 
-/* [新增] 側邊欄頂部按鈕樣式 */
+/* 側邊欄頂部按鈕樣式 (新手教學 & 刷新) */
 .sidebar-header-btn {
   flex: 1;
   max-width: 45%;
@@ -175,11 +164,15 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--color-text);
+  /* 確保圖示顏色正確 */
 }
 
 .sidebar-header-btn:hover {
   transform: translateY(-2px);
   box-shadow: 8px 8px 16px var(--color-shadow-dark);
+  color: var(--color-accent-2);
+  /* 懸停時變色 */
 }
 
 .sidebar-header-btn:active {
@@ -187,19 +180,17 @@ body {
   box-shadow: var(--shadow-concave);
 }
 
-.sidebar__menu {
-  margin-top: 20px;
+/* 確保 SVG icon 顏色跟隨文字 */
+.sidebar-header-btn .icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
 }
 
-/* [新增] 側邊欄頂部按鈕容器 (讓按鈕並排) */
-.sidebar-header-row {
-  display: flex;
-  gap: 12px;
-  /* 按鈕之間的間距 */
-  margin-bottom: 15px;
-  /* 與下方聊天按鈕的距離 */
-  padding-left: 2px;
-  /* 微調對齊 */
+.sidebar__menu {
+  margin-top: 20px;
 }
 
 .menu-button {
@@ -217,7 +208,6 @@ body {
   border-radius: 15px;
   background: var(--color-bg);
   box-shadow: var(--shadow-convex);
-  /* 按鈕保留凸起 */
   transition: all 0.2s ease-in-out;
 }
 
@@ -234,7 +224,6 @@ body {
 .menu-button:not(.is-active):hover {
   color: var(--color-text);
   transform: translateY(-1px);
-  /* 微互動 */
 }
 
 .menu-button:active {
@@ -256,18 +245,30 @@ body {
   transform: translateY(-50%) rotate(180deg);
 }
 
+/* 歷史紀錄列表 */
 .history-list {
   max-height: 0;
   overflow: hidden;
   transition: max-height 0.15s ease-out;
   margin: -10px 0 10px 0;
   padding-left: 10px;
-  /* 縮排 */
 }
 
 .history-list.is-open {
   max-height: 300px;
   overflow-y: auto;
+}
+
+@keyframes slideInStagger {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .history-list .history-item {
@@ -281,6 +282,10 @@ body {
   border-radius: 15px;
   transition: all 0.2s ease;
   margin-bottom: 5px;
+  opacity: 0;
+  /* 動畫起始狀態 */
+  animation: slideInStagger 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  animation-delay: calc(var(--i) * 0.05s);
 }
 
 .history-list .history-item__title {
@@ -316,7 +321,6 @@ body {
 .history-list .history-item.is-active {
   color: var(--color-text);
   font-weight: 600;
-  /* 可以給一個極輕微的背景區分 */
   background-color: rgba(0, 0, 0, 0.03);
 }
 
@@ -327,11 +331,10 @@ body {
 
 /*
  * ====================================================================
- * 5. 訊息元件 (完整修復版 - 包含頭像、氣泡、圖示按鈕)
+ * 5. 訊息元件
  * ====================================================================
  */
 
-/* --- 1. 訊息群組容器 --- */
 .message-group {
   display: flex;
   align-items: flex-start;
@@ -340,12 +343,10 @@ body {
   animation: fadeInUp 0.3s ease-out;
 }
 
-/* User 的訊息方向反轉 */
 .message-group--user {
   flex-direction: row-reverse;
 }
 
-/* --- 2. 頭像樣式 (修復消失問題) --- */
 .message-avatar {
   width: 36px;
   height: 36px;
@@ -363,14 +364,12 @@ body {
   color: var(--color-text-light);
 }
 
-/* User 頭像的間距調整 */
 .message-group--user .message-avatar {
   margin-right: 0;
   margin-left: 15px;
   color: var(--color-text);
 }
 
-/* --- 3. 訊息內容與氣泡 --- */
 .message-content {
   display: flex;
   flex-direction: column;
@@ -379,14 +378,10 @@ body {
   max-width: 100%;
 }
 
-/* 氣泡本體 */
 .message-bubble {
   position: relative;
   padding: 15px 20px;
-  /* padding-bottom: 25px; - Removed */
   border-radius: 20px;
-
-  /* [Modified] Bubble Effect Base - Reverted surface shine */
   background: var(--color-bg);
   box-shadow: var(--shadow-convex);
 
@@ -399,7 +394,7 @@ body {
   z-index: 1;
 }
 
-/* [New] 泡泡膜反光動畫 (波光粼粼) */
+/* [修改] 泡泡膜反光動畫 - 使用變數適配淺色(藍紫)與深色(金) */
 .message-bubble::after {
   content: "";
   position: absolute;
@@ -408,33 +403,26 @@ body {
   right: 0;
   bottom: 0;
   border-radius: 20px;
-  /* Match parent */
   padding: 2px;
-  /* Border width */
 
-  /* 虹彩漸層 (Iridescent Gradient) */
-  /* 水波紋漸層 (Water Ripple Gradient) */
   background: linear-gradient(125deg,
       rgba(255, 255, 255, 0) 30%,
-      rgba(255, 255, 255, 0.4) 35%,
-      /* 第一道細波紋 */
+      rgba(134, 146, 253, 0.2) 35%,
+      /* 弱光帶 */
       rgba(255, 255, 255, 0) 40%,
-      rgba(255, 255, 255, 0.8) 50%,
-      /* 主波紋 (強光) */
+      var(--color-accent-1) 50%,
+      /* 強光帶 (使用變數) */
       rgba(255, 255, 255, 0) 60%,
-      rgba(255, 255, 255, 0.3) 65%,
-      /* 尾韻波紋 */
+      rgba(134, 146, 253, 0.2) 65%,
+      /* 弱光帶 */
       rgba(255, 255, 255, 0) 70%);
 
   background-size: 200% 200%;
-  opacity: 0.9;
-  /* 稍微降低整體不透明度讓波紋更柔和 */
+  opacity: 0.7;
   mix-blend-mode: normal;
   pointer-events: none;
-  /* 4s ease-in-out: 頻率更像水流呼吸，忽快忽慢 */
   animation: shimmer 4s ease-in-out infinite;
 
-  /* Masking to create border effect */
   -webkit-mask:
     linear-gradient(#fff 0 0) content-box,
     linear-gradient(#fff 0 0);
@@ -443,17 +431,13 @@ body {
     linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-
-  /* Ensure shimmer is behind text but above background */
   z-index: -1;
 }
 
-/* User 氣泡靠右 */
 .message-group--user .message-content {
   align-items: flex-end;
 }
 
-/* 思考中氣泡樣式 */
 .message-bubble--thinking {
   padding: 15px 20px;
   padding-bottom: 15px;
@@ -463,9 +447,8 @@ body {
   align-items: center;
 }
 
-/* --- 4. Copy 按鈕 (Soft UI 圖示風格) --- */
+/* Copy 按鈕 */
 .message-actions {
-  /* 改為相對定位，位於氣泡下方 */
   position: relative;
   margin-top: 6px;
   margin-left: 5px;
@@ -479,73 +462,50 @@ body {
   gap: 8px;
 }
 
-/* 懸停訊息群組時按鈕變明顯 */
 .message-group:hover .message-actions {
   opacity: 1;
 }
 
-/* AI 按鈕靠左 (預設) */
 .message-group--ai .message-actions {
   justify-content: flex-start;
 }
 
-/* User 按鈕靠右 */
 .message-group--user .message-actions {
   padding-left: 0px;
   padding-right: 0px;
   justify-content: flex-end;
-  /* margin-right 已經在上方設定 */
   width: 100%;
-  /* 讓 flex-end 生效 */
 }
 
-/* 按鈕本體樣式 (透明文字風格) */
 .message-actions .action-button {
   border: none;
   outline: none;
   cursor: pointer;
-
-  /* [形狀修改] 改為膠囊狀，寬度自動 */
   width: auto;
   height: auto;
   padding: 4px 10px;
-  /* 給文字一點呼吸空間 */
   border-radius: 8px;
-  /* 圓角矩形 */
-
-  /* [字體修改] */
   font-size: 11px;
-  /* 字體稍微縮小 */
   color: var(--color-text-light);
-  /* [關鍵] 淺灰色文字 */
   font-weight: normal;
-
-  /* [修改點] 移除背景與陰影，去除去框框感 */
   background: transparent;
   box-shadow: none;
-
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 懸停狀態 */
 .message-actions .action-button:hover {
-  /* 懸停時字體稍微變深，增加可讀性 */
   color: var(--color-text);
   transform: translateY(-1px);
-  /* 移除懸停陰影 */
   box-shadow: none;
   background: rgba(0, 0, 0, 0.05);
-  /* 極輕微背景提示 */
 }
 
-/* 點擊狀態 */
 .message-actions .action-button:active {
   transform: translateY(0);
   box-shadow: none;
   opacity: 0.7;
 }
 
-/* 長條形文字按鈕 (Pill Shape) */
 .message-actions .action-button--pill {
   width: auto;
   height: 30px;
@@ -554,7 +514,6 @@ body {
   font-size: 13px;
   gap: 6px;
 }
-
 
 
 /*
@@ -640,7 +599,6 @@ body {
 
 .action-button--send:active {
   border-radius: 15px;
-  /* 這裡可以維持凹陷，或用變數 */
   box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.3);
 }
 
@@ -760,27 +718,6 @@ body {
   margin: 0 0 12px 0;
 }
 
-/* LLM 選擇用單選按鈕群組 */
-.settings-radio-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.settings-radio-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: var(--color-text);
-  cursor: pointer;
-}
-
-.settings-radio-option input[type="radio"] {
-  accent-color: var(--color-accent-1);
-}
-
-/* Toggle Switch 群組（用於 LLM 選擇） */
 .settings-toggle-group {
   display: flex;
   flex-direction: column;
@@ -811,7 +748,6 @@ body {
   flex: 1;
 }
 
-/* Toggle Switch 在設定頁面的樣式（用於 radio） */
 .settings-toggle-option .toggle-switch__input {
   position: absolute;
   opacity: 0;
@@ -855,20 +791,17 @@ body {
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-/* 當 radio 被選中時，滑塊移動到右側 */
 .settings-toggle-option .toggle-switch__input:checked~.toggle-switch .toggle-switch__slider::before {
   transform: translateX(22px);
   background: var(--color-accent-text);
   box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-/* 選中狀態的背景色 */
 .settings-toggle-option .toggle-switch__input:checked~.toggle-switch .toggle-switch__slider {
   background: var(--gradient-accent);
   box-shadow: var(--shadow-accent);
 }
 
-/* LLM API Key 輸入欄位 */
 .settings-input-group {
   margin-top: 10px;
   margin-bottom: 10px;
@@ -902,7 +835,6 @@ body {
   white-space: nowrap;
 }
 
-/* 設定頁面的危險按鈕 (修改點 5：移除黑框) */
 .action-button--danger {
   background: var(--gradient-danger);
   color: var(--color-danger-text);
@@ -916,7 +848,6 @@ body {
   transition: all 0.2s ease;
 }
 
-/* 為了更好的無障礙體驗，focus 時改用陰影而非黑框 */
 .action-button--danger:focus {
   outline: none;
   box-shadow: 0 0 0 3px rgba(248, 122, 122, 0.4), var(--shadow-danger);
@@ -924,7 +855,6 @@ body {
 
 .action-button--danger:hover {
   background: linear-gradient(135deg, #ff8a8a, #f87474);
-  /* 單邊陰影 */
   box-shadow: 6px 6px 16px var(--color-shadow-dark);
 }
 
@@ -933,7 +863,6 @@ body {
   box-shadow: var(--shadow-danger-inset);
 }
 
-/* 儲存按鈕樣式 */
 .action-button--save {
   background: var(--gradient-accent);
   color: var(--color-accent-text);
@@ -948,8 +877,10 @@ body {
   transition: all 0.2s ease;
 }
 
+/* [修改] 懸停時變亮 (Filter) 而不是換色，適配所有主題 */
 .action-button--save:hover {
-  background: linear-gradient(135deg, #9aa4ff, #7a88f8);
+  background: var(--gradient-accent);
+  filter: brightness(1.1);
   box-shadow: 6px 6px 16px var(--color-shadow-dark);
   transform: translateY(-1px);
 }
@@ -998,26 +929,22 @@ body {
   left: 4px;
   bottom: 4px;
   border-radius: 50%;
-  /* 預設(關閉)使用強調色 */
   background: var(--gradient-accent);
   box-shadow: var(--shadow-accent);
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-/* 選中時，滑塊移動 */
 .toggle-switch__input:checked+.toggle-switch__slider::before {
   transform: translateX(26px);
   background: var(--gradient-accent);
   box-shadow: var(--shadow-accent);
 }
 
-/*
- * ====================================================================
+/* ====================================================================
  * 10. Agent 回應樣式
  * ====================================================================
  */
 
-/* 思考中氣泡 */
 .message-bubble--thinking {
   background: var(--color-bg);
   box-shadow: var(--shadow-convex);
@@ -1062,25 +989,16 @@ body {
   }
 }
 
-/* 程式碼文字框 */
 .message-bubble--code {
   background: var(--color-bg);
   box-shadow: var(--shadow-concave);
   padding: 20px;
   position: relative;
-  /* 內嵌 Copy 定位 - 已移除 */
-
   white-space: pre-wrap;
   font-family: Consolas, 'Courier New', monospace;
   font-size: 14px;
   color: var(--color-text);
-
-  /* 按鈕移出去了，不再需要額外底部 padding */
-  /* padding-bottom: 35px; */
 }
-
-/* 程式碼框內的 Copy 按鈕 (已移出，此區塊可移除或保留為空) */
-/* .message-bubble--code .message-actions { ... } */
 
 /* Log Container Styles */
 .log-container {
