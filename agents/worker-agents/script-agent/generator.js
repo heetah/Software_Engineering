@@ -10,40 +10,13 @@ const API_STANDARDS = require('../../shared/api-standards.cjs');
 class ScriptGenerator {
   constructor(config = {}) {
     // API 配置優先順序：1. config 參數 2. CLOUD_API 3. OPENAI_API
-    this.cloudApiEndpoint = config.cloudApiEndpoint ||
-      process.env.CLOUD_API_ENDPOINT ||
-      process.env.OPENAI_BASE_URL;
-    this.cloudApiKey = config.cloudApiKey ||
-      process.env.CLOUD_API_KEY ||
-      process.env.OPENAI_API_KEY;
+    this.cloudApiEndpoint = config.cloudApiEndpoint;
+    this.cloudApiKey = config.cloudApiKey;
     this.useMockApi = !this.cloudApiEndpoint;
-
-    // 🔍 Debug: 記錄 Worker Generator 初始化
-    console.log('[ScriptGenerator] Initialized:', {
-      hasConfigEndpoint: !!config.cloudApiEndpoint,
-      hasConfigKey: !!config.cloudApiKey,
-      hasEnvCloudEndpoint: !!process.env.CLOUD_API_ENDPOINT,
-      hasEnvCloudKey: !!process.env.CLOUD_API_KEY,
-      hasEnvOpenaiEndpoint: !!process.env.OPENAI_BASE_URL,
-      hasEnvOpenaiKey: !!process.env.OPENAI_API_KEY,
-      finalEndpoint: this.cloudApiEndpoint ? this.cloudApiEndpoint.substring(0, 50) + '...' : 'MISSING',
-      finalKeyExists: !!this.cloudApiKey,
-      willUseMock: this.useMockApi
-    });
   }
 
   async generate({ skeleton, fileSpec, context }) {
     console.log(`[Generator] Processing ${fileSpec.path}`);
-
-    // 優先級 1: 使用 template（Architect 提供的完整代碼）
-    if (fileSpec.template && fileSpec.template.trim()) {
-      console.log(`[Generator] ✅ Using template (${fileSpec.template.length} chars)`);
-      return {
-        content: fileSpec.template,
-        tokensUsed: 0,
-        method: 'template'
-      };
-    }
 
     // 🔥 Advanced RAG Integration (LlamaIndex / LangChain)
     try {
@@ -76,7 +49,17 @@ class ScriptGenerator {
       console.warn(`[Generator] RAG Engine warning: ${err.message}`);
     }
 
-    // 優先級 2: 使用 contracts 結構（example2 格式）
+    // 優先級 1: 使用 template（Architect 明確指定的內容）
+    if (fileSpec.template && fileSpec.template.trim()) {
+      console.log(`[Generator] ✅ Using template (${fileSpec.template.length} chars)`);
+      return {
+        content: fileSpec.template,
+        tokensUsed: 0,
+        method: 'template'
+      };
+    }
+
+    // 優先級 2: 使用 contracts 結構（動態生成）
     const hasContracts = context.contracts && (
       (context.contracts.dom && context.contracts.dom.length > 0) ||
       (context.contracts.api && context.contracts.api.length > 0)
@@ -93,7 +76,7 @@ class ScriptGenerator {
       }
     }
 
-    // 優先級 3: AI 生成（無 contracts 也無 template）
+    // 優先級 3: AI 生成（無 template 也無 contracts）
     console.log(`[Generator] ⚠ No contracts or template - using AI generation`);
     console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
 
@@ -114,9 +97,24 @@ class ScriptGenerator {
       const { content, tokensUsed } = await callCloudAPI({
         endpoint: this.cloudApiEndpoint,
         apiKey: this.cloudApiKey,
-        systemPrompt: 'You are an expert JavaScript developer. Generate clean, modern JavaScript code following best practices. Output only the code.',
+        systemPrompt: `You are an expert JavaScript developer. Generate COMPLETE, WORKING JavaScript code.
+
+CRITICAL RULES:
+1. Generate FULL IMPLEMENTATIONS - never write "implementation omitted" or "..." or empty function bodies
+2. Every function MUST have complete working code inside
+3. config.js uses window.APP_CONFIG - it is a FRONTEND file, NEVER require() it in Node.js/Electron main process
+4. For Electron apps: main.js is Node.js (backend), public/script.js is browser (frontend) - they have DIFFERENT APIs
+5. Match DOM element IDs EXACTLY with the HTML - if HTML has id="todoInput", use getElementById('todoInput')
+6. Output ONLY raw code - no markdown, no \`\`\`javascript blocks, no explanations
+
+FORBIDDEN:
+- { /* ... implementation omitted ... */ }
+- { /* TODO */ }
+- // Implementation goes here
+- const config = require('./config') in Electron main.js
+- Mismatched DOM IDs between HTML and JS`,
         userPrompt: prompt,
-        maxTokens: 80000,  // Increased to 80k as requested
+        maxTokens: 16348,  // Increased to 16k as requested
         modelTier: modelTier // Pass tier to adapter
       });
 
@@ -125,7 +123,7 @@ class ScriptGenerator {
         throw new Error('API returned empty content (possibly blocked by safety filters)');
       }
 
-      const cleanContent = content
+      let cleanContent = content
         .replace(/^```javascript\n/, '')
         .replace(/^```js\n/, '')
         .replace(/^```\n/, '')
@@ -136,6 +134,9 @@ class ScriptGenerator {
         console.warn('[Generator] Content became empty after cleaning. Original length:', content.length);
         throw new Error('Content became empty after markdown removal');
       }
+
+      // ========== 🔧 POST-PROCESSING FIXES ==========
+      cleanContent = this.postProcessCode(cleanContent, fileSpec);
 
       return {
         content: cleanContent,
@@ -148,6 +149,63 @@ class ScriptGenerator {
       console.log('[Generator] Falling back to mock...');
       return this.generateWithMock({ skeleton, fileSpec, context });
     }
+  }
+
+  /**
+   * 🔧 後處理：修復 AI 生成的常見錯誤
+   */
+  postProcessCode(code, fileSpec) {
+    const filePath = fileSpec.path || '';
+    let fixed = code;
+    const fixes = [];
+
+    // 1. 修復 Electron main.js 中錯誤引用 config.js
+    if (filePath.includes('main.js') || filePath.endsWith('main.js')) {
+      // 移除 require('./config')
+      if (fixed.includes("require('./config')") || fixed.includes('require("./config")')) {
+        fixed = fixed.replace(/const\s+config\s*=\s*require\(['"]\.\/config['"]\);?\n?/g, '');
+        fixed = fixed.replace(/const\s*{\s*[\w,\s]+\s*}\s*=\s*require\(['"]\.\/config['"]\);?\n?/g, '');
+        fixes.push('Removed invalid require("./config") - config.js is a frontend file');
+      }
+      
+      // 移除 config.xxx 的使用
+      fixed = fixed.replace(/config\.enableDevTools/g, 'false');
+      fixed = fixed.replace(/config\.settings\.defaultWindowSize\.width/g, '800');
+      fixed = fixed.replace(/config\.settings\.defaultWindowSize\.height/g, '600');
+      fixed = fixed.replace(/config\.width/g, '800');
+      fixed = fixed.replace(/config\.height/g, '600');
+      
+      if (fixed !== code && !fixes.includes('Replaced config.xxx references')) {
+        fixes.push('Replaced config.xxx references with hardcoded values');
+      }
+    }
+
+    // 2. 檢測空函數體並警告
+    const emptyFunctionPattern = /(?:async\s+)?function\s+\w+\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\n?\s*)*\}/g;
+    const emptyArrowPattern = /\w+\s*=\s*(?:async\s+)?\([^)]*\)\s*=>\s*\{\s*(?:\/\/[^\n]*\n?\s*)*\}/g;
+    
+    if (emptyFunctionPattern.test(fixed) || emptyArrowPattern.test(fixed)) {
+      console.warn('[PostProcess] ⚠️ Detected empty function bodies in generated code');
+      fixes.push('WARNING: Empty function bodies detected - may need manual fix');
+    }
+
+    // 3. 確保沒有 markdown 殘留
+    fixed = fixed.replace(/^```\w*\n/gm, '');
+    fixed = fixed.replace(/\n```$/gm, '');
+
+    if (fixes.length > 0) {
+      console.log('[PostProcess] Applied fixes:', fixes);
+    }
+
+    return fixed;
+  }
+
+  /**
+   * 將 IPC channel 名稱轉換為駝峰式方法名
+   * 例如: 'add-task' -> 'addTask', 'get-suggestion' -> 'getSuggestion'
+   */
+  channelToMethodName(channel) {
+    return channel.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
   }
 
   async generateWithMock({ skeleton, fileSpec, context }) {
@@ -176,6 +234,106 @@ document.addEventListener('DOMContentLoaded', () => {
     const contracts = context.contracts || null;
 
     let prompt = `Generate JavaScript for: ${filePath}\n\n`;
+
+    // ========== 🔴 STEP 1: CONTRACTS FIRST (最重要，放最前面) ==========
+    if (contracts && (contracts.dom || contracts.api)) {
+      prompt += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      prompt += `🚨 CRITICAL: YOU MUST USE THESE EXACT IDs AND CHANNELS 🚨\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+      // DOM Elements
+      if (contracts.dom && contracts.dom.length > 0) {
+        // 🔥 修復：過濾邏輯太嚴格，改為寬鬆模式
+        // 如果有匹配當前檔案的 DOM，優先顯示；否則顯示全部
+        const relevantDom = contracts.dom.filter(dom => {
+          const consumers = dom.consumers || dom.accessedBy || [];
+          // 如果 consumers 為空（HTML 剛生成，還沒有 JS 訪問記錄），也顯示
+          return consumers.length === 0 || consumers.includes(filePath);
+        });
+
+        const domsToShow = relevantDom.length > 0 ? relevantDom : contracts.dom;
+        prompt += `📋 DOM ELEMENTS (from HTML):\n`;
+        domsToShow.forEach(dom => {
+          prompt += `   getElementById('${dom.id}')  // ${dom.type} - ${dom.purpose}\n`;
+        });
+        prompt += `\n❌ DO NOT use: 'data-input', 'action-button', 'response-display'\n`;
+        prompt += `✅ USE ONLY the IDs listed above\n\n`;
+      }
+
+      // IPC Channels
+      if (contracts.api && contracts.api.length > 0) {
+        // 🔥 修復：寬鬆過濾，如果 consumers 為空也顯示
+        const relevantApis = contracts.api.filter(api => {
+          const consumers = api.consumers || [];
+          const producers = api.producers || [];
+          // 顯示此檔案是 consumer 或 producer 的 API，或者 consumers 為空的 API
+          return consumers.length === 0 || 
+                 consumers.includes(filePath) || 
+                 producers.includes(filePath);
+        });
+
+        if (relevantApis.length > 0) {
+          const isElectronIPC = relevantApis.some(api => api.method === 'ipc-handle');
+          
+          if (isElectronIPC) {
+            prompt += `📡 IPC CHANNELS (Electron):\n\n`;
+            relevantApis.forEach(api => {
+              const methodName = this.channelToMethodName(api.endpoint);
+              
+              // 格式化 request schema
+              let requestStr = '';
+              if (api.requestSchema && api.requestSchema.properties) {
+                const params = Object.entries(api.requestSchema.properties).map(([key, val]) => {
+                  const required = api.requestSchema.required?.includes(key) ? '' : '?';
+                  return `${key}${required}: ${val.type}`;
+                }).join(', ');
+                requestStr = params || 'void';
+              } else {
+                requestStr = 'void';
+              }
+              
+              // 格式化 response schema
+              let responseStr = '';
+              if (api.responseSchema) {
+                if (api.responseSchema.type === 'array') {
+                  const itemProps = api.responseSchema.items?.properties;
+                  if (itemProps) {
+                    const fields = Object.keys(itemProps).join(', ');
+                    responseStr = `Array<{${fields}}>`;
+                  } else {
+                    responseStr = 'Array';
+                  }
+                } else if (api.responseSchema.type === 'object') {
+                  const fields = Object.keys(api.responseSchema.properties || {}).join(', ');
+                  responseStr = `{${fields}}`;
+                } else {
+                  responseStr = api.responseSchema.type;
+                }
+              } else {
+                responseStr = 'void';
+              }
+              
+              prompt += `   ✅ ${methodName}(${requestStr}) -> ${responseStr}\n`;
+              prompt += `      Purpose: ${api.purpose}\n`;
+              
+              // 顯示詳細的 request/response 格式
+              if (api.requestSchema && api.requestSchema.properties) {
+                prompt += `      Request: ${JSON.stringify(api.requestSchema.properties, null, 2).replace(/\n/g, '\n             ')}\n`;
+              }
+              if (api.responseSchema) {
+                const schemaStr = JSON.stringify(api.responseSchema, null, 2).replace(/\n/g, '\n             ');
+                prompt += `      Response: ${schemaStr}\n`;
+              }
+              prompt += `\n`;
+            });
+            prompt += `❌ DO NOT use: fetch() or HTTP requests\n`;
+            prompt += `✅ USE ONLY window.electronAPI methods with EXACT signatures above\n\n`;
+          }
+        }
+      }
+
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    }
 
     if (description) {
       prompt += `Description: ${description}\n\n`;
@@ -278,166 +436,6 @@ document.addEventListener('DOMContentLoaded', () => {
       prompt += `Additional Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
     }
 
-    // ← 新增：如果有 contracts，優先顯示
-    if (contracts) {
-      prompt += `=== CONTRACTS (MUST FOLLOW EXACTLY) ===\n`;
-
-      // ✨ DOM contracts - JavaScript 必須遵守的 DOM 查詢規則
-      if (contracts.dom && contracts.dom.length > 0) {
-        const relevantDom = contracts.dom.filter(dom => {
-          const consumers = dom.consumers || dom.accessedBy || [];
-          return consumers.includes(filePath);
-        });
-
-        if (relevantDom.length > 0) {
-          prompt += `\n⚠️ CRITICAL: DOM ELEMENTS GUARANTEED BY HTML ⚠️\n`;
-          prompt += `These elements are GUARANTEED to exist in the HTML:\n\n`;
-
-          relevantDom.forEach((dom, idx) => {
-            prompt += `DOM Contract #${idx + 1}: ${dom.description || dom.purpose || `Element: ${dom.id}`}\n`;
-
-            // Support simple format: { id, type, purpose, accessedBy }
-            if (dom.id) {
-              prompt += `  Element ID: #${dom.id}\n`;
-              prompt += `  Element Type: <${dom.type}>\n`;
-            }
-
-            // Support complex format: { templateId, containerId, requiredElements }
-            if (dom.templateId) {
-              prompt += `  Template: #${dom.templateId}\n`;
-            }
-            if (dom.containerId) {
-              prompt += `  Container: #${dom.containerId}\n`;
-            }
-
-            if (dom.requiredElements && dom.requiredElements.length > 0) {
-              prompt += `  Available Elements:\n`;
-              dom.requiredElements.forEach(elem => {
-                prompt += `    • ${elem.selector} <${elem.element}> - ${elem.purpose}\n`;
-                if (elem.attributes) {
-                  prompt += `      Has attributes: ${JSON.stringify(elem.attributes)}\n`;
-                }
-              });
-            }
-            prompt += `\n`;
-          });
-
-          prompt += `DEFENSIVE PROGRAMMING RULES:\n`;
-          prompt += `1. ALWAYS add null checks after querySelector:\n`;
-          prompt += `   const elem = container.querySelector('.status-badge');\n`;
-          prompt += `   if (!elem) {\n`;
-          prompt += `     console.error('Required element .status-badge not found');\n`;
-          prompt += `     return; // or handle gracefully\n`;
-          prompt += `   }\n`;
-          prompt += `2. Use the EXACT selectors listed above\n`;
-          prompt += `3. Log meaningful errors if elements are missing\n`;
-          prompt += `4. Never assume elements exist without checking\n\n`;
-        }
-      }
-
-      // ============ API 強制規範 (簡潔版) ============
-      prompt += `\n🔒 CRITICAL API RULES - MANDATORY:\n`;
-      prompt += `${API_STANDARDS.STANDARD_JS_HEADER}\n`;
-      prompt += `❌ FORBIDDEN (will cause errors):\n`;
-      prompt += `   - const API_URL = 'http://localhost:3000/api'  // NO hardcoded ports!\n`;
-      prompt += `   - const API_URL = process.env.REACT_APP_API_URL  // NO process.env in browser!\n`;
-      prompt += `   - fetch('/api/weather/' + city)  // NO path parameters if contract uses query!\n`;
-      prompt += `✅ REQUIRED:\n`;
-      prompt += `   - const API_BASE_URL = window.APP_CONFIG?.API_BASE_URL || '/api';\n`;
-      prompt += `   - fetch(\`\${API_BASE_URL}/weather?city=\${encodeURIComponent(city)}\`)  // Use query params\n`;
-      prompt += `   - Always check if endpoint uses query params (?) or path params (/)\n\n`;
-
-      // API contracts - 增強格式說明
-      if (contracts.api && contracts.api.length > 0) {
-        const relevantApis = contracts.api.filter(api =>
-          api.consumers.includes(filePath) || api.producers.includes(filePath)
-        );
-
-        if (relevantApis.length > 0) {
-          prompt += `📝 API Contract (MUST follow exactly):\n`;
-          relevantApis.forEach(api => {
-            prompt += `\n  Endpoint: ${api.endpoint}\n`;
-            prompt += `  Description: ${api.description}\n`;
-
-            // 分析 endpoint 格式
-            const hasQueryParams = api.request && api.request.query;
-            const hasPathParams = api.endpoint.includes(':') || api.endpoint.includes('<');
-
-            if (hasQueryParams) {
-              prompt += `  ⚠️  Uses QUERY PARAMETERS (e.g., /api/weather?city=Tokyo)\n`;
-              prompt += `  Request Query:\n`;
-              Object.entries(api.request.query).forEach(([key, value]) => {
-                prompt += `    - ${key}: ${value}\n`;
-              });
-              prompt += `  Example: fetch(\`\${API_BASE_URL}/weather?city=\${encodeURIComponent(cityName)}\`)\n`;
-            }
-
-            if (hasPathParams) {
-              prompt += `  ⚠️  Uses PATH PARAMETERS (e.g., /api/weather/:city)\n`;
-              prompt += `  Example: fetch(\`\${API_BASE_URL}/weather/\${encodeURIComponent(cityName)}\`)\n`;
-            }
-
-            if (api.response) {
-              prompt += `  Response Fields (use EXACT names):\n`;
-              const responseStr = JSON.stringify(api.response, null, 4);
-              prompt += `    ${responseStr.split('\n').join('\n    ')}\n`;
-            }
-          });
-          prompt += `\n⚠️  CRITICAL: Use exact field names from contract. Wrong field = app breaks!\n\n`;
-        }
-      }
-
-      // Event contracts
-      if (contracts.events && contracts.events.length > 0) {
-        const relevantEvents = contracts.events.filter(evt =>
-          evt.emitters.some(e => e.includes(filePath)) ||
-          evt.listeners.some(l => l.includes(filePath))
-        );
-
-        if (relevantEvents.length > 0) {
-          prompt += `Custom Events:\n`;
-          relevantEvents.forEach(evt => {
-            prompt += `  ${evt.name}: ${JSON.stringify(evt.payload)}\n`;
-          });
-          prompt += `\n`;
-        }
-      }
-
-      // Storage contracts
-      if (contracts.storage && contracts.storage.length > 0) {
-        const relevantStorage = contracts.storage.filter(store =>
-          store.readers.some(r => r.includes(filePath)) ||
-          store.writers.some(w => w.includes(filePath))
-        );
-
-        if (relevantStorage.length > 0) {
-          prompt += `Storage:\n`;
-          relevantStorage.forEach(store => {
-            prompt += `  ${store.key} (${store.type}): ${JSON.stringify(store.schema)}\n`;
-          });
-          prompt += `\n`;
-        }
-      }
-
-      // Module contracts
-      if (contracts.modules && contracts.modules.length > 0) {
-        const relevantModules = contracts.modules.filter(mod =>
-          mod.importers.includes(filePath)
-        );
-
-        if (relevantModules.length > 0) {
-          prompt += `Imported Modules:\n`;
-          relevantModules.forEach(mod => {
-            prompt += `  ${mod.name} from ${mod.file}\n`;
-            prompt += `  Exports: ${JSON.stringify(mod.exports)}\n`;
-          });
-          prompt += `\n`;
-        }
-      }
-
-      prompt += `=== END CONTRACTS ===\n\n`;
-    }
-
     // Include HTML structure if available
     const htmlFiles = completedFiles.filter(f => f.language === 'html');
     if (htmlFiles.length > 0) {
@@ -468,6 +466,33 @@ document.addEventListener('DOMContentLoaded', () => {
     prompt += `    module.exports = { functionName1, functionName2, ... };\n`;
     prompt += `}\n`;
     prompt += `DO NOT use 'export default' or 'export const'. This ensures the code is testable without breaking the browser.\n\n`;
+
+    // ========== 🔴 FINAL MANDATORY RULES (CANNOT BE IGNORED) ==========
+    prompt += `\n🔴🔴🔴 FINAL MANDATORY RULES - READ CAREFULLY 🔴🔴🔴\n\n`;
+    
+    // 針對 Electron main.js 的特殊規則
+    if (filePath.includes('main.js') || filePath.endsWith('main.js')) {
+      prompt += `⛔ ELECTRON MAIN PROCESS RULES (you are generating main.js):\n`;
+      prompt += `1. NEVER write: const config = require('./config') - config.js uses window.APP_CONFIG which doesn't exist in Node.js\n`;
+      prompt += `2. NEVER write: if (config.enableDevTools) - config object doesn't have this property\n`;
+      prompt += `3. ALWAYS implement FULL function bodies - empty functions like handleGetTasks() { } will crash the app\n`;
+      prompt += `4. Use hardcoded values: width: 800, height: 600 (NOT config.width)\n`;
+      prompt += `5. For IPC handlers, write COMPLETE implementations with fs.readFile/writeFile\n\n`;
+    }
+    
+    // 針對 renderer script 的規則
+    if (filePath.includes('public/') || filePath.includes('renderer')) {
+      prompt += `⛔ RENDERER PROCESS RULES (you are generating frontend JavaScript):\n`;
+      prompt += `1. Use window.electronAPI (exposed by preload.js) for IPC calls\n`;
+      prompt += `2. Match DOM IDs EXACTLY with index.html - if HTML has id="taskInput", use getElementById('taskInput')\n`;
+      prompt += `3. ALWAYS implement FULL function bodies with real logic\n\n`;
+    }
+    
+    prompt += `⛔ UNIVERSAL RULES (apply to ALL files):\n`;
+    prompt += `1. Every function MUST have COMPLETE working code inside - no empty bodies\n`;
+    prompt += `2. NO comments like "// implementation omitted" or "// TODO"\n`;
+    prompt += `3. NO placeholder code - write real, working implementations\n`;
+    prompt += `4. If you don't know the exact implementation, make reasonable assumptions\n\n`;
 
     prompt += `Return ONLY the code, no markdown.`;
 

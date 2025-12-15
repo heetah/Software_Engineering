@@ -1,0 +1,201 @@
+/* ==================================================================
+ * Agent Log UI Styles
+ * ==================================================================
+ */
+
+.log-container {
+    margin-top: 12px;
+    padding: 0;
+}
+
+.log-details {
+    border-radius: 12px;
+    background: var(--color-bg);
+    box-shadow: var(--shadow-concave);
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.log-summary {
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text);
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+}
+
+.log-summary::before {
+    content: '▶';
+    font-size: 10px;
+    transition: transform 0.3s ease;
+    color: var(--color-accent-1);
+}
+
+.log-details[open] .log-summary::before {
+    transform: rotate(90deg);
+}
+
+.log-summary:hover {
+    color: var(--color-accent-1);
+}
+
+.log-content {
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 12px;
+    background: #000000;
+    color: #ffffff;
+    font-family: 'Consolas', 'Courier New', monospace;
+    scrollbar-width: thin;
+    border-top: 1px solid #333;
+}
+
+.log-content::-webkit-scrollbar {
+    width: 8px;
+    background: #1e1e1e;
+}
+
+.log-content::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 4px;
+}
+
+.log-entry {
+    padding: 6px 10px;
+    margin-bottom: 4px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+    animation: fadeInLog 0.3s ease-out;
+}
+
+@keyframes fadeInLog {
+    from {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.log-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.log-file-icon {
+    font-size: 13px;
+    flex-shrink: 0;
+    opacity: 0.8;
+}
+
+.log-text {
+    flex: 1;
+    color: #e0e0e0;
+}
+
+/* Phase entries - highlighted */
+.log-entry--phase {
+    background: rgba(134, 146, 253, 0.2);
+    border-left: 3px solid #8692fd;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+html.dark-mode .log-entry--phase {
+    background: rgba(240, 197, 77, 0.2);
+    border-left-color: #f0c54d;
+}
+
+/* Layer processing */
+.log-entry--layer {
+    background: rgba(255, 255, 255, 0.05);
+    font-style: italic;
+    color: #bbbbbb;
+}
+
+/* Success (file generated) */
+.log-entry--success {
+    background: rgba(76, 175, 80, 0.15);
+    color: #81c784;
+}
+
+html.dark-mode .log-entry--success {
+    color: #a5d6a7;
+}
+
+/* Agent entries */
+.log-entry--agent {
+    background: rgba(156, 39, 176, 0.15);
+    color: #e1bee7;
+}
+
+.log-entry--coordinator {
+    background: rgba(255, 152, 0, 0.15);
+    color: #ffe0b2;
+}
+
+.log-entry--architect {
+    background: rgba(33, 150, 243, 0.15);
+    color: #bbdefb;
+}
+
+.log-entry--verifier {
+    background: rgba(76, 175, 80, 0.15);
+    color: #c8e6c9;
+}
+
+.log-entry--tester {
+    background: rgba(255, 87, 34, 0.15);
+    color: #ffccbc;
+}
+
+/* Config files */
+.log-entry--config {
+    background: rgba(158, 158, 158, 0.15);
+    font-size: 11px;
+    color: #cfcfcf;
+}
+
+/* Contracts */
+.log-entry--contracts {
+    background: rgba(63, 81, 181, 0.15);
+    color: #c5cae9;
+}
+
+/* Warning */
+.log-entry--warning {
+    background: rgba(255, 193, 7, 0.15);
+    border-left: 3px solid #ffa726;
+    color: #ffcc80;
+}
+
+html.dark-mode .log-entry--warning {
+    color: #ffe0b2;
+}
+
+/* Info (default) */
+.log-entry--info {
+    background: transparent;
+    color: #bdbdbd;
+    font-size: 11px;
+}
+
+/* Hover effect */
+.log-entry:hover {
+    transform: translateX(3px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}

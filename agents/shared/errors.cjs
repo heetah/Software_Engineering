@@ -15,7 +15,7 @@ const ERROR_CODES = {
   FILE_TOO_LARGE: 'FILE_TOO_LARGE',
   INVALID_PATH: 'INVALID_PATH',
   UNSUPPORTED_FORMAT: 'UNSUPPORTED_FORMAT',
-  
+
   // Server errors (5xx)
   SERVER_ERROR: 'SERVER_ERROR',
   OCR_FAILED: 'OCR_FAILED',
@@ -42,10 +42,10 @@ function createErrorResponse(code, message, requestId = null, details = {}) {
       ...details
     }
   };
-  
+
   // Log the error
   logger.error(message, requestId, { code, ...details });
-  
+
   return response;
 }
 
@@ -69,7 +69,7 @@ function createSuccessResponse(data, requestId = null) {
  */
 function errorHandlerMiddleware(err, req, res, next) {
   const requestId = req.requestId || logger.generateRequestId();
-  
+
   // Handle known error types
   if (err.name === 'ValidationError') {
     return res.status(400).json(
@@ -81,7 +81,7 @@ function errorHandlerMiddleware(err, req, res, next) {
       )
     );
   }
-  
+
   if (err.name === 'SyntaxError' && err.status === 400) {
     return res.status(400).json(
       createErrorResponse(
@@ -91,19 +91,16 @@ function errorHandlerMiddleware(err, req, res, next) {
       )
     );
   }
-  
+
   // Default server error
-  logger.error('Unhandled error', requestId, { 
-    error: err.message, 
-    stack: err.stack 
+  logger.error('Unhandled error', requestId, {
+    error: err.message,
+    stack: err.stack
   });
-  
+
   return res.status(500).json(
     createErrorResponse(
-      ERROR_CODES.SERVER_ERROR,
-      process.env.NODE_ENV === 'production' 
-        ? 'Internal server error' 
-        : err.message,
+      ERROR_CODES.SERVER_ERROR, err.message,
       requestId
     )
   );

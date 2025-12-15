@@ -13,9 +13,6 @@ import { AgentError } from "../utils/errors.js";
 import { apiProviderManager } from "../utils/api-provider-manager.js";
 dotenv.config();
 
-const BASE_URL = process.env.BASE_URL;
-const API_KEY = process.env.API_KEY;
-
 export default class BaseAgent {
   constructor(role, format, logicalName, options = {}) {
     this.role = role; // 角色
@@ -23,16 +20,55 @@ export default class BaseAgent {
     this.logicalName = logicalName; // 邏輯模型
     this.temperature = 0.3; // 控制參數
     this.maxTokens = undefined; // 可用的最大 tokens，由子類設定
-    this.model = options.model; // Explicit model selection
+
+    // 解析 options 中的 API Key 和 Provider 設定
+    let { apiKey: optionsApiKey, baseUrl: optionsBaseUrl, llmProvider, apiKeys } = options;
+    this.apiKeys = apiKeys; // Store apiKeys for fallback logic
+    let resolvedApiKey = optionsApiKey;
+    let resolvedBaseUrl = optionsBaseUrl;
+    let isUserKeyProvided = false;
+
+    const provider = (llmProvider || "auto").toLowerCase();
+
+    // 如果沒有直接提供 apiKey/baseUrl，嘗試從 llmProvider / apiKeys 解析
+    if (!resolvedApiKey && (llmProvider || apiKeys)) {
+      if (provider === 'gemini') {
+        if (apiKeys?.gemini) {
+          resolvedApiKey = apiKeys.gemini;
+          resolvedBaseUrl = "https://generativelanguage.googleapis.com/v1beta";
+          isUserKeyProvided = true;
+        }
+      } else if (provider === 'openai') {
+        if (apiKeys?.openai) {
+          resolvedApiKey = apiKeys.openai;
+          resolvedBaseUrl = "https://api.openai.com/v1";
+          isUserKeyProvided = true;
+        }
+      } else {
+        // Auto mode
+        if (apiKeys?.openai) {
+          resolvedApiKey = apiKeys.openai;
+          resolvedBaseUrl = "https://api.openai.com/v1";
+          isUserKeyProvided = true;
+        } else if (apiKeys?.gemini) {
+          resolvedApiKey = apiKeys.gemini;
+          resolvedBaseUrl = "https://generativelanguage.googleapis.com/v1beta";
+          isUserKeyProvided = true;
+        }
+      }
+    }
 
     // 支援自定義 API 端點和 Key（用於使用不同的 API 服務）
-    this.baseUrl = options.baseUrl || BASE_URL;
-    this.apiKey = options.apiKey || API_KEY;
-    this.llmProvider = options.llmProvider; // 儲存 provider 選擇
+    this.baseUrl = resolvedBaseUrl || config.api.baseUrl;
+    this.apiKey = resolvedApiKey || config.api.apiKey;
 
     // 重試配置
     this.maxRetries = options.maxRetries || config.api.maxRetries;
     this.retryDelay = options.retryDelay || config.api.retryDelay;
+
+    // 是否繞過全局 API Provider Manager (例如當有特定的 API Key 時)
+    // 如果明確解析出了使用者提供的 Key，自動設為 true
+    this.bypassProviderManager = options.bypassProviderManager || isUserKeyProvided || false;
   }
 
   /**
@@ -52,14 +88,12 @@ export default class BaseAgent {
    */
   async _executeAPI(payload, retries = this.maxRetries) {
     // 如果配置了多 API 提供者，使用管理器（自動處理故障轉移）
-    if (apiProviderManager.providers.length > 0) {
+    // 除非明確要求繞過 (例如使用特定的 API Key)
+    if (apiProviderManager.providers.length > 0 && !this.bypassProviderManager) {
       try {
         const res = await apiProviderManager.executeAPI(payload, {
           temperature: payload.temperature || this.temperature,
-          maxTokens: payload.max_tokens || this.maxTokens,
-          apiKey: this.apiKey !== process.env.API_KEY ? this.apiKey : undefined, // 只有當 apiKey 被覆蓋時才傳遞
-          provider: this.llmProvider, // 傳遞指定的 provider (e.g. 'gemini')
-          model: this.model // Pass explicit model
+          maxTokens: payload.max_tokens || this.maxTokens
         });
         return res;
       } catch (err) {
@@ -105,9 +139,15 @@ export default class BaseAgent {
    * @returns {Promise<Object>} API 響應
    */
   async _executeAPIFallback(payload, retries = this.maxRetries) {
+    // 判斷是否為 Gemini API
+    const isGemini = this.baseUrl.includes('goog') || this.baseUrl.includes('gemini');
+
+    if (isGemini) {
+      return await this._executeGeminiFallback(payload, retries);
+    }
+
     // 確保 payload 包含 model 參數（OpenAI API 必需）
-    // Prioritize explicit model in payload, then agent instance model, then env var
-    const model = payload.model || this.model || process.env.OPENAI_MODEL || process.env.MODEL || 'gpt-4o';
+    const model = payload.model || 'gpt-4o-mini';
 
     // 構建完整的請求負載
     const requestPayload = {
@@ -162,13 +202,131 @@ export default class BaseAgent {
           }
 
           await this._wait(delay);
+          await this._wait(delay);
           continue;
+        }
+
+        // Auto-failover: check for Auth errors (401/403) from OpenAI and switch to Gemini if available
+        const isAuthError = statusCode === 401 || statusCode === 403;
+        if (isAuthError && this.baseUrl.includes('api.openai.com')) {
+          const geminiKey = this.apiKeys?.gemini || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+          if (geminiKey) {
+            console.warn(`  ${this.role} OpenAI authentication failed (${statusCode}), switching to Gemini fallback...`);
+            this.apiKey = geminiKey;
+            this.baseUrl = "https://generativelanguage.googleapis.com/v1beta";
+            return await this._executeGeminiFallback(payload, retries);
+          }
         }
 
         // 對於其他錯誤，使用標準的指數退避
         // 指數退避：等待時間 = 基礎延遲 * 2^嘗試次數
         const delay = this.retryDelay * Math.pow(2, attempt);
         console.warn(`  ${this.role} API call failed (${statusCode || 'unknown error'}), retrying after ${delay}ms (${attempt + 1}/${retries})...`);
+        await this._wait(delay);
+      }
+    }
+  }
+
+  /**
+   * Gemini API 的 fallback 實現
+   */
+  async _executeGeminiFallback(payload, retries = this.maxRetries) {
+    // 準備模型名稱 (將 OpenAI 模型映射到 Gemini，如果需要)
+    let model = payload.model || 'gemini-2.5-flash';
+    if (model === 'gpt-4o-mini' || model.includes('gpt')) {
+      model = 'gemini-2.5-flash';
+    }
+
+    if (!model.includes('/')) {
+      model = `models/${model}`; // 確保格式正確
+    }
+
+    // 轉換 Messages 到 Content
+    let contents = [];
+    const messages = payload.messages || [];
+
+    for (const msg of messages) {
+      if (msg.role === 'system') {
+        // 合併 system 到第一個 user message，因為 Gemini REST API 有時對 system instruction 支援不同
+        if (contents.length === 0) {
+          contents.push({ role: 'user', parts: [{ text: msg.content }] });
+        } else {
+          // 這裡簡化處理，通常 system 會在最前面。
+          // 如果已經有 user message，就合併到那個 user message 前面
+          const firstUser = contents.find(c => c.role === 'user');
+          if (firstUser) {
+            firstUser.parts[0].text = `${msg.content}\n\n${firstUser.parts[0].text}`;
+          }
+        }
+      } else {
+        contents.push({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: msg.content }]
+        });
+      }
+    }
+
+    // 如果沒有內容（例如只有 system prompt 且被合併了但沒 user prompt... 不太可能，但防禦一下）
+    if (contents.length === 0) {
+      contents.push({ role: 'user', parts: [{ text: 'Hello' }] });
+    }
+
+    const startUrl = this.baseUrl.endsWith('/') ? this.baseUrl.slice(0, -1) : this.baseUrl;
+    const url = `${startUrl}/${model}:generateContent?key=${this.apiKey}`;
+
+    const requestPayload = {
+      contents: contents,
+      generationConfig: {
+        temperature: payload.temperature !== undefined ? payload.temperature : this.temperature,
+        maxOutputTokens: payload.max_tokens || this.maxTokens
+      }
+    };
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await axios.post(url, requestPayload, {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 60000 // Gemini 有時較慢
+        });
+
+        // 轉換回應格式為 OpenAI 風格
+        const candidate = res.data.candidates?.[0];
+        const content = candidate?.content?.parts?.[0]?.text || '';
+        const usage = res.data.usageMetadata || {};
+
+        return {
+          data: {
+            choices: [{
+              message: {
+                role: 'assistant',
+                content: content
+              },
+              finish_reason: 'stop'
+            }],
+            usage: {
+              prompt_tokens: usage.promptTokenCount || 0,
+              completion_tokens: usage.candidatesTokenCount || 0,
+              total_tokens: usage.totalTokenCount || 0
+            }
+          }
+        };
+
+      } catch (err) {
+        // 錯誤處理邏輯與 _executeAPIFallback 類似
+        const statusCode = err?.response?.status;
+        if (attempt === retries) {
+          throw handleAPIError(err, this.role);
+        }
+
+        if (statusCode === 429) {
+          const delay = 60000;
+          console.warn(`  ${this.role} [Gemini] Rate limited (429), waiting ${delay / 1000}s...`);
+          await this._wait(delay);
+          continue;
+        }
+
+        const delay = this.retryDelay * Math.pow(2, attempt);
+        console.warn(`  ${this.role} [Gemini] API call failed (${statusCode}), retrying after ${delay}ms...`);
         await this._wait(delay);
       }
     }

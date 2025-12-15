@@ -105,7 +105,7 @@ def validate_test_account(username, password):
 # ===== Helper Functions =====
 def get_server_url():
     """Get full server URL"""
-    return f"${ protocol}://{host}:{port}"
+    return f"${protocol}://{host}:{port}"
 
 def is_production():
     """Check if running in production mode"""
@@ -129,23 +129,27 @@ def is_production():
     const configFiles = [];
 
     // 檢查是否有 JavaScript/TypeScript 文件
-    const hasJsFiles = coderInstructions.files.some(f => 
+    const hasJsFiles = coderInstructions.files.some(f =>
       f.type === 'javascript' || f.type === 'typescript' || f.path.endsWith('.js') || f.path.endsWith('.ts')
     );
-    
+
     // 檢查是否有後端伺服器文件（Express, Node.js 等）
     const hasBackendServer = coderInstructions.files.some(f => {
       const path = f.path || '';
       const content = f.template || f.content || '';
+
+      // Ensure content is a string
+      const contentStr = typeof content === 'string' ? content : String(content);
+
       return (
         path.includes('server.js') ||
-        path.includes('index.js') && !path.includes('public/') ||
-        content.includes('express') ||
-        content.includes('app.listen') ||
-        content.includes('require(\'express\')')
+        (path.includes('index.js') && !path.includes('public/')) ||
+        contentStr.includes('express') ||
+        contentStr.includes('app.listen') ||
+        contentStr.includes("require('express')")
       );
     });
-    
+
     // 如果有 JS 文件，生成 config.js
     if (hasJsFiles) {
       // 判斷是前端還是後端配置
@@ -193,10 +197,10 @@ module.exports = {
     }
 
     // 檢查是否有 Python 文件 → 生成 config.py
-    const hasPythonFiles = coderInstructions.files.some(f => 
+    const hasPythonFiles = coderInstructions.files.some(f =>
       f.type === 'python' || f.path.endsWith('.py')
     );
-    
+
     if (hasPythonFiles && projectConfig && projectConfig.backend) {
       const backendConfig = this.generateBackendConfig(projectConfig);
       if (backendConfig) {

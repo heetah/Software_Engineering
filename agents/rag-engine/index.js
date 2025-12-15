@@ -6,18 +6,13 @@
 import fs from 'fs';
 import path from 'path';
 import { Document, VectorStoreIndex, Settings } from "llamaindex";
+import { OpenAIEmbedding } from "@llamaindex/openai";
 import { fileURLToPath } from 'url';
 
 // Helper for __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configure LlamaIndex defaults
-// LlamaIndex v0.12+ automatically picks up OPENAI_API_KEY from process.env
-// We manually forward CLOUD_API_KEY if needed
-if (!process.env.OPENAI_API_KEY && process.env.CLOUD_API_KEY) {
-    process.env.OPENAI_API_KEY = process.env.CLOUD_API_KEY;
-}
 
 class RagEngine {
     constructor() {
@@ -41,12 +36,18 @@ class RagEngine {
         // Dynamic API Configuration
         if (cloudApiKey) {
             // LlamaIndex relies on process.env.OPENAI_API_KEY by default
-            // We inject it here to ensure it works even if .env is missing/different
-            // Note: If using Gemini, this might need specific handling if we had the Gemini Embedding class
-            // For now, we assume if Key is provided, we try to use it for OpenAI-compatible endpoints or default.
-
             process.env.OPENAI_API_KEY = cloudApiKey;
-            // console.log('[RagEngine] Set OPENAI_API_KEY from user config');
+
+            // Explicitly set the embedding model to fix the warning
+            try {
+                Settings.embedModel = new OpenAIEmbedding({
+                    apiKey: cloudApiKey,
+                    model: "text-embedding-3-small" // Efficient and capable model
+                });
+                console.log('[RagEngine] Embedding model configured: text-embedding-3-small');
+            } catch (err) {
+                console.warn('[RagEngine] Failed to configure embedding model:', err.message);
+            }
         }
 
         // If user is using Gemini explicitly, we might warn about Embedding support
@@ -143,7 +144,7 @@ class RagEngine {
      * @param {number} topK 
      * @returns {Promise<string>} Combined context chunks
      */
-    async query(queryText, topK = 2) {
+    async query(queryText, topK = 5) {
         if (!this.isInitialized || !this.index) {
             return "";
         }

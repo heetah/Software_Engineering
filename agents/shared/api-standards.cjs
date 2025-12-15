@@ -6,35 +6,30 @@
 
 module.exports = {
   // ==================== 核心規則 ====================
-  
+
   /**
    * 規則 1：API URL 配置模式
    * 強制使用運行時配置檔模式
    */
   API_URL_PATTERN: 'runtime-config',
-  
+
   /**
    * 規則 2：禁止的寫法（會觸發錯誤）
    */
   FORBIDDEN_PATTERNS: [
     {
       pattern: /const\s+\w+\s*=\s*['"]https?:\/\/localhost:\d+/,
-      error: '❌ 禁止硬編碼 localhost 端口！請使用 window.APP_CONFIG.API_BASE_URL',
+      error: 'It is forbidden to hardcode the complete URL in fetch！Please use API_BASE_URL variable',
       example: 'const API_BASE_URL = window.APP_CONFIG.API_BASE_URL;'
     },
     {
-      pattern: /fetch\s*\(\s*['"]https?:\/\/localhost/,
-      error: '❌ 禁止在 fetch 中硬編碼完整 URL！請使用 API_BASE_URL 變量',
-      example: 'fetch(`${API_BASE_URL}/endpoint`)'
-    },
-    {
       pattern: /process\.env\.(REACT_APP_|VUE_APP_|VITE_)/,
-      error: '❌ 瀏覽器中無法使用 process.env！請使用 window.APP_CONFIG',
+      error: 'Browser cannot use process.env！Please use window.APP_CONFIG',
       example: 'const API_URL = window.APP_CONFIG.API_BASE_URL;'
     },
     {
       pattern: /import\.meta\.env\./,
-      error: '⚠️  import.meta.env 需要構建工具支援。簡單項目請使用 window.APP_CONFIG',
+      error: 'import.meta.env needs build tool support。Simple projects please use window.APP_CONFIG',
       example: 'const API_URL = window.APP_CONFIG.API_BASE_URL;'
     }
   ],
@@ -45,14 +40,14 @@ module.exports = {
   REQUIRED_CONFIG_FILE: {
     filename: 'config.js',
     content: `/**
- * 運行時配置文件
- * 部署時修改此文件以切換環境
+ * Runtime configuration file
+ * Modify this file when deploying to switch environments
  */
 window.APP_CONFIG = {
-  // 生產環境（預設）：使用相對路徑
+  // Production environment (default): use relative path
   API_BASE_URL: '/api',
   
-  // 開發環境（前後端分離時）：取消註解下面這行
+  // Development environment (when frontend and backend are separated): uncomment the following line
   // API_BASE_URL: 'http://localhost:5000/api',
   
   ENVIRONMENT: 'production'
@@ -65,14 +60,14 @@ window.APP_CONFIG = {
    * 規則 4：JavaScript 文件的標準開頭
    */
   STANDARD_JS_HEADER: `/**
- * 從配置文件讀取 API 基礎 URL
- * 不要直接修改這個變量，而是修改 config.js
+ * Read API base URL from config file
+ * Do not modify this variable directly, instead modify config.js
  */
 const API_BASE_URL = window.APP_CONFIG?.API_BASE_URL || '/api';
 
-// 安全檢查：確保配置已載入
+// Safety check: ensure config is loaded
 if (!window.APP_CONFIG) {
-  console.error('❌ Error: config.js not loaded! Please include config.js in HTML first');
+  console.error(' Error: config.js not loaded! Please include config.js in HTML first');
 }
 `,
 
@@ -82,22 +77,22 @@ if (!window.APP_CONFIG) {
   BACKEND_REQUIREMENTS: {
     staticFileRoutes: {
       flask: `
-# === 靜態文件服務（必須） ===
+# === Static file service (must) ===
 from flask import send_from_directory
 import os
 
 @app.route('/')
 def index():
-    """提供 index.html"""
+    """Provide index.html"""
     return send_from_directory(os.path.dirname(__file__), 'index.html')
 
 @app.route('/<path:filename>')
 def serve_static(filename):
-    """提供其他靜態文件（CSS、JS 等）"""
+    """Provide CSS, JS, etc."""
     return send_from_directory(os.path.dirname(__file__), filename)
 `,
       express: `
-// === 靜態文件服務（必須） ===
+// === Static file service (must) ===
 const express = require('express');
 const path = require('path');
 
@@ -107,9 +102,9 @@ app.get('/', (req, res) => {
 });
 `
     },
-    
+
     apiPrefix: '/api',
-    note: '所有 API 路由必須以 /api 開頭，靜態文件路由必須能訪問到所有 HTML/CSS/JS'
+    note: 'All API routes must start with /api, static file routes must be able to access all HTML/CSS/JS'
   },
 
   /**
@@ -118,22 +113,22 @@ app.get('/', (req, res) => {
   README_REQUIREMENTS: {
     sections: [
       {
-        title: '## 環境切換',
+        title: '## Environment Switching',
         content: `
-### 開發環境（前後端分離）
-1. 修改 \`config.js\`：
+### Development Environment (Separate Frontend and Backend)
+1. Modify \`config.js\`：
    \`\`\`javascript
    API_BASE_URL: 'http://localhost:5000/api',
    \`\`\`
-2. 分別啟動前後端服務器
+2. Start both frontend and backend servers
 
-### 生產環境（一體部署）
-1. 保持 \`config.js\` 預設配置：
+### Production Environment (Monolithic Deployment)
+1. Keep \`config.js\` default configuration：
    \`\`\`javascript
    API_BASE_URL: '/api',
    \`\`\`
-2. 只需啟動後端服務器
-3. 訪問 \`http://localhost:5000\`
+2. Start only backend server
+3. Visit \`http://localhost:5000\`
 `
       }
     ]
@@ -145,27 +140,27 @@ app.get('/', (req, res) => {
   VALIDATION_RULES: [
     {
       check: 'hasConfigFile',
-      description: '必須生成 config.js 文件',
+      description: 'Must generate config.js file',
       required: true
     },
     {
       check: 'usesWindowAppConfig',
-      description: 'JavaScript 必須使用 window.APP_CONFIG',
+      description: 'JavaScript must use window.APP_CONFIG',
       required: true
     },
     {
       check: 'noHardcodedUrls',
-      description: '不能有硬編碼的 localhost URL',
+      description: 'Cannot have hardcoded localhost URL',
       required: true
     },
     {
       check: 'backendHasStaticRoutes',
-      description: '後端必須提供靜態文件路由',
+      description: 'Backend must provide static file routes',
       required: true
     },
     {
       check: 'htmlLoadsConfigFirst',
-      description: 'HTML 必須先載入 config.js',
+      description: 'HTML must load config.js first',
       required: true
     }
   ]

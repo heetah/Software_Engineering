@@ -10,31 +10,15 @@ import { tokenTracker } from "../utils/token-tracker.js";
 dotenv.config();
 
 export default class ArchitectAgent extends BaseAgent {
-  constructor(options = {}) {
+  constructor() {
     // 使用 OpenAI API（從環境變數讀取），支援 CLOUD_API 作為 fallback
-    let apiKey = process.env.OPENAI_API_KEY || process.env.CLOUD_API_KEY;
-
-    // 如果傳入 options 中有 apiKeys，優先使用
-    if (options.apiKeys?.openai) {
-      apiKey = options.apiKeys.openai;
-    }
-
-    let baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-
-    if (!process.env.OPENAI_BASE_URL && process.env.CLOUD_API_ENDPOINT) {
-      if (process.env.CLOUD_API_ENDPOINT.includes('generativelanguage.googleapis.com')) {
-        baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
-      } else {
-        baseUrl = process.env.CLOUD_API_ENDPOINT;
-      }
-    }
+    const apiKey = process.env.OPENAI_API_KEY || process.env.CLOUD_API_KEY;
+    const baseUrl = process.env.OPENAI_BASE_URL ||
+      (process.env.CLOUD_API_ENDPOINT ? this._detectBaseUrl(process.env.CLOUD_API_ENDPOINT) : "https://api.openai.com/v1");
 
     super("Architect Agent", "JSON", "architect", {
       baseUrl,
-      apiKey,
-      llmProvider: options.llmProvider, // 接收並傳遞 llmProvider
-      model: options.model || 'strong', // Default to Stronger Model (will be resolved by ProviderManager)
-      ...options
+      apiKey
     });
   }
 

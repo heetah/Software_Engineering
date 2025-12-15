@@ -7,11 +7,19 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+// 引入統一配置
+import { config } from "./utils/config.js";
+
 import ArchitectAgent from "./agents/architect-agent.js";
 import VerifierAgent from "./agents/verifier-agent.js";
 import TesterAgent from "./agents/tester-agent.js";
+import ContractValidator from "./agents/contract-validator.js";
+import ContractAutoFixer from "./agents/contract-auto-fixer.js";
+import ContractRepairAgent from "./agents/contract-repair-agent.js";
 // 將 Coder 產出的 Markdown 生成專案
 import { writeProjectFromMarkdown } from "./agents/project-writer.js";
+// Gemini Service for AI-powered repairs
+import { askGemini } from "./services/gemini.js";
 // InstructionService 用於會話管理和結構化計劃生成
 import InstructionService from "./agents/instruction-service.js";
 // Coder Agent Coordinator（CommonJS 模組）
@@ -58,20 +66,23 @@ export function initializeAgents(force = false) {
 /**
  * 獲取或創建 Coder Coordinator 實例
  */
-export function getCoderCoordinator(config = {}) {
+// Rename parameter to avoid shadowing global config
+export function getCoderCoordinator(options = {}) {
   if (!agentCache) {
     agentCache = initializeAgents(true);
   }
 
-  const requestedProvider = (config.llmProvider || "auto").toLowerCase();
-  const apiKeys = config.apiKeys || {};
+  const requestedProvider = (options.llmProvider || "auto").toLowerCase();
+  const apiKeys = options.apiKeys || {};
 
   // 每次依據目前設定建立新的 CoderCoordinator，確保 API Key / Provider 最新
   agentCache.coderCoordinator = new CoderCoordinator({
-    useMockApi: config.useMockApi || false,
+    useMockApi: options.useMockApi || false,
     llmProvider: requestedProvider,
     geminiApiKey: apiKeys.gemini || null,
     openaiApiKey: apiKeys.openai || null,
+    // 傳遞統一的超時設定 (解決 worker 無法獲取 config 的問題)
+    timeout: config.api.timeout,
   });
 
   return agentCache.coderCoordinator;
@@ -104,81 +115,73 @@ export async function runWithInstructionService(
   agents,
   options = {}
 ) {
-  const { architect, verifier, tester } = agents;
-  // Options may contain onLog callback
+  let { architect, verifier, tester } = agents;
   const { onLog } = options;
 
-  // Helper for logging to both console and external callback
-  // Helper for logging to both console and external callback
-  const logFlow = (msg) => {
-    console.log(msg);
+  const logProgress = (message) => {
+    console.log(message);
     if (typeof onLog === 'function') {
-      onLog(msg);
+      onLog(message);
     }
   };
 
-  // Helper for logging to console only (Debug)
-  const logDebug = (msg) => {
-    console.log(msg);
-  };
-
-  // Update agents with current API keys if provided (crucial for packaged app)
-  if (options.apiKeys?.openai) {
-    if (verifier) verifier.apiKey = options.apiKeys.openai;
-    if (tester) tester.apiKey = options.apiKeys.openai;
-    // Architect agent in initializedAgents is NOT used here, InstructionService creates its own
+  // 如果提供了動態選項 (API Keys / Provider)，重新實例化 Verifier 和 Tester 以應用設定
+  if (options && (options.apiKeys || options.llmProvider)) {
+    verifier = new VerifierAgent(options);
+    tester = new TesterAgent(options);
   }
+
+  // Update global config with user options (Dynamic Config)
+  config.update(options);
 
   try {
     // 初始化 InstructionService（Architect Agent 會直接處理用戶需求）
     const instructionService = await withErrorHandling(
       'InstructionService',
-      () => Promise.resolve(new InstructionService({
-        baseDir: options.baseDir,
-        apiKeys: options.apiKeys,
-        llmProvider: options.llmProvider // 傳遞用戶選擇的 Provider
-      })),
+      () => Promise.resolve(new InstructionService(options)), // Pass options containing apiKeys/llmProvider
       { userInput }
     );
 
-    // Architect Agent 直接處理用戶需求並生成計劃或單純問答回覆
     // （不再需要 Requirement Agent，Architect Agent 會同時處理需求分析和架構設計）
     const plan = await withErrorHandling(
       'InstructionService.createPlan',
-      () => instructionService.createPlan({
-        prompt: userInput,
-        context: {
-          timestamp: new Date().toISOString()
-        }
-      }),
+      async () => {
+        logProgress(`[Coordinator] Analyzing requirements and creating plan...`);
+        return await instructionService.createPlan({
+          prompt: userInput,
+          context: {
+            timestamp: new Date().toISOString()
+          }
+        });
+      },
       { userInput }
     );
 
     // 如果是「單純問答模式」，直接回傳，不觸發後續 coder / verifier / tester
     if (plan && plan.mode === 'qa') {
-      logDebug("\nInstructionService QA mode: skip project generation / verifier / tester");
+      console.log("\nInstructionService QA mode: skip project generation / verifier / tester");
       return plan;
     }
 
-    logFlow(`\nPlan created, Session ID: ${plan.id}`);
-    logDebug(`Workspace directory: ${plan.workspaceDir || 'N/A'}`);
-    logDebug(`File operations: Created=${plan.fileOps.created.length}, Skipped=${plan.fileOps.skipped.length}, Errors=${plan.fileOps.errors.length}`);
+    logProgress(`\nPlan created, Session ID: ${plan.id}`);
+    console.log(`Workspace directory: ${plan.workspaceDir || 'N/A'}`);
+    console.log(`File operations: Created=${plan.fileOps.created.length}, Skipped=${plan.fileOps.skipped.length}, Errors=${plan.fileOps.errors.length}`);
 
     // Display Token usage statistics
     const tokenStats = tokenTracker.getStats();
-    logDebug(`\nToken usage: ${tokenStats.total} (Remaining: ${tokenStats.remaining}, ${tokenStats.percentage})`);
+    console.log(`\nToken usage: ${tokenStats.total} (Remaining: ${tokenStats.remaining}, ${tokenStats.percentage})`);
 
     // Display plan summary
     if (plan.output?.plan) {
-      logFlow(`\nPlan title: ${plan.output.plan.title}`);
-      logDebug(`Plan summary: ${plan.output.plan.summary}`);
-      logDebug(`Steps: ${plan.output.plan.steps?.length || 0}`);
+      console.log(`\nPlan title: ${plan.output.plan.title}`);
+      console.log(`Plan summary: ${plan.output.plan.summary}`);
+      console.log(`Steps: ${plan.output.plan.steps?.length || 0}`);
     }
 
     // If there are coder_instructions, optionally execute
     if (plan.output?.coder_instructions?.markdown) {
-      logDebug("\n--- Coder Instructions ---");
-      logDebug(plan.output.coder_instructions.markdown);
+      console.log("\n--- Coder Instructions ---");
+      console.log(plan.output.coder_instructions.markdown);
     }
 
     // 如果需要，使用 Coder Coordinator 生成代碼
@@ -200,7 +203,7 @@ export async function runWithInstructionService(
 
           if (parsed.coder_instructions) {
             coderInstructions = parsed.coder_instructions;
-            logDebug("  Extracted coder_instructions from markdown");
+            console.log("  Extracted coder_instructions from markdown");
           }
         }
       } catch (e) {
@@ -229,29 +232,11 @@ export async function runWithInstructionService(
         { planId: plan.id }
       );
 
+
+
       // 直接寫入檔案系統（Cursor 常用方式）
       try {
-        const coderCoordinator = getCoderCoordinator({
-          useMockApi: false,
-          llmProvider: options.llmProvider || "auto",
-          apiKeys: options.apiKeys || {},
-        });
-        const requestId = `coordinator-${plan.id}`;
-
-        // 構建 Coordinator 需要的 payload 格式
-        const coordinatorPayload = {
-          output: {
-            coder_instructions: coderInstructions
-          }
-        };
-
-        const coderResult = await withErrorHandling(
-          'CoderCoordinator.generateFromArchitectPayload',
-          () => coderCoordinator.generateFromArchitectPayload(coordinatorPayload, requestId),
-          { planId: plan.id }
-        );
-
-        // 直接寫入檔案系統（Cursor 常用方式）
+        logProgress(`[Coordinator] Generating project files...`);
         const result = await withErrorHandling(
           'writeProjectDirectly',
           () => Promise.resolve(
@@ -259,11 +244,11 @@ export async function runWithInstructionService(
           ),
           { workspaceDir: plan.workspaceDir }
         );
-        logFlow(`\nProject generated at ${result.outDir}`);
-        logDebug(`Total files: ${result.files.length}`);
-        logDebug(`\nGenerated files:`);
+        logProgress(`\nProject generated at ${result.outDir}`);
+        console.log(`Total files: ${result.files.length}`);
+        console.log(`\nGenerated files:`);
         result.files.forEach(file => {
-          logDebug(`  ${file}`);
+          console.log(`  ${file}`);
         });
       } catch (e) {
         errorLogger.warn("Failed to generate project", { error: e.message, workspaceDir: plan.workspaceDir });
@@ -277,7 +262,7 @@ export async function runWithInstructionService(
             ),
             { workspaceDir: plan.workspaceDir }
           );
-          logFlow(`\nProject generated (fallback) at ${fallbackResult.outDir}, files: ${fallbackResult.files.length}`);
+          console.log(`\nProject generated (fallback) at ${fallbackResult.outDir}, files: ${fallbackResult.files.length}`);
         } catch (fallbackError) {
           errorLogger.error("Both direct write and Markdown fallback failed", {
             directError: e.message,
@@ -285,11 +270,91 @@ export async function runWithInstructionService(
           });
         }
       }
+
+      // ===== Contract Validation & Auto-Fix: 驗證並自動修復契約不一致 =====
+      logProgress("\n" + "=".repeat(60));
+      logProgress("Contract Validator: Checking & Auto-Fixing contracts");
+      logProgress("=".repeat(60));
+
+      try {
+        const contractValidator = new ContractValidator();
+        const contractAutoFixer = new ContractAutoFixer();
+
+        // 第一層：快速程式化驗證和修復
+        const checkResult = await withErrorHandling(
+          'ContractAutoFixer.checkAndFix',
+          () => contractAutoFixer.checkAndFix(plan.id, contractValidator),
+          { sessionId: plan.id }
+        );
+
+        if (checkResult.fixResult) {
+          console.log(`\n📊 程式化修復結果: 成功 ${checkResult.fixResult.successCount}，失敗 ${checkResult.fixResult.failCount}`);
+        }
+
+        // 第二層：AI 深度修復（無論程式化修復是否成功都執行）
+        console.log("\n" + "=".repeat(60));
+        console.log("🤖 AI Contract Repair: 深度分析並修復");
+        console.log("=".repeat(60));
+
+        // 重新驗證以獲取最新問題
+        const finalValidation = await contractValidator.validateSession(plan.id);
+
+        if (!finalValidation.isValid || checkResult.needsAI) {
+          // 創建一個簡單的 GeminiService 包裝
+          const geminiService = {
+            generateContent: async (prompt) => {
+              const result = await askGemini(prompt);
+              if (!result.ok) {
+                throw new Error(result.error || 'Gemini API error');
+              }
+              return { response: { text: () => result.response } };
+            }
+          };
+
+          const contractRepairAgent = new ContractRepairAgent(geminiService);
+
+          const repairResult = await withErrorHandling(
+            'ContractRepairAgent.repair',
+            () => contractRepairAgent.repair(plan.id, finalValidation),
+            { sessionId: plan.id }
+          );
+
+          if (repairResult.success) {
+            console.log("\n✅ AI 修復完成！");
+            console.log(`   修復文件數: ${repairResult.summary.fixedFileCount}`);
+            console.log(`   總變更數: ${repairResult.summary.totalChanges}`);
+            console.log(`   修復的文件: ${repairResult.summary.files.join(', ')}\n`);
+
+            // 最終驗證
+            const postRepairValidation = await contractValidator.validateSession(plan.id);
+            if (postRepairValidation.isValid) {
+              console.log("🎉 最終驗證通過！專案契約完全一致！\n");
+            } else {
+              console.log("⚠️  仍有少量問題，但已大幅改善\n");
+              const report = contractValidator.generateReport(postRepairValidation);
+              console.log(report);
+            }
+          } else {
+            console.log("\n⚠️  AI 修復失敗，請檢查錯誤訊息\n");
+          }
+        } else {
+          console.log("\n✅ 專案契約完全一致，無需 AI 修復！\n");
+          const validationReport = contractValidator.generateReport(finalValidation);
+          console.log(validationReport);
+        }
+
+      } catch (validationError) {
+        errorLogger.warn("Contract validation/repair failed", {
+          error: validationError.message,
+          sessionId: plan.id
+        });
+      }
     }
+
     // ===== Verifier Agent: 生成測試計劃 =====
-    console.log("\n" + "=".repeat(60));
-    console.log("Verifier Agent: Generate test plan");
-    console.log("=".repeat(60));
+    logProgress("\n" + "=".repeat(60));
+    logProgress("Verifier Agent: Generate test plan");
+    logProgress("=".repeat(60));
 
     let testPlan = null;
     try {
@@ -298,31 +363,29 @@ export async function runWithInstructionService(
         () => verifier.runVerifierAgent(plan.id),
         { sessionId: plan.id }
       );
-      testPlan = verifierResult; // 直接使用整個結果物件
-      console.log(`\n✓ Verification complete`);
-      console.log(`  Report: ${verifierResult.reportPath}`);
-      console.log(`  Test plans: ${testPlan?.testPlans?.length || 0}`);
+      testPlan = verifierResult.plan;
+      console.log(`Test Plan generated: ${verifierResult.path}`);
+      console.log(`Test files: ${testPlan?.testFiles?.length || 0}`);
 
-      if (testPlan?.testPlans && testPlan.testPlans.length > 0) {
-        testPlan.testPlans.forEach(tp => {
-          console.log(`  - ${tp.file} -> ${tp.testPlanPath}`);
+      if (testPlan?.testFiles && testPlan.testFiles.length > 0) {
+        testPlan.testFiles.forEach(tf => {
+          console.log(`  - ${tf.filename} (${tf.testLevel}, ${tf.inputsType})`);
         });
       }
     } catch (err) {
-      errorLogger.warn("Verifier Agent 執行失敗", {
+      errorLogger.warn("Verifier Agent execution failed", {
         error: err.message,
         sessionId: plan.id
       });
-      logFlow(`\nVerifier Agent execution failed: ${err.message}`);
-      logFlow("   Test Plan generation skipped, but project generation completed");
+      console.warn(`\nVerifier Agent execution failed: ${err.message}`);
+      console.warn("   Test Plan generation skipped, but project generation completed");
     }
 
     // ===== Tester Agent: 生成測試碼並執行測試 =====
-    if (testPlan && testPlan.testPlans && testPlan.testPlans.length > 0) {
-      console.log("\n" + "=".repeat(60));
-      console.log("Tester Agent: Smart patching, syntax fix, and testing");
-      console.log("Features: Phase 2 (Syntax fix, Deps) + Phase 3 (Smart exports)");
-      console.log("=".repeat(60));
+    if (testPlan && testPlan.testFiles && testPlan.testFiles.length > 0) {
+      logProgress("\n" + "=".repeat(60));
+      logProgress("Tester Agent: Generate test code and execute tests");
+      logProgress("=".repeat(60));
 
       try {
         const testResult = await withErrorHandling(
@@ -331,74 +394,37 @@ export async function runWithInstructionService(
           { sessionId: plan.id }
         );
 
-        // 適配 Tester Agent 的返回結構
-        const { reportPath, jestResults } = testResult;
+        const { testReport, errorReport } = testResult;
+        console.log(`\nTests executed successfully!`);
+        console.log(`Test statistics:`);
+        console.log(`   - Test files: ${testReport.totals.files}`);
+        console.log(`   - Total tests: ${testReport.totals.tests}`);
+        console.log(`   - Passed: ${testReport.totals.passed}`);
+        console.log(`   - Failed: ${testReport.totals.failed} ${testReport.totals.failed > 0 ? '' : ''}`);
 
-        // 檢查 jestResults 是否有效
-        if (!jestResults || !jestResults.results) {
-          console.log(`\n⚠️  測試執行失敗或無結果`);
-          console.log(`   報告已產生：${reportPath}`);
-        } else {
-          const results = jestResults.results;
-
-          console.log(`\n✓ Tests executed successfully!`);
-          console.log(`Test statistics:`);
-          console.log(`   - Test files: ${results.numTotalTestSuites || 0}`);
-          console.log(`   - Total tests: ${results.numTotalTests || 0}`);
-          console.log(`   - Passed: ${results.numPassedTests || 0} ✓`);
-          console.log(`   - Failed: ${results.numFailedTests || 0}${results.numFailedTests > 0 ? ' ✗' : ''}`);
-
-          if (results.numFailedTests > 0) {
-            console.log(`\nThere are ${results.numFailedTests} failed tests`);
-
-            // 提取失敗的測試
-            const failures = [];
-            if (results.testResults) {
-              results.testResults.forEach(testFile => {
-                if (testFile.assertionResults) {
-                  testFile.assertionResults
-                    .filter(test => test.status === 'failed')
-                    .forEach(test => {
-                      failures.push({
-                        title: test.title,
-                        filename: path.basename(testFile.name || testFile.testFilePath || 'unknown'),
-                        failureMessages: test.failureMessages
-                      });
-                    });
-                }
-              });
-            }
-
-            if (failures.length > 0) {
-              console.log(`\nFailed case details:`);
-              failures.slice(0, 5).forEach((failure, idx) => {
-                console.log(`  ${idx + 1}. ${failure.title}`);
-                console.log(`     File: ${failure.filename}`);
-                if (failure.failureMessages && failure.failureMessages[0]) {
-                  const msg = failure.failureMessages[0].substring(0, 100);
-                  console.log(`     Error: ${msg}${failure.failureMessages[0].length > 100 ? '...' : ''}`);
-                }
-              });
-
-              if (failures.length > 5) {
-                console.log(`  ... There are ${failures.length - 5} more failed cases`);
+        if (testReport.totals.failed > 0) {
+          console.log(`\nThere are ${testReport.totals.failed} failed tests`);
+          if (errorReport.failures && errorReport.failures.length > 0) {
+            console.log(`\nFailed case details:`);
+            errorReport.failures.slice(0, 5).forEach((failure, idx) => {
+              console.log(`  ${idx + 1}. ${failure.title}`);
+              console.log(`     File: ${failure.filename}`);
+              if (failure.failureMessages && failure.failureMessages[0]) {
+                const msg = failure.failureMessages[0].substring(0, 100);
+                console.log(`     Error: ${msg}${failure.failureMessages[0].length > 100 ? '...' : ''}`);
               }
+            });
+            if (errorReport.failures.length > 5) {
+              console.log(`  ... There are ${errorReport.failures.length - 5} more failed cases`);
             }
-          } else {
-            console.log(`\nAll tests passed! 🎉`);
           }
-
-          // 將測試結果添加到 plan 中（轉換為原格式）
-          plan.testReport = {
-            totals: {
-              files: results.numTotalTestSuites || 0,
-              tests: results.numTotalTests || 0,
-              passed: results.numPassedTests || 0,
-              failed: results.numFailedTests || 0
-            }
-          };
-          plan.errorReport = { failures: failures || [] };
+        } else {
+          console.log(`\nAll tests passed!`);
         }
+
+        // 將測試結果添加到 plan 中
+        plan.testReport = testReport;
+        plan.errorReport = errorReport;
       } catch (err) {
         errorLogger.warn("Tester Agent execution failed", {
           error: err.message,
@@ -486,7 +512,7 @@ function writeProjectDirectly(result, outDir = "./output/generated_project") {
 
   // 如果有錯誤，記錄但不中斷
   if (errors.length > 0) {
-    console.warn(`\n⚠️  ${errors.length} file(s) failed to write:`);
+    console.warn(`\n  ${errors.length} file(s) failed to write:`);
     errors.forEach(({ file, error }) => {
       console.warn(`  - ${file}: ${error}`);
     });
