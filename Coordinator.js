@@ -257,35 +257,35 @@ export async function runWithInstructionService(
           });
         }
       }
-      
+
       // ===== Contract Validation & Auto-Fix: 驗證並自動修復契約不一致 =====
       console.log("\n" + "=".repeat(60));
       console.log("Contract Validator: Checking & Auto-Fixing contracts");
       console.log("=".repeat(60));
-      
+
       try {
         const contractValidator = new ContractValidator();
         const contractAutoFixer = new ContractAutoFixer();
-        
+
         // 第一層：快速程式化驗證和修復
         const checkResult = await withErrorHandling(
           'ContractAutoFixer.checkAndFix',
           () => contractAutoFixer.checkAndFix(plan.id, contractValidator),
           { sessionId: plan.id }
         );
-        
+
         if (checkResult.fixResult) {
           console.log(`\n📊 程式化修復結果: 成功 ${checkResult.fixResult.successCount}，失敗 ${checkResult.fixResult.failCount}`);
         }
-        
+
         // 第二層：AI 深度修復（無論程式化修復是否成功都執行）
         console.log("\n" + "=".repeat(60));
         console.log("🤖 AI Contract Repair: 深度分析並修復");
         console.log("=".repeat(60));
-        
+
         // 重新驗證以獲取最新問題
         const finalValidation = await contractValidator.validateSession(plan.id);
-        
+
         if (!finalValidation.isValid || checkResult.needsAI) {
           // 創建一個簡單的 GeminiService 包裝
           const geminiService = {
@@ -297,21 +297,21 @@ export async function runWithInstructionService(
               return { response: { text: () => result.response } };
             }
           };
-          
+
           const contractRepairAgent = new ContractRepairAgent(geminiService);
-          
+
           const repairResult = await withErrorHandling(
             'ContractRepairAgent.repair',
             () => contractRepairAgent.repair(plan.id, finalValidation),
             { sessionId: plan.id }
           );
-          
+
           if (repairResult.success) {
             console.log("\n✅ AI 修復完成！");
             console.log(`   修復文件數: ${repairResult.summary.fixedFileCount}`);
             console.log(`   總變更數: ${repairResult.summary.totalChanges}`);
             console.log(`   修復的文件: ${repairResult.summary.files.join(', ')}\n`);
-            
+
             // 最終驗證
             const postRepairValidation = await contractValidator.validateSession(plan.id);
             if (postRepairValidation.isValid) {
@@ -329,9 +329,9 @@ export async function runWithInstructionService(
           const validationReport = contractValidator.generateReport(finalValidation);
           console.log(validationReport);
         }
-        
+
       } catch (validationError) {
-        errorLogger.warn("Contract validation/repair failed", { 
+        errorLogger.warn("Contract validation/repair failed", {
           error: validationError.message,
           sessionId: plan.id
         });
@@ -340,7 +340,7 @@ export async function runWithInstructionService(
 
     // ===== Verifier Agent: 生成測試計劃 =====
     console.log("\n" + "=".repeat(60));
-    console.log("Verifier Agent: Generate test plan");
+    console.log("Verifier Agent: Verify files and generate test plans");
     console.log("=".repeat(60));
 
     let testPlan = null;
@@ -350,17 +350,18 @@ export async function runWithInstructionService(
         () => verifier.runVerifierAgent(plan.id),
         { sessionId: plan.id }
       );
-      testPlan = verifierResult.plan;
-      console.log(`Test Plan generated: ${verifierResult.path}`);
-      console.log(`Test files: ${testPlan?.testFiles?.length || 0}`);
+      testPlan = verifierResult; // 直接使用整個結果物件
+      console.log(`\n✓ Verification complete`);
+      console.log(`  Report: ${verifierResult.reportPath}`);
+      console.log(`  Test plans: ${testPlan?.testPlans?.length || 0}`);
 
-      if (testPlan?.testFiles && testPlan.testFiles.length > 0) {
-        testPlan.testFiles.forEach(tf => {
-          console.log(`  - ${tf.filename} (${tf.testLevel}, ${tf.inputsType})`);
+      if (testPlan?.testPlans && testPlan.testPlans.length > 0) {
+        testPlan.testPlans.forEach(tp => {
+          console.log(`  - ${tp.file} -> ${tp.testPlanPath}`);
         });
       }
     } catch (err) {
-      errorLogger.warn("Verifier Agent execution failed", {
+      errorLogger.warn("Verifier Agent 執行失敗", {
         error: err.message,
         sessionId: plan.id
       });
@@ -369,9 +370,10 @@ export async function runWithInstructionService(
     }
 
     // ===== Tester Agent: 生成測試碼並執行測試 =====
-    if (testPlan && testPlan.testFiles && testPlan.testFiles.length > 0) {
+    if (testPlan && testPlan.testPlans && testPlan.testPlans.length > 0) {
       console.log("\n" + "=".repeat(60));
-      console.log("Tester Agent: Generate test code and execute tests");
+      console.log("Tester Agent: Smart patching, syntax fix, and testing");
+      console.log("Features: Phase 2 (Syntax fix, Deps) + Phase 3 (Smart exports)");
       console.log("=".repeat(60));
 
       try {
@@ -381,37 +383,74 @@ export async function runWithInstructionService(
           { sessionId: plan.id }
         );
 
-        const { testReport, errorReport } = testResult;
-        console.log(`\nTests executed successfully!`);
-        console.log(`Test statistics:`);
-        console.log(`   - Test files: ${testReport.totals.files}`);
-        console.log(`   - Total tests: ${testReport.totals.tests}`);
-        console.log(`   - Passed: ${testReport.totals.passed}`);
-        console.log(`   - Failed: ${testReport.totals.failed} ${testReport.totals.failed > 0 ? '' : ''}`);
+        // 適配 Tester Agent 的返回結構
+        const { reportPath, jestResults } = testResult;
 
-        if (testReport.totals.failed > 0) {
-          console.log(`\nThere are ${testReport.totals.failed} failed tests`);
-          if (errorReport.failures && errorReport.failures.length > 0) {
-            console.log(`\nFailed case details:`);
-            errorReport.failures.slice(0, 5).forEach((failure, idx) => {
-              console.log(`  ${idx + 1}. ${failure.title}`);
-              console.log(`     File: ${failure.filename}`);
-              if (failure.failureMessages && failure.failureMessages[0]) {
-                const msg = failure.failureMessages[0].substring(0, 100);
-                console.log(`     Error: ${msg}${failure.failureMessages[0].length > 100 ? '...' : ''}`);
-              }
-            });
-            if (errorReport.failures.length > 5) {
-              console.log(`  ... There are ${errorReport.failures.length - 5} more failed cases`);
-            }
-          }
+        // 檢查 jestResults 是否有效
+        if (!jestResults || !jestResults.results) {
+          console.log(`\n 測試執行失敗或無結果`);
+          console.log(`   報告已產生：${reportPath}`);
         } else {
-          console.log(`\nAll tests passed!`);
-        }
+          const results = jestResults.results;
 
-        // 將測試結果添加到 plan 中
-        plan.testReport = testReport;
-        plan.errorReport = errorReport;
+          console.log(`\n✓ Tests executed successfully!`);
+          console.log(`Test statistics:`);
+          console.log(`   - Test files: ${results.numTotalTestSuites || 0}`);
+          console.log(`   - Total tests: ${results.numTotalTests || 0}`);
+          console.log(`   - Passed: ${results.numPassedTests || 0} ✓`);
+          console.log(`   - Failed: ${results.numFailedTests || 0}${results.numFailedTests > 0 ? ' ✗' : ''}`);
+
+          if (results.numFailedTests > 0) {
+            console.log(`\nThere are ${results.numFailedTests} failed tests`);
+
+            // 提取失敗的測試
+            const failures = [];
+            if (results.testResults) {
+              results.testResults.forEach(testFile => {
+                if (testFile.assertionResults) {
+                  testFile.assertionResults
+                    .filter(test => test.status === 'failed')
+                    .forEach(test => {
+                      failures.push({
+                        title: test.title,
+                        filename: path.basename(testFile.name || testFile.testFilePath || 'unknown'),
+                        failureMessages: test.failureMessages
+                      });
+                    });
+                }
+              });
+            }
+
+            if (failures.length > 0) {
+              console.log(`\nFailed case details:`);
+              failures.slice(0, 5).forEach((failure, idx) => {
+                console.log(`  ${idx + 1}. ${failure.title}`);
+                console.log(`     File: ${failure.filename}`);
+                if (failure.failureMessages && failure.failureMessages[0]) {
+                  const msg = failure.failureMessages[0].substring(0, 100);
+                  console.log(`     Error: ${msg}${failure.failureMessages[0].length > 100 ? '...' : ''}`);
+                }
+              });
+
+              if (failures.length > 5) {
+                console.log(`  ... There are ${failures.length - 5} more failed cases`);
+              }
+            }
+          } else {
+            console.log(`\nAll tests passed!`);
+          }
+
+          // 將測試結果添加到 plan 中（轉換為原格式）
+          plan.testReport = {
+            totals: {
+              files: results.numTotalTestSuites || 0,
+              tests: results.numTotalTests || 0,
+              passed: results.numPassedTests || 0,
+              failed: results.numFailedTests || 0
+            }
+          };
+          plan.errorReport = { failures: failures || [] };
+        }
       } catch (err) {
         errorLogger.warn("Tester Agent execution failed", {
           error: err.message,
