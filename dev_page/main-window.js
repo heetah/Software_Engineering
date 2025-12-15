@@ -522,7 +522,11 @@ function appendMessage(text, sender, messageType = 'text', options = {}) {
   } else if (messageType === 'download') {
     messageBubble.classList.add('message-bubble--download');
     const description = document.createElement('div');
-    description.textContent = text || '輸出已準備好，點擊下載 zip。';
+    if (text) {
+      description.innerHTML = text.replace(/\n/g, '<br>');
+    } else {
+      description.textContent = '輸出已準備好，點擊下載 zip。';
+    }
     messageBubble.appendChild(description);
 
     const downloadButton = document.createElement('button');
@@ -602,6 +606,50 @@ ipcRenderer.on('message-from-agent', (_event, response) => {
     type: messageType,
     download: downloadInfo
   });
+});
+
+ipcRenderer.on('agent-log', (_event, logMessage) => {
+  if (!thinkingBubbleElement) return;
+
+  // 1. 尋找或建立 Log Container
+  let logDetails = thinkingBubbleElement.querySelector('.log-details');
+  if (!logDetails) {
+    // 建立 Log 區塊結構
+    const logContainer = document.createElement('div');
+    logContainer.classList.add('log-container');
+
+    logDetails = document.createElement('details');
+    logDetails.classList.add('log-details');
+
+    const summary = document.createElement('summary');
+    summary.classList.add('log-summary');
+    summary.textContent = '查看執行細節 (Process Logs)';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.classList.add('log-content');
+
+    logDetails.appendChild(summary);
+    logDetails.appendChild(contentDiv);
+    logContainer.appendChild(logDetails);
+
+    // 將 Log Container 加到 Message Content 中 (Bubble 下方)
+    const messageContent = thinkingBubbleElement.querySelector('.message-content');
+    if (messageContent) {
+      messageContent.appendChild(logContainer);
+    }
+  }
+
+  // 2. 追加 Log
+  const contentDiv = logDetails.querySelector('.log-content');
+  if (contentDiv) {
+    const entry = document.createElement('div');
+    entry.classList.add('log-entry');
+    entry.textContent = logMessage;
+    contentDiv.appendChild(entry);
+
+    // 自動捲動到底部
+    contentDiv.scrollTop = contentDiv.scrollHeight;
+  }
 });
 
 function loadSettingsInfo() {
@@ -839,21 +887,36 @@ ipcRenderer.on('agent-log', (_event, logMessage) => {
     logContainer.classList.add('log-container');
     logDetails = document.createElement('details');
     logDetails.classList.add('log-details');
+    // Default open for terminal feel
+    logDetails.open = true;
+
     const summary = document.createElement('summary');
     summary.classList.add('log-summary');
-    summary.textContent = 'Process Logs';
+    summary.textContent = '初始化開發環境...';
+
     const contentDiv = document.createElement('div');
     contentDiv.classList.add('log-content');
+
     logDetails.appendChild(summary);
     logDetails.appendChild(contentDiv);
     logContainer.appendChild(logDetails);
+
     const messageContent = thinkingBubbleElement.querySelector('.message-content');
     if (messageContent) messageContent.appendChild(logContainer);
   }
+
   const contentDiv = logDetails.querySelector('.log-content');
+  const summary = logDetails.querySelector('.log-summary');
+
   if (contentDiv) {
     const formattedLog = formatAgentLog(logMessage);
     if (!formattedLog) return;
+
+    // Update summary title if it's a phase change
+    if (formattedLog.phase && summary) {
+      summary.innerHTML = `<span style="color: var(--color-accent-1);">▶</span> ${formattedLog.phase}`;
+    }
+
     const entry = document.createElement('div');
     entry.innerHTML = formattedLog.html;
     entry.className = `log-entry ${formattedLog.className}`;
@@ -862,20 +925,74 @@ ipcRenderer.on('agent-log', (_event, logMessage) => {
   }
 });
 
-function formatAgentLog(message) {
+function formatAgentLog(rawMessage) {
+  // Strip ANSI escape codes
+  const message = rawMessage.replace(/\x1b\[[0-9;]*m/g, '');
+
   let className = '';
   let html = message;
   let icon = '';
-  if (message.includes('Coordinator Bridge') && message.includes('Received user input')) {
+  let level = '';
+  let phase = null;
+
+  // Try to parse JSON
+  try {
+    if (message.trim().startsWith('{')) {
+      const parsed = JSON.parse(message);
+      if (parsed.message) {
+        html = parsed.message;
+        level = parsed.level;
+      }
+    }
+  } catch (e) {
+    // Not valid JSON
+  }
+
+  // Detect Phases
+  if (html.includes('Architect Agent')) {
+    phase = 'Architect Agent: 規劃架構中...';
+    className = 'log-entry--phase';
+    icon = '🏗️';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Architect Agent</strong> 開始規劃系統架構</span>`;
+  } else if (html.includes('Coordinator starting') || html.includes('Coordinator -') || html.includes('Coder Agent')) {
+    phase = 'Coder Agent: 撰寫程式碼中...';
+    className = 'log-entry--phase';
+    icon = '👨‍💻';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Coder Agent</strong> 開始實作功能與檔案</span>`;
+  } else if (html.includes('Contract Validator') || html.includes('ContractAutoFixer')) {
+    phase = 'Contract Validator: 檢查一致性中...';
+    className = 'log-entry--phase';
+    icon = '📜';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Contract Validator</strong> 驗證系統契約與介面</span>`;
+  } else if (html.includes('Verifier Agent')) {
+    phase = 'Verifier Agent: 建立測試計畫中...';
+    className = 'log-entry--phase';
+    icon = '🧐';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Verifier Agent</strong> 分析需求並建立測試計畫</span>`;
+  } else if (html.includes('Tester Agent')) {
+    phase = 'Tester Agent: 執行測試中...';
+    className = 'log-entry--phase';
+    icon = '🧪';
+    html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>Tester Agent</strong> 執行自動化測試</span>`;
+  } else if (message.includes('Coordinator Bridge') && message.includes('Received user input')) {
+    phase = 'System: 接收需求...';
     icon = '◆'; className = 'log-entry--init'; html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>系統初始化</strong> 接收用戶需求...</span>`;
   } else if (message.includes('completed')) {
-    icon = '✓'; className = 'log-entry--success'; html = `<span class="log-icon">${icon}</span><span class="log-text">完成</span>`;
+    phase = '完成！';
+    icon = '✓'; className = 'log-entry--success'; html = `<span class="log-icon">${icon}</span><span class="log-text"><strong>完成</strong> 所有任務已執行完畢</span>`;
   } else {
-    // 簡單過濾其他 log，避免雜訊
-    if (!message.includes('Agent')) return null;
-    html = `<span class="log-text">${message}</span>`;
+    // Normal log handling
+    if (!html || !html.trim()) return null;
+
+    if (level === 'ERROR') className = 'log-entry--error';
+    else if (level === 'WARN') className = 'log-entry--warning';
+    else if (level === 'DEBUG') className = 'log-entry--debug';
+    else className = 'log-entry--info'; // Default white text
+
+    html = `<span class="log-text">${html}</span>`;
   }
-  return { html, className };
+
+  return { html, className, phase };
 }
 
 /* ====================================================================
