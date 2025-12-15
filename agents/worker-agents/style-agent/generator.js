@@ -9,29 +9,15 @@ const { callCloudAPI } = require('../api-adapter.cjs');
 class StyleGenerator {
   constructor(config = {}) {
     // API 配置優先順序：1. config 參數 2. CLOUD_API 3. OPENAI_API
-    this.cloudApiEndpoint = config.cloudApiEndpoint ||
-      process.env.CLOUD_API_ENDPOINT ||
-      process.env.OPENAI_BASE_URL;
-    this.cloudApiKey = config.cloudApiKey ||
-      process.env.CLOUD_API_KEY ||
-      process.env.OPENAI_API_KEY;
+    this.cloudApiEndpoint = config.cloudApiEndpoint;
+    this.cloudApiKey = config.cloudApiKey;
     this.useMockApi = !this.cloudApiEndpoint;
-
-    // 🔍 Debug: 記錄配置
-    console.log('[StyleGenerator] Initialized:', {
-      hasConfigEndpoint: !!config.cloudApiEndpoint,
-      hasConfigKey: !!config.cloudApiKey,
-      hasEnvCloudEndpoint: !!process.env.CLOUD_API_ENDPOINT,
-      hasEnvOpenaiEndpoint: !!process.env.OPENAI_BASE_URL,
-      finalEndpoint: this.cloudApiEndpoint ? this.cloudApiEndpoint.substring(0, 50) + '...' : 'MISSING',
-      willUseMock: this.useMockApi
-    });
   }
 
   async generate({ skeleton, fileSpec, context }) {
     console.log(`[Generator] Processing ${fileSpec.path}`);
-
-    // 優先級 1: 使用 template（Architect 提供的完整代碼）
+    
+    // 優先級 1: 使用 template（Architect 明確指定的內容）
     if (fileSpec.template && fileSpec.template.trim()) {
       console.log(`[Generator] ✅ Using template (${fileSpec.template.length} chars)`);
       return {
@@ -40,25 +26,23 @@ class StyleGenerator {
         method: 'template'
       };
     }
-
-    // 優先級 2: 使用 contracts 結構（example2 格式）
+    
+    // 優先級 2: 使用 contracts 結構（動態生成）
     const hasContracts = context.contracts && (
       (context.contracts.dom && context.contracts.dom.length > 0) ||
       (context.contracts.api && context.contracts.api.length > 0)
     );
-
+    
     if (hasContracts) {
       console.log(`[Generator] ✓ Using contracts-based generation`);
       console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
-
+      
       if (this.useMockApi) {
         return this.generateWithMock({ skeleton, fileSpec, context });
       } else {
         return this.generateWithCloudAPI({ skeleton, fileSpec, context });
       }
-    }
-
-    // 優先級 3: AI 生成（無 contracts 也無 template）
+    }    // 優先級 3: AI 生成（無 contracts 也無 template）
     console.log(`[Generator] ⚠ No contracts or template - using AI generation`);
     console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
 
@@ -78,7 +62,7 @@ class StyleGenerator {
         apiKey: this.cloudApiKey,
         systemPrompt: 'You are an expert CSS developer. Generate clean, modern CSS with proper organization. Output only the code.',
         userPrompt: prompt,
-        maxTokens: 80000  // Increased to 80k as requested
+        maxTokens: 16348  // Increased to 16k as requested
       });
 
       if (!content || content.trim() === '') {
@@ -143,6 +127,40 @@ body {
 
     let prompt = `Generate CSS for: ${filePath}\n\n`;
 
+    // 🚨 CONTRACTS FIRST - 顯示需要樣式化的 DOM 元素
+    if (contracts && contracts.dom && contracts.dom.length > 0) {
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      prompt += `🚨 CRITICAL: DOM ELEMENTS TO STYLE 🚨\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+      prompt += `The following selectors MUST have CSS rules:\n\n`;
+
+      contracts.dom.forEach((dom, idx) => {
+        if (dom.id) {
+          prompt += `  ${idx + 1}. #${dom.id} - ${dom.description || dom.purpose}\n`;
+        }
+        if (dom.templateId) {
+          prompt += `  ${idx + 1}. #${dom.templateId} (template)\n`;
+        }
+        if (dom.containerId) {
+          prompt += `     #${dom.containerId} (container)\n`;
+        }
+      });
+
+      prompt += `\n❌ FAILURE CONDITIONS:\n`;
+      prompt += `  - Missing styles for any ID listed above\n`;
+      prompt += `  - Using wrong selector (e.g., .class instead of #id)\n\n`;
+
+      prompt += `✅ REQUIREMENTS:\n`;
+      prompt += `  - Style ALL IDs listed above\n`;
+      prompt += `  - Use exact selectors from HTML\n`;
+      prompt += `  - Include interactive states (hover, focus, active)\n\n`;
+
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      prompt += `END OF CONTRACTS\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    }
+
     if (description) {
       prompt += `Description: ${description}\n\n`;
     }
@@ -197,15 +215,6 @@ body {
 
     if (requirements.length > 0) {
       prompt += `Additional Requirements:\n${requirements.map(r => `- ${r}`).join('\n')}\n\n`;
-    }
-
-    // ← 新增：contracts 對 CSS 影響較小，但可提示相關檔案
-    if (contracts) {
-      const allHtmlFiles = context.allFiles?.filter(f => f.path.endsWith('.html')) || [];
-      if (allHtmlFiles.length > 0) {
-        prompt += `Related HTML files: ${allHtmlFiles.map(f => f.path).join(', ')}\n`;
-        prompt += `Ensure all HTML classes and IDs are styled.\n\n`;
-      }
     }
 
     // Include HTML selectors if available

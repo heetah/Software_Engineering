@@ -19,7 +19,7 @@ export async function withErrorHandling(agentName, fn, context = {}) {
     if (error instanceof CoordinatorError || error instanceof AgentError) {
       throw error;
     }
-    
+
     // 包裝為 CoordinatorError
     throw new CoordinatorError(
       `${agentName} 執行失敗`,
@@ -41,10 +41,10 @@ export function handleAPIError(error, agentName) {
   const responseData = error?.response?.data;
   const requestData = error?.config;
   const responseHeaders = error?.response?.headers || {};
-  
+
   if (statusCode) {
     let errorMessage = `API call failed (${statusCode})`;
-    
+
     // 針對常見的 HTTP 狀態碼提供更友好的錯誤訊息
     switch (statusCode) {
       case 429:
@@ -73,7 +73,7 @@ export function handleAPIError(error, agentName) {
           errorMessage = `API call failed (${statusCode}): ${responseData.error.message}`;
         }
     }
-    
+
     return new APIError(
       errorMessage,
       statusCode,
@@ -81,7 +81,7 @@ export function handleAPIError(error, agentName) {
       requestData
     );
   }
-  
+
   return new AgentError(
     agentName,
     `API call failed: ${error.message}`,

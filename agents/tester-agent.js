@@ -46,16 +46,8 @@ const __dirname = path.dirname(__filename);
 // Tester Agent 主類別
 // ===== TesterAgent Class =====
 export default class TesterAgent extends BaseAgent {
-  constructor() {
-    // 支援 OPENAI_API_KEY, API_KEY (舊版), CLOUD_API_KEY (fallback)
-    const apiKey = process.env.OPENAI_API_KEY || process.env.API_KEY || process.env.CLOUD_API_KEY;
-    const baseUrl = process.env.OPENAI_BASE_URL || process.env.BASE_URL || 
-                   (process.env.CLOUD_API_ENDPOINT ? this._detectBaseUrl(process.env.CLOUD_API_ENDPOINT) : "https://api.openai.com/v1");
-    
-    super("Tester Agent", "Markdown code", "tester", {
-      baseUrl,
-      apiKey
-    });
+  constructor(options = {}) {
+    super("Tester Agent", "Markdown code", "tester", options);
     this.temperature = 0.1;
   }
 
@@ -203,7 +195,7 @@ export default class TesterAgent extends BaseAgent {
   // 對失敗案例進行原因分析並補充建議
   // 針對失敗案例用 TESTER_ERROR_ANALYSIS_TEMPLATE 取得 suggestedCause
   // 若 LLM 失敗則略過該案例
-  
+
   async enrichFailuresWithSuggestions(failures) {
     const enriched = [];
     for (const f of failures) {
@@ -243,11 +235,11 @@ export default class TesterAgent extends BaseAgent {
   // 5. 對失敗案例進行原因分析並補充建議
   // 6. 寫出報告檔案
   async runTesterAgent(sessionId) {
-    if (!sessionId) throw new Error("缺少 sessionId");
+    if (!sessionId) throw new Error("sessionId is required");
 
     const plan = await this.loadTestPlan(sessionId);
     if (!Array.isArray(plan?.testFiles) || plan.testFiles.length === 0) {
-      throw new Error("test-plan.json 缺少 testFiles 或為空");
+      throw new Error("test-plan.json is missing testFiles or is empty");
     }
 
     for (const tf of plan.testFiles) {
@@ -263,7 +255,7 @@ export default class TesterAgent extends BaseAgent {
       // 回寫空報告以利後續流程
       const empty = { sessionId, generatedAt: new Date().toISOString(), totals: { files: 0, tests: 0, passed: 0, failed: 0 }, files: [] };
       await this.writeReports(sessionId, empty, { sessionId, generatedAt: new Date().toISOString(), failures: [] });
-      throw new Error("無法解析 jest-report.json");
+      throw new Error("jest-report.json is missing or invalid");
     }
 
     let { testReport, errorReport } = this.buildReports(sessionId, jestJson);

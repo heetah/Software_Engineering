@@ -11,7 +11,7 @@ const express = require('express');
 const MarkupGenerator = require('./generator');
 
 const app = express();
-const PORT = process.env.PORT || 3801;
+const PORT = 3801;
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -19,8 +19,8 @@ const generator = new MarkupGenerator();
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     agent: 'markup-agent',
     port: PORT,
     supportedExtensions: ['.html', '.htm', '.xml', '.md']
@@ -30,10 +30,10 @@ app.get('/health', (req, res) => {
 // Main generation endpoint
 app.post('/generate', async (req, res) => {
   const startTime = Date.now();
-  
+
   try {
     const { skeleton, fileSpec, context } = req.body;
-    
+
     // 驗證必要參數
     if (!fileSpec || !fileSpec.path) {
       return res.status(400).json({
@@ -41,20 +41,20 @@ app.post('/generate', async (req, res) => {
         error: 'Missing required field: fileSpec.path'
       });
     }
-    
+
     console.log(`[${new Date().toISOString()}] Generating ${fileSpec.path}`);
-    
+
     // 呼叫生成器
     const result = await generator.generate({
       skeleton,
       fileSpec,
       context: context || {}
     });
-    
+
     const elapsed = Date.now() - startTime;
-    
+
     console.log(`[${new Date().toISOString()}] ✅ Generated ${fileSpec.path} (${elapsed}ms)`);
-    
+
     res.status(200).json({
       success: true,
       content: result.content,
@@ -67,11 +67,11 @@ app.post('/generate', async (req, res) => {
         method: result.method || 'template'
       }
     });
-    
+
   } catch (error) {
     const elapsed = Date.now() - startTime;
     console.error(`[${new Date().toISOString()}] ❌ Error:`, error.message);
-    
+
     res.status(500).json({
       success: false,
       error: error.message,

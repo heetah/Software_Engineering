@@ -162,7 +162,7 @@ export default class InstructionService {
     // 寫入 architecture.json 到 data/sessions/<sessionId>/architecture.json
     const architecturePath = this.architectureJsonPath(id);
     fs.writeFileSync(architecturePath, JSON.stringify(payload, null, 2), 'utf8');
-    
+
     return payload;
   }
 
@@ -195,8 +195,8 @@ export default class InstructionService {
     // 創建會話工作區
     const sessionWorkspace =
       session.workspaceDir &&
-      !session.workspaceDir.startsWith('..') &&
-      !path.isAbsolute(session.workspaceDir)
+        !session.workspaceDir.startsWith('..') &&
+        !path.isAbsolute(session.workspaceDir)
         ? path.join(process.cwd(), session.workspaceDir)
         : ensureSessionWorkspace(id);
     // 如果會話工作區不存在，則創建會話工作區
@@ -215,13 +215,13 @@ export default class InstructionService {
       fileOps,
       workspaceDir: sessionWorkspace ? path.relative(process.cwd(), sessionWorkspace) : null,
     };
-    
+
     // 確保會話目錄存在
     const sessionDir = this.sessionDir(id);
     if (!fs.existsSync(sessionDir)) {
       fs.mkdirSync(sessionDir, { recursive: true });
     }
-    
+
     // 寫入 architecture.json
     const architecturePath = this.architectureJsonPath(id);
     fs.writeFileSync(architecturePath, JSON.stringify(updated, null, 2), 'utf8');
