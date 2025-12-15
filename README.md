@@ -229,8 +229,6 @@ npm start
 - 簡潔線條風格，符合 Neumorphism 美學
 - 內嵌 SVG，無需額外載入時間
 
-查看 [`dev_page/icons/README.md`](dev_page/icons/README.md) 了解圖標系統詳情。
-
 ## 資料格式
 
 ### architecture.json
@@ -374,36 +372,6 @@ console.log(`Session ID: ${plan.id}`);
 ### 自訂配置
 
 透過 `.env` 或 `utils/config.js` 調整系統行為。
-
-## 更新日誌
-
-### v1.0.0 (2025-12-13)
-
-- Neumorphism UI 設計
-- SVG 圖標系統
-- 專案庫功能
-- 換行顯示修復
-- 互動式新手教學
-
-## 授權
-
-MIT License - 詳見 [LICENSE](LICENSE) 檔案
-
-## 貢獻
-
-歡迎提交 Issue 和 Pull Request！
-
-### 貢獻指南
-
-1. Fork 本專案
-2. 建立功能分支 (`git checkout -b feature/amazing-feature`)
-3. 提交變更 (`git commit -m 'Add amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 開啟 Pull Request
-
-## 聯絡資訊
-
-如有問題或建議，請透過 [Issue](https://github.com/yourusername/multi-agent-copilot/issues) 聯繫。
 
 ---
 

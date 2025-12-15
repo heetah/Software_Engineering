@@ -384,6 +384,7 @@ body {
   border-radius: 20px;
   background: var(--color-bg);
   box-shadow: var(--shadow-convex);
+
   color: var(--color-text);
   word-wrap: break-word;
   width: fit-content;
@@ -513,6 +514,7 @@ body {
   font-size: 13px;
   gap: 6px;
 }
+
 
 /*
  * ====================================================================

@@ -284,6 +284,16 @@ function syncApiKeysToMain() {
 // 為了節省篇幅，這裡省略中間未修改的函式，請直接使用上一版，
 // 只需要確保 setActivePage 更新如下：
 
+// Sync keys on startup
+syncApiKeysToMain();
+
+function syncApiKeysToMain() {
+  ipcRenderer.send('settings:update-api-keys', {
+    gemini: currentGeminiApiKey || null,
+    openai: currentOpenAIApiKey || null
+  });
+}
+
 /* 核心功能函式 - 會話與歷史紀錄 */
 function createHistoryItem(session) {
   const item = document.createElement('a');
@@ -501,6 +511,7 @@ function appendMessage(text, sender, messageType = 'text', options = {}) {
 
   // 將按鈕放入容器
   messageActions.appendChild(copyButton);
+
 
   if (messageType === 'thinking') {
     messageBubble.classList.add('message-bubble--thinking');
