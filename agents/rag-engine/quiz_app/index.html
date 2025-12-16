@@ -1,56 +1,59 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quiz App</title>
-    <link rel="stylesheet" href="style.css">
+    <title>知識問答測驗</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
     <div class="container">
-        <div class="quiz-card">
-            <div id="startScreen" class="screen active">
-                <h1>Quiz Challenge</h1>
-                <p>Test your knowledge with this fun quiz!</p>
-                <button class="btn-primary" onclick="startQuiz()">Start Quiz</button>
+        <div class="quiz-box">
+            <div class="start-screen" id="startScreen">
+                <h1>知識問答測驗</h1>
+                <p>測試你的知識水平！</p>
+                <div class="category-select">
+                    <label>選擇類別：</label>
+                    <select id="categorySelect">
+                        <option value="general">一般常識</option>
+                        <option value="science">科學</option>
+                        <option value="history">歷史</option>
+                    </select>
+                </div>
+                <button id="startBtn" class="btn btn-start">開始測驗</button>
             </div>
 
-            <div id="quizScreen" class="screen">
+            <div class="quiz-screen hidden" id="quizScreen">
                 <div class="quiz-header">
                     <div class="progress-bar">
-                        <div id="progressFill" class="progress-fill"></div>
+                        <div class="progress" id="progress"></div>
                     </div>
                     <div class="quiz-info">
-                        <span id="questionNumber">Question 1 of 5</span>
-                        <span id="score">Score: 0</span>
+                        <span>題目 <span id="currentQuestion">1</span>/<span id="totalQuestions">10</span></span>
+                        <span>得分：<span id="score">0</span></span>
                     </div>
                 </div>
 
                 <div class="question-container">
-                    <h2 id="question"></h2>
-                    <div id="answers" class="answers"></div>
+                    <h2 id="question">問題將顯示在這裡</h2>
+                    <div class="options" id="options"></div>
                 </div>
 
-                <button id="nextBtn" class="btn-primary" onclick="nextQuestion()" style="display: none;">Next
-                    Question</button>
+                <button id="nextBtn" class="btn btn-next hidden">下一題</button>
             </div>
 
-            <div id="resultScreen" class="screen">
-                <h1>Quiz Complete!</h1>
-                <div class="result-stats">
-                    <div class="stat">
-                        <span class="stat-value" id="finalScore">0</span>
-                        <span class="stat-label">Correct Answers</span>
+            <div class="result-screen hidden" id="resultScreen">
+                <h1>測驗完成！</h1>
+                <div class="result-info">
+                    <div class="score-circle">
+                        <div class="score-value" id="finalScore">0</div>
+                        <div class="score-label">分</div>
                     </div>
-                    <div class="stat">
-                        <span class="stat-value" id="percentage">0%</span>
-                        <span class="stat-label">Accuracy</span>
-                    </div>
+                    <p id="resultMessage"></p>
                 </div>
-                <p id="resultMessage"></p>
-                <button class="btn-primary" onclick="restartQuiz()">Try Again</button>
+                <button id="restartBtn" class="btn btn-restart">重新測驗</button>
             </div>
         </div>
     </div>

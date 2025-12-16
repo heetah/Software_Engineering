@@ -1,44 +1,42 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Music Player</title>
-    <link rel="stylesheet" href="style.css">
+    <title>音樂播放器</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
     <div class="container">
-        <div class="player-card">
-            <div class="album-art">
-                <div class="vinyl" id="vinyl">
-                    <div class="vinyl-center"></div>
-                </div>
+        <div class="music-player">
+            <div class="album-art" id="albumArt">
+                <div class="vinyl"></div>
             </div>
 
             <div class="song-info">
-                <h2 id="songTitle">Song Title</h2>
-                <p id="artist">Artist Name</p>
+                <h2 id="songTitle">選擇一首歌曲</h2>
+                <p id="artist">藝人名稱</p>
             </div>
 
-            <div class="progress-section">
-                <span id="currentTime">0:00</span>
-                <div class="progress-bar" onclick="seek(event)">
-                    <div id="progress" class="progress"></div>
+            <div class="progress-container">
+                <div class="time" id="currentTime">0:00</div>
+                <div class="progress-bar">
+                    <div class="progress" id="progress"></div>
                 </div>
-                <span id="duration">0:00</span>
+                <div class="time" id="duration">0:00</div>
             </div>
 
             <div class="controls">
-                <button class="control-btn" onclick="previousSong()">⏮️</button>
-                <button class="control-btn play-btn" id="playBtn" onclick="togglePlay()">▶️</button>
-                <button class="control-btn" onclick="nextSong()">⏭️</button>
+                <button id="prevBtn" class="control-btn">⏮️</button>
+                <button id="playBtn" class="control-btn play-btn">▶️</button>
+                <button id="nextBtn" class="control-btn">⏭️</button>
             </div>
 
             <div class="playlist">
-                <h3>Playlist</h3>
-                <ul id="playlistUl"></ul>
+                <h3>播放清單</h3>
+                <div id="playlistItems" class="playlist-items"></div>
             </div>
         </div>
     </div>

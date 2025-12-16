@@ -1,27 +1,40 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Image Gallery</title>
-    <link rel="stylesheet" href="style.css">
+    <title>圖片相簿</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
     <div class="container">
-        <h1>Photo Gallery</h1>
+        <header>
+            <h1>📸 我的相簿</h1>
+            <div class="header-actions">
+                <input type="file" id="fileInput" accept="image/*" multiple style="display: none;">
+                <button id="uploadBtn" class="btn-upload">上傳圖片</button>
+                <button id="clearBtn" class="btn-clear">清除全部</button>
+            </div>
+        </header>
 
-        <div class="gallery-grid" id="gallery">
-            <!-- Images will be dynamically generated -->
+        <div class="filter-bar">
+            <button class="filter-btn active" data-filter="all">全部</button>
+            <button class="filter-btn" data-filter="landscape">風景</button>
+            <button class="filter-btn" data-filter="portrait">人像</button>
+            <button class="filter-btn" data-filter="nature">自然</button>
+            <button class="filter-btn" data-filter="urban">都市</button>
         </div>
 
-        <div id="lightbox" class="lightbox">
-            <span class="close" onclick="closeLightbox()">&times;</span>
-            <span class="prev" onclick="changeImage(-1)">&#10094;</span>
-            <span class="next" onclick="changeImage(1)">&#10095;</span>
-            <img id="lightboxImg" src="" alt="">
-            <div class="lightbox-caption" id="caption"></div>
+        <div class="gallery" id="gallery"></div>
+
+        <div class="lightbox hidden" id="lightbox">
+            <button class="close-btn" id="closeBtn">×</button>
+            <button class="nav-btn prev" id="prevBtn">‹</button>
+            <img src="" alt="" id="lightboxImage">
+            <button class="nav-btn next" id="nextBtn">›</button>
+            <div class="image-info" id="imageInfo"></div>
         </div>
     </div>
     <script src="script.js"></script>

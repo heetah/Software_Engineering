@@ -114,7 +114,7 @@ FORBIDDEN:
 - const config = require('./config') in Electron main.js
 - Mismatched DOM IDs between HTML and JS`,
         userPrompt: prompt,
-        maxTokens: 16348,  // Increased to 16k as requested
+        maxTokens: 81920,
         modelTier: modelTier // Pass tier to adapter
       });
 
@@ -167,14 +167,14 @@ FORBIDDEN:
         fixed = fixed.replace(/const\s*{\s*[\w,\s]+\s*}\s*=\s*require\(['"]\.\/config['"]\);?\n?/g, '');
         fixes.push('Removed invalid require("./config") - config.js is a frontend file');
       }
-      
+
       // 移除 config.xxx 的使用
       fixed = fixed.replace(/config\.enableDevTools/g, 'false');
       fixed = fixed.replace(/config\.settings\.defaultWindowSize\.width/g, '800');
       fixed = fixed.replace(/config\.settings\.defaultWindowSize\.height/g, '600');
       fixed = fixed.replace(/config\.width/g, '800');
       fixed = fixed.replace(/config\.height/g, '600');
-      
+
       if (fixed !== code && !fixes.includes('Replaced config.xxx references')) {
         fixes.push('Replaced config.xxx references with hardcoded values');
       }
@@ -183,7 +183,7 @@ FORBIDDEN:
     // 2. 檢測空函數體並警告
     const emptyFunctionPattern = /(?:async\s+)?function\s+\w+\([^)]*\)\s*\{\s*(?:\/\/[^\n]*\n?\s*)*\}/g;
     const emptyArrowPattern = /\w+\s*=\s*(?:async\s+)?\([^)]*\)\s*=>\s*\{\s*(?:\/\/[^\n]*\n?\s*)*\}/g;
-    
+
     if (emptyFunctionPattern.test(fixed) || emptyArrowPattern.test(fixed)) {
       console.warn('[PostProcess] ⚠️ Detected empty function bodies in generated code');
       fixes.push('WARNING: Empty function bodies detected - may need manual fix');
@@ -267,19 +267,19 @@ document.addEventListener('DOMContentLoaded', () => {
           const consumers = api.consumers || [];
           const producers = api.producers || [];
           // 顯示此檔案是 consumer 或 producer 的 API，或者 consumers 為空的 API
-          return consumers.length === 0 || 
-                 consumers.includes(filePath) || 
-                 producers.includes(filePath);
+          return consumers.length === 0 ||
+            consumers.includes(filePath) ||
+            producers.includes(filePath);
         });
 
         if (relevantApis.length > 0) {
           const isElectronIPC = relevantApis.some(api => api.method === 'ipc-handle');
-          
+
           if (isElectronIPC) {
             prompt += `📡 IPC CHANNELS (Electron):\n\n`;
             relevantApis.forEach(api => {
               const methodName = this.channelToMethodName(api.endpoint);
-              
+
               // 格式化 request schema
               let requestStr = '';
               if (api.requestSchema && api.requestSchema.properties) {
@@ -291,7 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
               } else {
                 requestStr = 'void';
               }
-              
+
               // 格式化 response schema
               let responseStr = '';
               if (api.responseSchema) {
@@ -312,10 +312,10 @@ document.addEventListener('DOMContentLoaded', () => {
               } else {
                 responseStr = 'void';
               }
-              
+
               prompt += `   ✅ ${methodName}(${requestStr}) -> ${responseStr}\n`;
               prompt += `      Purpose: ${api.purpose}\n`;
-              
+
               // 顯示詳細的 request/response 格式
               if (api.requestSchema && api.requestSchema.properties) {
                 prompt += `      Request: ${JSON.stringify(api.requestSchema.properties, null, 2).replace(/\n/g, '\n             ')}\n`;
@@ -328,7 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             prompt += `❌ DO NOT use: fetch() or HTTP requests\n`;
             prompt += `✅ USE ONLY window.electronAPI methods with EXACT signatures above\n\n`;
-            
+
             // 🔴 參數格式一致性規則
             prompt += `🔴 CRITICAL IPC PARAMETER FORMAT RULES:\n`;
             prompt += `1. If main.js handler uses object destructuring: ipcMain.handle('channel', async (event, { param1, param2 }) => ...)\n`;
@@ -481,7 +481,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ========== 🔴 FINAL MANDATORY RULES (CANNOT BE IGNORED) ==========
     prompt += `\n🔴🔴🔴 FINAL MANDATORY RULES - READ CAREFULLY 🔴🔴🔴\n\n`;
-    
+
     // 針對 Electron preload.js 的特殊規則
     if (filePath.includes('preload.js') || filePath.endsWith('preload.js')) {
       prompt += `⛔ ELECTRON PRELOAD SCRIPT RULES (you are generating preload.js):\n`;
@@ -496,7 +496,7 @@ document.addEventListener('DOMContentLoaded', () => {
       prompt += `6. 🔴 MATCH the parameter destructuring EXACTLY between main.js handler and preload.js method\n`;
       prompt += `7. This file runs in Node.js context with access to require(), NOT browser ES6 modules\n\n`;
     }
-    
+
     // 針對 Electron main.js 的特殊規則
     if (filePath.includes('main.js') || filePath.endsWith('main.js')) {
       prompt += `⛔ ELECTRON MAIN PROCESS RULES (you are generating main.js):\n`;
@@ -510,7 +510,7 @@ document.addEventListener('DOMContentLoaded', () => {
       prompt += `   - ✅ CORRECT: path.join(__dirname, 'public', 'index.html')\n`;
       prompt += `   - The public/ folder is at the SAME level as main.js, NOT one level up\n\n`;
     }
-    
+
     // 針對 renderer script 的規則
     if (filePath.includes('public/') || filePath.includes('renderer') || filePath.includes('script.js')) {
       prompt += `⛔ RENDERER PROCESS RULES (you are generating frontend JavaScript):\n`;
@@ -526,7 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
       prompt += `   - When number is pressed after equals: START NEW expression (replace display)\n`;
       prompt += `   - Example flow: 5 → 5, + → 5+, 3 → 5+3, = → 8 (waitingForNewNumber=true), 2 → 2 (new expression)\n\n`;
     }
-    
+
     prompt += `⛔ UNIVERSAL RULES (apply to ALL files):\n`;
     prompt += `1. Every function MUST have COMPLETE working code inside - no empty bodies\n`;
     prompt += `2. NO comments like "// implementation omitted" or "// TODO"\n`;

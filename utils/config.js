@@ -15,9 +15,9 @@ export class Config {
       baseUrl: "https://api.openai.com/v1",
       apiKey: process.env.OPENAI_API_KEY,
       // 優化超時：增加超時時間以避免複雜生成的超時錯誤
-      timeout: 120000, // 從 20 秒增加到 120 秒
-      maxRetries: 2, // 從 3 次減少到 2 次
-      retryDelay: 1000 // 增加重試延遲
+      timeout: 60000,
+      maxRetries: 2,
+      retryDelay: 500
     };
 
     // Agent 配置
@@ -38,7 +38,7 @@ export class Config {
 
     // Token 限制配置
     this.tokenLimits = {
-      maxTotal: 2000000, // 增加到 200 萬 tokens
+      maxTotal: 1000000, // 增加到 200 萬 tokens
       warningThreshold: 0.8 // 80% 時警告
     };
 

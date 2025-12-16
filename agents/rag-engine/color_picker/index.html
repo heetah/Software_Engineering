@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>顏色選擇器</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>顏色選擇器</h1>
+        <div class="color-picker">
+            <div class="color-display" id="colorDisplay"></div>
+            <div class="controls">
+                <div class="slider-group">
+                    <label>
+                        <span>紅色 (R)</span>
+                        <span id="redValue">255</span>
+                    </label>
+                    <input type="range" id="redSlider" min="0" max="255" value="255" class="slider red">
+                </div>
+                <div class="slider-group">
+                    <label>
+                        <span>綠色 (G)</span>
+                        <span id="greenValue">0</span>
+                    </label>
+                    <input type="range" id="greenSlider" min="0" max="255" value="0" class="slider green">
+                </div>
+                <div class="slider-group">
+                    <label>
+                        <span>藍色 (B)</span>
+                        <span id="blueValue">100</span>
+                    </label>
+                    <input type="range" id="blueSlider" min="0" max="255" value="100" class="slider blue">
+                </div>
+            </div>
+            <div class="color-codes">
+                <div class="code-group">
+                    <label>HEX</label>
+                    <input type="text" id="hexCode" readonly>
+                    <button class="copy-btn" data-target="hexCode">複製</button>
+                </div>
+                <div class="code-group">
+                    <label>RGB</label>
+                    <input type="text" id="rgbCode" readonly>
+                    <button class="copy-btn" data-target="rgbCode">複製</button>
+                </div>
+            </div>
+            <button id="randomBtn" class="btn-random">隨機顏色</button>
+            <div class="saved-colors" id="savedColors">
+                <h3>已儲存的顏色</h3>
+                <div class="color-grid" id="colorGrid"></div>
+            </div>
+            <button id="saveBtn" class="btn-save">儲存此顏色</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>

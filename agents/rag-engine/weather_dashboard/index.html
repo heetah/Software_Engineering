@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+
+<body>
+    <div class="weather-app">
+        <header>
+            <div class="search-box">
+                <i class="fas fa-map-marker-alt"></i>
+                <input type="text" id="city-input" placeholder="Enter city name (e.g., Tokyo)">
+                <button id="search-btn"><i class="fas fa-search"></i></button>
+            </div>
+        </header>
+
+        <div id="error-message" class="error-message">City not found! Try "Tokyo", "London", "Taipei", or "New York".
+        </div>
+
+        <main id="weather-content">
+            <div class="current-weather">
+                <div class="weather-info">
+                    <h1 id="city-name">Taipei, TW</h1>
+                    <div class="date" id="current-date">Monday, 10th Jan</div>
+                    <div class="temp-container">
+                        <span id="temperature">24</span>
+                        <span class="unit">°C</span>
+                    </div>
+                    <div class="condition" id="condition">Cloudy</div>
+                </div>
+                <div class="weather-icon-main">
+                    <i class="fas fa-cloud" id="main-icon"></i>
+                </div>
+            </div>
+
+            <div class="weather-details">
+                <div class="detail-card">
+                    <i class="fas fa-wind"></i>
+                    <div>
+                        <span id="wind-speed">12 km/h</span>
+                        <p>Wind</p>
+                    </div>
+                </div>
+                <div class="detail-card">
+                    <i class="fas fa-tint"></i>
+                    <div>
+                        <span id="humidity">45%</span>
+                        <p>Humidity</p>
+                    </div>
+                </div>
+                <div class="detail-card">
+                    <i class="fas fa-compress-arrows-alt"></i>
+                    <div>
+                        <span id="pressure">1015 hPa</span>
+                        <p>Pressure</p>
+                    </div>
+                </div>
+            </div>
+
+            <h3 class="forecast-title">5-Day Forecast</h3>
+            <div class="forecast-grid" id="forecast-grid">
+                <!-- Forecast items injected here -->
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

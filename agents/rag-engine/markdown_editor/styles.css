@@ -1,0 +1,240 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f5f5f5;
+    min-height: 100vh;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+header {
+    background: white;
+    padding: 20px 30px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+h1 {
+    color: #333;
+    margin-bottom: 15px;
+}
+
+.toolbar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.tool-btn {
+    padding: 8px 15px;
+    background: #f0f0f0;
+    border: 2px solid #e0e0e0;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.tool-btn:hover {
+    background: #e0e0e0;
+    transform: translateY(-1px);
+}
+
+.tool-btn.danger {
+    background: #fee;
+    border-color: #fcc;
+    color: #c00;
+}
+
+.tool-btn.danger:hover {
+    background: #fcc;
+}
+
+.editor-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    flex: 1;
+    overflow: hidden;
+}
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    background: white;
+    margin: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+.panel-header {
+    padding: 15px 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.char-count {
+    font-size: 0.9em;
+    opacity: 0.9;
+}
+
+#editor {
+    flex: 1;
+    padding: 20px;
+    border: none;
+    font-family: 'Courier New', monospace;
+    font-size: 1em;
+    line-height: 1.6;
+    resize: none;
+    outline: none;
+}
+
+.preview {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    line-height: 1.8;
+}
+
+.preview h1,
+.preview h2,
+.preview h3,
+.preview h4,
+.preview h5,
+.preview h6 {
+    margin: 1em 0 0.5em;
+    color: #333;
+}
+
+.preview h1 {
+    font-size: 2em;
+    border-bottom: 2px solid #667eea;
+    padding-bottom: 0.3em;
+}
+
+.preview h2 {
+    font-size: 1.7em;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 0.3em;
+}
+
+.preview h3 {
+    font-size: 1.4em;
+}
+
+.preview p {
+    margin: 1em 0;
+    color: #555;
+}
+
+.preview a {
+    color: #667eea;
+    text-decoration: none;
+}
+
+.preview a:hover {
+    text-decoration: underline;
+}
+
+.preview code {
+    background: #f4f4f4;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    color: #e91e63;
+}
+
+.preview pre {
+    background: #282c34;
+    color: #abb2bf;
+    padding: 15px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 1em 0;
+}
+
+.preview pre code {
+    background: none;
+    color: #abb2bf;
+    padding: 0;
+}
+
+.preview ul,
+.preview ol {
+    margin: 1em 0;
+    padding-left: 2em;
+}
+
+.preview li {
+    margin: 0.5em 0;
+    color: #555;
+}
+
+.preview blockquote {
+    border-left: 4px solid #667eea;
+    padding-left: 1em;
+    margin: 1em 0;
+    color: #666;
+    font-style: italic;
+}
+
+.preview table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1em 0;
+}
+
+.preview th,
+.preview td {
+    border: 1px solid #ddd;
+    padding: 8px 12px;
+    text-align: left;
+}
+
+.preview th {
+    background: #667eea;
+    color: white;
+}
+
+.preview img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+}
+
+.download-btn {
+    padding: 6px 15px;
+    background: white;
+    color: #667eea;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.download-btn:hover {
+    background: #f0f0f0;
+    transform: translateY(-1px);
+}
+
+@media (max-width: 768px) {
+    .editor-container {
+        grid-template-columns: 1fr;
+    }
+}

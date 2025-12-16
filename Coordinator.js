@@ -288,12 +288,12 @@ export async function runWithInstructionService(
         );
 
         if (checkResult.fixResult) {
-          console.log(`\n📊 程式化修復結果: 成功 ${checkResult.fixResult.successCount}，失敗 ${checkResult.fixResult.failCount}`);
+          console.log(`\nProgrammatic Fix Result: Success ${checkResult.fixResult.successCount}, Failed ${checkResult.fixResult.failCount}`);
         }
 
         // 第二層：AI 深度修復（無論程式化修復是否成功都執行）
         console.log("\n" + "=".repeat(60));
-        console.log("🤖 AI Contract Repair: 深度分析並修復");
+        console.log("AI Contract Repair: Deep Analysis and Repair");
         console.log("=".repeat(60));
 
         // 重新驗證以獲取最新問題
@@ -320,25 +320,25 @@ export async function runWithInstructionService(
           );
 
           if (repairResult.success) {
-            console.log("\n✅ AI 修復完成！");
-            console.log(`   修復文件數: ${repairResult.summary.fixedFileCount}`);
-            console.log(`   總變更數: ${repairResult.summary.totalChanges}`);
-            console.log(`   修復的文件: ${repairResult.summary.files.join(', ')}\n`);
+            console.log("\nAI Repair Success!");
+            console.log(`   Fixed Files: ${repairResult.summary.fixedFileCount}`);
+            console.log(`   Total Changes: ${repairResult.summary.totalChanges}`);
+            console.log(`   Fixed Files: ${repairResult.summary.files.join(', ')}\n`);
 
             // 最終驗證
             const postRepairValidation = await contractValidator.validateSession(plan.id);
             if (postRepairValidation.isValid) {
-              console.log("🎉 最終驗證通過！專案契約完全一致！\n");
+              console.log("Final Validation Passed! Project Contracts are Consistent!\n");
             } else {
-              console.log("⚠️  仍有少量問題，但已大幅改善\n");
+              console.log("\nSome Issues Remain, but Significantly Improved\n");
               const report = contractValidator.generateReport(postRepairValidation);
               console.log(report);
             }
           } else {
-            console.log("\n⚠️  AI 修復失敗，請檢查錯誤訊息\n");
+            console.log("\nAI Repair Failed, Please Check Error Messages\n");
           }
         } else {
-          console.log("\n✅ 專案契約完全一致，無需 AI 修復！\n");
+          console.log("\nProject Contracts are Consistent, No Need for AI Repair!\n");
           const validationReport = contractValidator.generateReport(finalValidation);
           console.log(validationReport);
         }
@@ -352,9 +352,9 @@ export async function runWithInstructionService(
     }
 
     // ===== Verifier Agent: 生成測試計劃 =====
-    logProgress("\n" + "=".repeat(60));
-    logProgress("Verifier Agent: Generate test plan");
-    logProgress("=".repeat(60));
+    console.log("\n" + "=".repeat(60));
+    console.log("Verifier Agent: Verify files and generate test plans");
+    console.log("=".repeat(60));
 
     let testPlan = null;
     try {
@@ -363,13 +363,14 @@ export async function runWithInstructionService(
         () => verifier.runVerifierAgent(plan.id),
         { sessionId: plan.id }
       );
-      testPlan = verifierResult.plan;
-      console.log(`Test Plan generated: ${verifierResult.path}`);
-      console.log(`Test files: ${testPlan?.testFiles?.length || 0}`);
+      testPlan = verifierResult; // 直接使用整個結果物件
+      console.log(`\n✓ Verification complete`);
+      console.log(`  Report: ${verifierResult.reportPath}`);
+      console.log(`  Test plans: ${testPlan?.testPlans?.length || 0}`);
 
-      if (testPlan?.testFiles && testPlan.testFiles.length > 0) {
-        testPlan.testFiles.forEach(tf => {
-          console.log(`  - ${tf.filename} (${tf.testLevel}, ${tf.inputsType})`);
+      if (testPlan?.testPlans && testPlan.testPlans.length > 0) {
+        testPlan.testPlans.forEach(tp => {
+          console.log(`  - ${tp.file} -> ${tp.testPlanPath}`);
         });
       }
     } catch (err) {
@@ -382,10 +383,11 @@ export async function runWithInstructionService(
     }
 
     // ===== Tester Agent: 生成測試碼並執行測試 =====
-    if (testPlan && testPlan.testFiles && testPlan.testFiles.length > 0) {
-      logProgress("\n" + "=".repeat(60));
-      logProgress("Tester Agent: Generate test code and execute tests");
-      logProgress("=".repeat(60));
+    if (testPlan && testPlan.testPlans && testPlan.testPlans.length > 0) {
+      console.log("\n" + "=".repeat(60));
+      console.log("Tester Agent: Smart patching, syntax fix, and testing");
+      console.log("Features: Phase 2 (Syntax fix, Deps) + Phase 3 (Smart exports)");
+      console.log("=".repeat(60));
 
       try {
         const testResult = await withErrorHandling(
@@ -399,8 +401,8 @@ export async function runWithInstructionService(
 
         // 檢查 jestResults 是否有效
         if (!jestResults || !jestResults.results) {
-          console.log(`\n 測試執行失敗或無結果`);
-          console.log(`   報告已產生：${reportPath}`);
+          console.log(`\n Tests execution failed or no results`);
+          console.log(`   Report generated: ${reportPath}`);
         } else {
           const results = jestResults.results;
 
@@ -446,20 +448,22 @@ export async function runWithInstructionService(
               if (failures.length > 5) {
                 console.log(`  ... There are ${failures.length - 5} more failed cases`);
               }
-            });
-            if (errorReport.failures.length > 5) {
-              console.log(`  ... There are ${errorReport.failures.length - 5} more failed cases`);
             }
           } else {
             console.log(`\nAll tests passed!`);
           }
-        } else {
-          console.log(`\nAll tests passed!`);
-        }
 
-        // 將測試結果添加到 plan 中
-        plan.testReport = testReport;
-        plan.errorReport = errorReport;
+          // 將測試結果添加到 plan 中（轉換為原格式）
+          plan.testReport = {
+            totals: {
+              files: results.numTotalTestSuites || 0,
+              tests: results.numTotalTests || 0,
+              passed: results.numPassedTests || 0,
+              failed: results.numFailedTests || 0
+            }
+          };
+          plan.errorReport = { failures: failures || [] };
+        }
       } catch (err) {
         errorLogger.warn("Tester Agent execution failed", {
           error: err.message,

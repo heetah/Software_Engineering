@@ -1,142 +1,120 @@
-// Task management
-let tasks = JSON.parse(localStorage.getItem('tasks')) || [];
+// State
+let todos = JSON.parse(localStorage.getItem('todos')) || [];
 let currentFilter = 'all';
 
-// Initialize app
+// DOM Elements
+const todoInput = document.getElementById('todo-input');
+const addBtn = document.getElementById('add-btn');
+const todoList = document.getElementById('todo-list');
+const emptyState = document.getElementById('empty-state');
+const filterBtns = document.querySelectorAll('.filter-btn');
+
+// Initialization
 document.addEventListener('DOMContentLoaded', () => {
-    renderTasks();
-    updateStats();
-    setupFilterButtons();
-    setupEnterKey();
+    refreshTodoList();
 });
 
-// Add new task
-function addTask() {
-    const input = document.getElementById('taskInput');
-    const taskText = input.value.trim();
+// Event Listeners
+addBtn.addEventListener('click', addTodo);
+todoInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') addTodo();
+});
 
-    if (taskText === '') return;
+filterBtns.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        // Update active class
+        filterBtns.forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
 
-    const task = {
+        // Update filter state
+        currentFilter = e.target.dataset.filter;
+        refreshTodoList();
+    });
+});
+
+// Functions
+function addTodo() {
+    const text = todoInput.value.trim();
+    if (text === '') return;
+
+    const newTodo = {
         id: Date.now(),
-        text: taskText,
-        completed: false,
-        createdAt: new Date().toISOString()
+        text: text,
+        completed: false
     };
 
-    tasks.unshift(task);
-    saveTasks();
-    renderTasks();
-    updateStats();
-
-    input.value = '';
-    input.focus();
+    todos.unshift(newTodo);
+    saveTodos();
+    refreshTodoList();
+    todoInput.value = '';
 }
 
-// Toggle task completion
-function toggleTask(id) {
-    const task = tasks.find(t => t.id === id);
-    if (task) {
-        task.completed = !task.completed;
-        saveTasks();
-        renderTasks();
-        updateStats();
-    }
+function deleteTodo(id) {
+    todos = todos.filter(todo => todo.id !== id);
+    saveTodos();
+    refreshTodoList();
 }
 
-// Delete task
-function deleteTask(id) {
-    tasks = tasks.filter(t => t.id !== id);
-    saveTasks();
-    renderTasks();
-    updateStats();
-}
-
-// Clear completed tasks
-function clearCompleted() {
-    tasks = tasks.filter(t => !t.completed);
-    saveTasks();
-    renderTasks();
-    updateStats();
-}
-
-// Render tasks based on current filter
-function renderTasks() {
-    const taskList = document.getElementById('taskList');
-    taskList.innerHTML = '';
-
-    const filteredTasks = getFilteredTasks();
-
-    filteredTasks.forEach(task => {
-        const li = document.createElement('li');
-        li.className = `task-item ${task.completed ? 'completed' : ''}`;
-
-        li.innerHTML = `
-            <input 
-                type="checkbox" 
-                class="task-checkbox" 
-                ${task.completed ? 'checked' : ''}
-                onchange="toggleTask(${task.id})"
-            >
-            <span class="task-text">${escapeHtml(task.text)}</span>
-            <button class="delete-btn" onclick="deleteTask(${task.id})">Delete</button>
-        `;
-
-        taskList.appendChild(li);
-    });
-}
-
-// Get filtered tasks
-function getFilteredTasks() {
-    switch (currentFilter) {
-        case 'active':
-            return tasks.filter(t => !t.completed);
-        case 'completed':
-            return tasks.filter(t => t.completed);
-        default:
-            return tasks;
-    }
-}
-
-// Update statistics
-function updateStats() {
-    const activeTasks = tasks.filter(t => !t.completed).length;
-    const taskCount = document.getElementById('taskCount');
-    taskCount.textContent = `${activeTasks} task${activeTasks !== 1 ? 's' : ''} remaining`;
-}
-
-// Setup filter buttons
-function setupFilterButtons() {
-    const filterButtons = document.querySelectorAll('.filter-btn');
-
-    filterButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            filterButtons.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            currentFilter = btn.dataset.filter;
-            renderTasks();
-        });
-    });
-}
-
-// Setup Enter key to add task
-function setupEnterKey() {
-    const input = document.getElementById('taskInput');
-    input.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            addTask();
+function toggleComplete(id) {
+    todos = todos.map(todo => {
+        if (todo.id === id) {
+            return { ...todo, completed: !todo.completed };
         }
+        return todo;
     });
+    saveTodos();
+    refreshTodoList();
 }
 
-// Save tasks to localStorage
-function saveTasks() {
-    localStorage.setItem('tasks', JSON.stringify(tasks));
+function saveTodos() {
+    localStorage.setItem('todos', JSON.stringify(todos));
 }
 
-// Escape HTML to prevent XSS
+function refreshTodoList() {
+    todoList.innerHTML = '';
+
+    // Filter logic
+    let filteredTodos = todos;
+    if (currentFilter === 'active') {
+        filteredTodos = todos.filter(t => !t.completed);
+    } else if (currentFilter === 'completed') {
+        filteredTodos = todos.filter(t => t.completed);
+    }
+
+    // Empty State Check
+    if (filteredTodos.length === 0) {
+        emptyState.style.display = 'block';
+    } else {
+        emptyState.style.display = 'none';
+
+        filteredTodos.forEach(todo => {
+            const li = document.createElement('li');
+            li.className = `todo-item ${todo.completed ? 'completed' : ''}`;
+            li.innerHTML = `
+                <div class="todo-content" onclick="toggleComplete(${todo.id})">
+                    <div class="check-circle">
+                        ${todo.completed ? '<i class="fas fa-check"></i>' : ''}
+                    </div>
+                    <span class="todo-text">${escapeHtml(todo.text)}</span>
+                </div>
+                <button class="delete-btn" onclick="deleteTodo(${todo.id})">
+                    <i class="fas fa-trash"></i>
+                </button>
+            `;
+            todoList.appendChild(li);
+        });
+    }
+}
+
 function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
+
+// Make functions global for inline onclick handlers
+window.toggleComplete = toggleComplete;
+window.deleteTodo = deleteTodo;

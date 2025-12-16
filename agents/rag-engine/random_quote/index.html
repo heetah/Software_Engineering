@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每日金句</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="quote-box">
+            <div class="quote-icon">💭</div>
+            <blockquote id="quote">點擊按鈕獲取今日金句</blockquote>
+            <div class="author" id="author"></div>
+            <div class="category" id="category"></div>
+
+            <div class="actions">
+                <button id="newQuoteBtn" class="btn-new">新的金句</button>
+                <button id="copyBtn" class="btn-copy">📋 複製</button>
+                <button id="shareBtn" class="btn-share">🔗 分享</button>
+            </div>
+
+            <div class="favorites">
+                <h3>我的最愛</h3>
+                <div id="favoritesList" class="favorites-list"></div>
+            </div>
+
+            <button id="saveBtn" class="btn-save">❤️ 加入最愛</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>

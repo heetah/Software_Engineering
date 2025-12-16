@@ -29,43 +29,43 @@ export default class ContractRepairAgent {
    * @returns {Object} 修復結果
    */
   async repair(sessionId, validationResult) {
-    console.log('\n🔧 Contract Repair Agent: 開始 AI 修復流程...\n');
+    console.log('\nContract Repair Agent: Repairing contract issues...\n');
 
     try {
       // 1. 讀取所有相關文件
       const projectFiles = await this.readProjectFiles(sessionId);
-      
+
       // 2. 讀取 architecture.json
       const architecture = await this.readArchitecture(sessionId);
-      
+
       // 3. 構建修復 prompt
       const prompt = this.buildRepairPrompt(
         projectFiles,
         architecture,
         validationResult
       );
-      
+
       // 4. 調用 AI 進行修復
-      console.log('📡 正在調用 AI 分析並修復問題...\n');
+      console.log('Analyzing and repairing issues...\n');
       const response = await this.geminiService.generateContent(prompt);
       const repairResult = response.response.text();
-      
+
       // 5. 解析 AI 返回的修復方案
       const fixes = this.parseRepairResult(repairResult);
-      
+
       // 6. 應用修復
       const appliedFixes = await this.applyFixes(sessionId, fixes);
-      
-      console.log(`✅ AI 修復完成！成功修復 ${appliedFixes.length} 個文件\n`);
-      
+
+      console.log(`✅ AI repaired ${appliedFixes.length} files!\n`);
+
       return {
         success: true,
         fixedFiles: appliedFixes,
         summary: this.generateSummary(appliedFixes)
       };
-      
+
     } catch (error) {
-      console.error('❌ AI 修復失敗:', error.message);
+      console.error('❌ AI repair failed:', error.message);
       return {
         success: false,
         error: error.message
@@ -79,7 +79,7 @@ export default class ContractRepairAgent {
   async readProjectFiles(sessionId) {
     const outputDir = path.join(process.cwd(), 'output', sessionId);
     const files = {};
-    
+
     // 關鍵文件列表
     const keyFiles = [
       'main.js',
@@ -87,12 +87,12 @@ export default class ContractRepairAgent {
       'public/script.js',
       'public/index.html'
     ];
-    
+
     for (const file of keyFiles) {
       const filePath = path.join(outputDir, file);
       try {
         const content = await fs.readFile(filePath, 'utf-8');
-        
+
         // 智能裁剪：只保留關鍵部分
         if (file === 'public/index.html') {
           // HTML 只需要關鍵元素 ID 和結構
@@ -104,10 +104,10 @@ export default class ContractRepairAgent {
           files[file] = content;
         }
       } catch (error) {
-        console.warn(`⚠️  無法讀取 ${file}: ${error.message}`);
+        console.warn(`⚠️ Failed to read ${file}: ${error.message}`);
       }
     }
-    
+
     return files;
   }
 
@@ -117,14 +117,14 @@ export default class ContractRepairAgent {
   extractHtmlEssentials(html) {
     // 提取所有有 id 的元素
     const idMatches = html.match(/<[^>]+id\s*=\s*["'][^"']+["'][^>]*>/gi) || [];
-    
+
     // 保留基本結構
     const essentials = [
       '<!-- 關鍵元素摘要 -->',
       ...idMatches.slice(0, 20), // 最多 20 個
       '<!-- ... 其他內容省略 ... -->'
     ].join('\n');
-    
+
     return essentials;
   }
 
@@ -134,7 +134,7 @@ export default class ContractRepairAgent {
   extractIpcEssentials(content, filename) {
     const lines = content.split('\n');
     const essentialLines = [];
-    
+
     // 保留 imports/requires
     essentialLines.push('// === Imports ===');
     lines.slice(0, 10).forEach(line => {
@@ -142,26 +142,26 @@ export default class ContractRepairAgent {
         essentialLines.push(line);
       }
     });
-    
-    essentialLines.push('\n// === IPC 相關代碼 ===');
-    
+
+    essentialLines.push('\n// === IPC related code ===');
+
     // 提取 IPC 相關代碼段
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      
+
       // 找到 IPC 相關行，保留上下文（前後 3 行）
-      if (line.includes('ipcMain.handle') || 
-          line.includes('ipcRenderer.invoke') ||
-          line.includes('contextBridge.exposeInMainWorld')) {
-        
+      if (line.includes('ipcMain.handle') ||
+        line.includes('ipcRenderer.invoke') ||
+        line.includes('contextBridge.exposeInMainWorld')) {
+
         const start = Math.max(0, i - 3);
         const end = Math.min(lines.length, i + 10);
-        essentialLines.push('\n// --- IPC 代碼段 ---');
+        essentialLines.push('\n// --- IPC code segment ---');
         essentialLines.push(...lines.slice(start, end));
       }
     }
-    
-    essentialLines.push('\n// ... 其他代碼省略 ...');
+
+    essentialLines.push('\n// ... other code omitted ...');
     return essentialLines.join('\n');
   }
 
@@ -175,7 +175,7 @@ export default class ContractRepairAgent {
       sessionId,
       'architecture.json'
     );
-    
+
     const content = await fs.readFile(archPath, 'utf-8');
     return JSON.parse(content);
   }
@@ -185,20 +185,20 @@ export default class ContractRepairAgent {
    */
   buildRepairPrompt(projectFiles, architecture, validationResult) {
     const contracts = architecture.output?.coder_instructions?.contracts || {};
-    
-    // 計算預估 token 數
+
+    // Calculate estimated token count
     const estimatedTokens = this.estimateTokens(projectFiles, contracts);
-    console.log(`📊 預估 token 使用量: ~${estimatedTokens} tokens`);
-    
+    console.log(` Estimated token usage: ~${estimatedTokens} tokens`);
+
     if (estimatedTokens > 100000) {
-      console.warn('⚠️  Token 數量較大，可能需要分批處理');
+      console.warn(' Token count is large, may need batch processing');
     }
-    
-    return `你是一個代碼修復專家。請分析以下 Electron 專案的關鍵代碼片段，修復所有契約不一致、語法錯誤和邏輯問題。
 
-注意：為了控制 token 使用，部分文件已經過智能裁剪，只顯示關鍵的 IPC 相關代碼。
+    return `You are a code repair expert. Please analyze the following Electron project code snippets and fix all contract inconsistencies, syntax errors, and logical issues.
 
-## 專案契約定義（architecture.json）
+Note: To control token usage, some files have been intelligently trimmed, showing only key IPC-related code.
+
+## Project Contract Definition (architecture.json)
 
 ### IPC 契約
 ${JSON.stringify(contracts.api || [], null, 2)}
@@ -206,26 +206,26 @@ ${JSON.stringify(contracts.api || [], null, 2)}
 ### DOM 契約
 ${JSON.stringify(contracts.dom || [], null, 2)}
 
-## 專案文件內容
+## Project files
 
 ### main.js
 \`\`\`javascript
-${projectFiles['main.js'] || '// 文件缺失'}
+${projectFiles['main.js'] || '// File missing'}
 \`\`\`
 
 ### preload.js
 \`\`\`javascript
-${projectFiles['preload.js'] || '// 文件缺失'}
+${projectFiles['preload.js'] || '// File missing'}
 \`\`\`
 
 ### public/script.js
 \`\`\`javascript
-${projectFiles['public/script.js'] || '// 文件缺失'}
+${projectFiles['public/script.js'] || '// File missing'}
 \`\`\`
 
 ### public/index.html
 \`\`\`html
-${projectFiles['public/index.html'] || '<!-- 文件缺失 -->'}
+${projectFiles['public/index.html'] || '<!-- File missing -->'}
 \`\`\`
 
 ## 已檢測到的問題
@@ -304,53 +304,53 @@ ${this.formatValidationIssues(validationResult)}
    */
   formatValidationIssues(validationResult) {
     if (!validationResult || validationResult.isValid) {
-      return '沒有檢測到問題';
+      return 'No issues detected';
     }
 
     const issues = validationResult.issues || {};
     let output = '';
 
     if (issues.missingChannels?.length > 0) {
-      output += '### 缺失的 IPC 頻道\n';
+      output += '### Missing IPC \n';
       issues.missingChannels.forEach(issue => {
-        output += `- ${issue.endpoint}: 期望在 ${issue.expectedIn?.join(', ')} 中實現\n`;
+        output += `- ${issue.endpoint}: Expected in ${issue.expectedIn?.join(', ')} \n`;
       });
       output += '\n';
     }
 
     if (issues.nameMismatches?.length > 0) {
-      output += '### 名稱不匹配\n';
+      output += '### Name Mismatch\n';
       issues.nameMismatches.forEach(issue => {
-        output += `- 期望 '${issue.expected}'，實際 '${issue.actual}' (${issue.file})\n`;
+        output += `- Expected '${issue.expected}', actual '${issue.actual}' (${issue.file})\n`;
       });
       output += '\n';
     }
 
     if (issues.missingProducers?.length > 0) {
-      output += '### 缺失的 Producers\n';
+      output += '### Missing Producers\n';
       issues.missingProducers.forEach(issue => {
-        output += `- ${issue.endpoint}: ${issue.file} 應該實現 handler\n`;
+        output += `- ${issue.endpoint}: ${issue.file} should implement handler\n`;
       });
       output += '\n';
     }
 
     if (issues.missingConsumers?.length > 0) {
-      output += '### 缺失的 Consumers\n';
+      output += '### Missing Consumers\n';
       issues.missingConsumers.forEach(issue => {
-        output += `- ${issue.endpoint}: ${issue.file} 應該調用\n`;
+        output += `- ${issue.endpoint}: ${issue.file} should call\n`;
       });
       output += '\n';
     }
 
     if (issues.schemaErrors?.length > 0) {
-      output += '### Schema 錯誤\n';
+      output += '### Schema Error\n';
       issues.schemaErrors.forEach(issue => {
         output += `- ${JSON.stringify(issue)}\n`;
       });
       output += '\n';
     }
 
-    return output || '沒有詳細問題描述';
+    return output || 'No issue description';
   }
 
   /**
@@ -364,11 +364,11 @@ ${this.formatValidationIssues(validationResult)}
         // 嘗試直接解析
         return JSON.parse(repairResult);
       }
-      
+
       return JSON.parse(jsonMatch[1]);
     } catch (error) {
-      console.error('解析 AI 返回結果失敗:', error.message);
-      throw new Error('AI 返回的格式不正確');
+      console.error('Failed to parse AI result:', error.message);
+      throw new Error('AI result format is incorrect');
     }
   }
 
@@ -381,27 +381,27 @@ ${this.formatValidationIssues(validationResult)}
 
     for (const fix of fixes.fixes || []) {
       const filePath = path.join(outputDir, fix.file);
-      
+
       try {
         // 讀取原始文件
         let content = await fs.readFile(filePath, 'utf-8');
         let changeCount = 0;
         const changes = [];
-        
+
         // 應用所有替換
         for (const replacement of fix.replacements || []) {
           const { search, replace, reason } = replacement;
-          
+
           if (content.includes(search)) {
             content = content.replace(search, replace);
             changeCount++;
             changes.push(reason);
             console.log(`   ✓ ${reason}`);
           } else {
-            console.warn(`   ⚠️  找不到: "${search.substring(0, 50)}..."`);
+            console.warn(`   ⚠️  Not found: "${search.substring(0, 50)}..."`);
           }
         }
-        
+
         if (changeCount > 0) {
           // 寫回文件
           await fs.writeFile(filePath, content, 'utf-8');
@@ -409,13 +409,13 @@ ${this.formatValidationIssues(validationResult)}
             file: fix.file,
             changes
           });
-          console.log(`✅ 已修復: ${fix.file} (${changeCount} 處變更)`);
+          console.log(`✅ Fixed: ${fix.file} (${changeCount} changes)`);
         } else {
-          console.log(`⚠️  ${fix.file}: 沒有找到需要替換的內容`);
+          console.log(`⚠️  ${fix.file}: No content to replace`);
         }
-        
+
       } catch (error) {
-        console.error(`❌ 修復 ${fix.file} 失敗:`, error.message);
+        console.error(`❌ Failed to fix ${fix.file}:`, error.message);
       }
     }
 
@@ -427,18 +427,18 @@ ${this.formatValidationIssues(validationResult)}
    */
   estimateTokens(files, contracts) {
     let total = 0;
-    
+
     // 文件內容
     for (const content of Object.values(files)) {
       total += Math.ceil(content.length / 4); // 粗略估計：4 字元 = 1 token
     }
-    
+
     // 契約定義
     total += Math.ceil(JSON.stringify(contracts).length / 4);
-    
+
     // Prompt 本身
     total += 1000;
-    
+
     return total;
   }
 

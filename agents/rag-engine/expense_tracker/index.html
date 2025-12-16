@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>記帳本</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>💰 個人記帳本</h1>
+
+        <div class="balance-card">
+            <div class="balance-item">
+                <span class="label">總餘額</span>
+                <span class="amount" id="balance">$0</span>
+            </div>
+            <div class="balance-details">
+                <div class="balance-item income">
+                    <span class="label">總收入</span>
+                    <span class="amount" id="income">$0</span>
+                </div>
+                <div class="balance-item expense">
+                    <span class="label">總支出</span>
+                    <span class="amount" id="expense">$0</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="transaction-form">
+            <h2>新增交易</h2>
+            <input type="text" id="description" placeholder="描述" required>
+            <input type="number" id="amount" placeholder="金額" step="0.01" required>
+            <select id="type">
+                <option value="income">收入</option>
+                <option value="expense">支出</option>
+            </select>
+            <select id="category">
+                <option value="salary">薪資</option>
+                <option value="food">飲食</option>
+                <option value="transport">交通</option>
+                <option value="shopping">購物</option>
+                <option value="entertainment">娛樂</option>
+                <option value="bills">帳單</option>
+                <option value="other">其他</option>
+            </select>
+            <button id="addBtn" class="btn-add">新增</button>
+        </div>
+
+        <div class="transactions">
+            <div class="transactions-header">
+                <h2>交易紀錄</h2>
+                <button id="clearBtn" class="btn-clear">清除全部</button>
+            </div>
+            <div id="transactionList" class="transaction-list"></div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>

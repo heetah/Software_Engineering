@@ -93,6 +93,22 @@ libraryButton?.addEventListener('click', () => { setActivePage('page-library'); 
 sortProjectsBtn?.addEventListener('click', toggleProjectSort);
 clearHistoryButton?.addEventListener('click', () => clearAllHistory().catch(console.error));
 
+// LLM Provider 選擇事件監聽器
+document.querySelectorAll('input[name="llm-provider"]').forEach(radio => {
+  radio.addEventListener('change', async (e) => {
+    const selectedProvider = e.target.value;
+    try {
+      await ipcRenderer.invoke('settings:set-llm-provider', selectedProvider);
+      console.log(`LLM provider changed to: ${selectedProvider}`);
+      // 可選：顯示成功提示
+      alert(`已切換至 ${selectedProvider === 'auto' ? '自動模式' : selectedProvider === 'gemini' ? 'Gemini' : 'OpenAI'}`);
+    } catch (error) {
+      console.error('Failed to update LLM provider:', error);
+      alert('設定失敗，請重試');
+    }
+  });
+});
+
 if (themeToggle) {
   themeToggle.checked = document.documentElement.classList.contains('dark-mode');
   themeToggle.addEventListener('change', () => {
@@ -242,11 +258,18 @@ function appendMessage(text, sender, type = 'text', options = {}) {
   } else if (type === 'download') {
     bubble.classList.add('message-bubble--download');
     bubble.innerHTML = `<div>${text || 'Output ready.'}</div>`;
+
+    // Create actions container to match Copy button style
+    const actions = document.createElement('div');
+    actions.className = 'message-actions';
+
     const btn = document.createElement('button');
-    btn.className = 'action-button action-button--pill';
+    btn.className = 'action-button'; // Use standard class
     btn.textContent = '下載';
     btn.onclick = () => ipcRenderer.invoke('download:save-zip', { zipPath: options.filePath, defaultName: options.fileName });
-    group.querySelector('.message-content').appendChild(btn);
+
+    actions.appendChild(btn);
+    group.querySelector('.message-content').appendChild(actions);
   } else {
     if (type === 'code') bubble.classList.add('message-bubble--code');
     bubble.textContent = text;
@@ -283,17 +306,202 @@ function setActivePage(id) {
   document.getElementById(id)?.classList.add('is-active');
   // Simple mapping
   if (id === 'page-chat') chatButton?.classList.add('is-active');
-  if (id === 'page-settings') settingsButton?.classList.add('is-active');
+  if (id === 'page-settings') {
+    settingsButton?.classList.add('is-active');
+    loadSettings();
+  }
   if (id === 'page-library') libraryButton?.classList.add('is-active');
 }
 
-function loadProjectLibrary() { /* ... existing logic ... */ }
-function toggleProjectSort() { /* ... existing logic ... */ }
-function clearAllHistory() { /* ... existing logic ... */ }
-function loadSettingsInfo() { /* ... existing logic ... */ }
+async function loadSettings() {
+  if (dataPathDisplay) {
+    try {
+      const dataPath = await ipcRenderer.invoke('settings:get-app-data-path');
+      dataPathDisplay.value = dataPath || 'Unknown path';
+    } catch (error) {
+      console.error('Failed to load data path:', error);
+      dataPathDisplay.value = 'Error loading path';
+    }
+  }
+
+  // 載入 LLM provider 設定
+  try {
+    const llmProvider = await ipcRenderer.invoke('settings:get-llm-provider');
+    const radioButton = document.querySelector(`input[name="llm-provider"][value="${llmProvider}"]`);
+    if (radioButton) {
+      radioButton.checked = true;
+    }
+  } catch (error) {
+    console.error('Failed to load LLM provider setting:', error);
+  }
+}
+
+
+async function clearAllHistory() {
+  const result = await ipcRenderer.invoke('history:clear-all');
+  if (result.ok) {
+    if (historyList) historyList.innerHTML = '';
+    if (chatDisplay) chatDisplay.innerHTML = '';
+    currentSession = null;
+    showGreetingIfEmpty();
+  } else if (!result.cancelled) {
+    console.error('Failed to clear history:', result.error);
+    alert('Failed to delete history: ' + result.error);
+  }
+}
+
+const projectSearchInput = document.getElementById('project-search-input');
+let currentFilter = '';
+
+loadProjectLibrary();
+
+if (projectSearchInput) {
+  projectSearchInput.addEventListener('input', (e) => {
+    currentFilter = e.target.value.toLowerCase();
+    renderProjectLibrary(currentProjects);
+  });
+}
+
+function loadProjectLibrary() {
+  ipcRenderer.invoke('project:list').then(projects => {
+    currentProjects = projects;
+    // Apply sort
+    if (sortOrder === 'oldest') {
+      currentProjects.sort((a, b) => new Date(a.updatedAt) - new Date(b.updatedAt));
+    } else {
+      currentProjects.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    }
+    renderProjectLibrary(currentProjects);
+  });
+}
+
+function renderProjectLibrary(projects) {
+  if (!libraryContainer) return;
+  libraryContainer.innerHTML = '';
+
+  // Filter projects
+  const filteredProjects = projects.filter(p => {
+    if (!currentFilter) return true;
+    const term = currentFilter.toLowerCase();
+    return (p.displayName || '').toLowerCase().includes(term) ||
+      (p.prompt || '').toLowerCase().includes(term) ||
+      p.name.toLowerCase().includes(term);
+  });
+
+  if (projectCount) {
+    projectCount.textContent = `目前的專案總數: ${filteredProjects.length}`;
+  }
+
+  if (filteredProjects.length === 0) {
+    libraryContainer.innerHTML = currentFilter
+      ? '<div class="empty-state">沒有找到符合搜尋條件的專案</div>'
+      : '<div class="empty-state">尚無專案</div>';
+    return;
+  }
+
+  filteredProjects.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'project-card';
+    const dateStr = new Date(p.updatedAt).toLocaleString('zh-TW', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    // Use displayName if available (AI Summary), else name
+    const displayTitle = p.displayName || p.name;
+    const displayDesc = p.name; // ID or smaller detail
+
+    card.innerHTML = `
+      <div class="project-card__thumbnail">
+        <div class="project-card__icon">📁</div>
+      </div>
+      <div class="project-card__info">
+        <div class="project-card__title" title="${displayTitle}">${displayTitle}</div>
+        <div class="project-card__meta">
+          <div class="project-card__date">${dateStr}</div>
+        </div>
+        <div class="project-card__description">${displayDesc}</div>
+      </div>
+      <div class="project-card__actions">
+        <button class="project-card__btn btn-open-folder" title="開啟資料夾">
+          <span>📁</span>
+        </button>
+        <button class="project-card__btn btn-preview" title="預覽專案">
+          <span>預覽</span>
+        </button>
+        <button class="project-card__btn btn-delete-project" title="刪除專案">
+          <span>🗑️</span>
+        </button>
+      </div>
+    `;
+
+    card.querySelector('.btn-open-folder').onclick = () => ipcRenderer.invoke('project:open-folder', p.path);
+
+    // Delete functionality
+    card.querySelector('.btn-delete-project').onclick = async (e) => {
+      e.stopPropagation(); // Prevent card click
+
+      const confirmed = await ipcRenderer.invoke('project:confirm-delete', displayTitle);
+      if (confirmed) {
+        try {
+          const result = await ipcRenderer.invoke('project:delete', p.name); // passing ID
+          if (result.ok) {
+            // Refresh library
+            loadProjectLibrary();
+          } else {
+            alert('刪除失敗: ' + result.error);
+          }
+        } catch (err) {
+          console.error('Delete failed:', err);
+          alert('刪除過程中發生錯誤');
+        }
+      }
+    };
+
+    // Enhanced preview functionality
+    card.querySelector('.btn-preview').onclick = async (e) => {
+      e.stopPropagation();
+      try {
+        const indexPath = p.path + '/index.html';
+        const fs = require('fs');
+
+        // Check if index.html exists
+        if (fs.existsSync(indexPath)) {
+          await ipcRenderer.invoke('project:open-file', indexPath);
+        } else {
+          // Fallback: try public/index.html
+          const publicIndexPath = p.path + '/public/index.html';
+          if (fs.existsSync(publicIndexPath)) {
+            await ipcRenderer.invoke('project:open-file', publicIndexPath);
+          } else {
+            // If no HTML file found, just open the folder
+            console.warn('No index.html found, opening folder instead');
+            await ipcRenderer.invoke('project:open-folder', p.path);
+          }
+        }
+      } catch (error) {
+        console.error('Preview error:', error);
+        // Fallback to opening folder on any error
+        ipcRenderer.invoke('project:open-folder', p.path);
+      }
+    };
+
+    libraryContainer.appendChild(card);
+  });
+}
+
+function toggleProjectSort() {
+  sortOrder = sortOrder === 'newest' ? 'oldest' : 'newest';
+  if (sortLabel) sortLabel.textContent = sortOrder === 'newest' ? '最新' : '最舊';
+  if (sortIcon) sortIcon.style.transform = sortOrder === 'newest' ? 'rotate(0deg)' : 'rotate(180deg)';
+  loadProjectLibrary();
+}
+// Function definitions
+async function loadSettingsInfo() { await loadSettings(); }
 function autoResizeTextarea() { if (textInput) textInput.style.height = textInput.scrollHeight + 'px'; }
 function updateCharCount() { if (charCounter) charCounter.textContent = textInput.value.length; }
-function handleFileUpload(e) { /* ... existing logic ... */ }
+async function handleFileUpload(e) { console.warn('File upload not implemented yet'); }
 function showGreetingIfEmpty() { if (chatDisplay && chatDisplay.children.length === 0) appendMessage('你好，請問有什麼我可以幫你的嗎？', 'ai'); }
 async function deleteSession(id) { await ipcRenderer.invoke('history:delete-session', id); if (currentSession?.id === id) currentSession = null; bootstrapHistory(); }
 

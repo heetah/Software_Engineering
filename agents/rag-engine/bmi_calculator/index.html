@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMI 計算器</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>BMI 身體質量指數計算器</h1>
+        <div class="calculator">
+            <div class="input-group">
+                <label for="weight">體重 (公斤)</label>
+                <input type="number" id="weight" placeholder="請輸入體重" min="1" step="0.1">
+            </div>
+            <div class="input-group">
+                <label for="height">身高 (公分)</label>
+                <input type="number" id="height" placeholder="請輸入身高" min="1" step="0.1">
+            </div>
+            <button id="calculateBtn" class="btn-calculate">計算 BMI</button>
+            <div id="result" class="result hidden">
+                <div class="bmi-value" id="bmiValue"></div>
+                <div class="bmi-category" id="bmiCategory"></div>
+                <div class="bmi-description" id="bmiDescription"></div>
+            </div>
+        </div>
+        <div class="info">
+            <h3>BMI 分類標準</h3>
+            <ul>
+                <li><span class="badge underweight">過輕</span> BMI &lt; 18.5</li>
+                <li><span class="badge normal">正常</span> 18.5 ≤ BMI &lt; 24</li>
+                <li><span class="badge overweight">過重</span> 24 ≤ BMI &lt; 27</li>
+                <li><span class="badge obese">肥胖</span> BMI ≥ 27</li>
+            </ul>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>

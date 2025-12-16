@@ -1,0 +1,215 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.container {
+    max-width: 700px;
+    width: 100%;
+}
+
+.quote-box {
+    background: white;
+    border-radius: 20px;
+    padding: 50px 40px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    position: relative;
+}
+
+.quote-icon {
+    font-size: 4em;
+    text-align: center;
+    margin-bottom: 20px;
+    opacity: 0.3;
+}
+
+blockquote {
+    font-size: 1.8em;
+    line-height: 1.6;
+    color: #333;
+    text-align: center;
+    margin-bottom: 20px;
+    font-style: italic;
+    position: relative;
+}
+
+blockquote::before {
+    content: '"';
+    font-size: 3em;
+    color: #667eea;
+    position: absolute;
+    left: -30px;
+    top: -10px;
+}
+
+blockquote::after {
+    content: '"';
+    font-size: 3em;
+    color: #667eea;
+    position: absolute;
+    right: -30px;
+    bottom: -30px;
+}
+
+.author {
+    text-align: right;
+    font-size: 1.2em;
+    color: #666;
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+
+.author::before {
+    content: '— ';
+}
+
+.category {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.category::before {
+    content: '';
+    display: inline-block;
+    padding: 6px 15px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 20px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.actions {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 30px;
+}
+
+.btn-new,
+.btn-copy,
+.btn-share,
+.btn-save {
+    padding: 12px 20px;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 1em;
+}
+
+.btn-new {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.btn-new:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-copy,
+.btn-share {
+    background: #f8f9fa;
+    color: #333;
+    border: 2px solid #e0e0e0;
+}
+
+.btn-copy:hover,
+.btn-share:hover {
+    background: #e9ecef;
+    transform: translateY(-2px);
+}
+
+.btn-save {
+    width: 100%;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    box-shadow: 0 4px 15px rgba(245, 87, 108, 0.3);
+}
+
+.btn-save:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(245, 87, 108, 0.4);
+}
+
+.favorites {
+    margin-bottom: 20px;
+}
+
+.favorites h3 {
+    color: #333;
+    margin-bottom: 15px;
+    font-size: 1.2em;
+}
+
+.favorites-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.favorite-item {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.favorite-item:hover {
+    background: #e9ecef;
+    transform: translateX(5px);
+}
+
+.favorite-quote {
+    font-style: italic;
+    color: #555;
+    margin-bottom: 5px;
+    font-size: 0.95em;
+}
+
+.favorite-author {
+    font-size: 0.85em;
+    color: #999;
+}
+
+.delete-favorite {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 25px;
+    height: 25px;
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 16px;
+    display: none;
+}
+
+.favorite-item:hover .delete-favorite {
+    display: block;
+}
+
+.empty-favorites {
+    text-align: center;
+    color: #999;
+    padding: 20px;
+    font-style: italic;
+}

@@ -1,0 +1,179 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.container {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 20px;
+    padding: 40px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    max-width: 500px;
+    width: 100%;
+}
+
+h1 {
+    text-align: center;
+    color: #333;
+    margin-bottom: 30px;
+    font-size: 1.8em;
+}
+
+.calculator {
+    margin-bottom: 30px;
+}
+
+.input-group {
+    margin-bottom: 20px;
+}
+
+label {
+    display: block;
+    margin-bottom: 8px;
+    color: #555;
+    font-weight: 600;
+}
+
+input[type="number"] {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #e0e0e0;
+    border-radius: 10px;
+    font-size: 1em;
+    transition: all 0.3s ease;
+}
+
+input[type="number"]:focus {
+    outline: none;
+    border-color: #f5576c;
+    box-shadow: 0 0 0 3px rgba(245, 87, 108, 0.1);
+}
+
+.btn-calculate {
+    width: 100%;
+    padding: 15px;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 1.1em;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(245, 87, 108, 0.3);
+}
+
+.btn-calculate:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(245, 87, 108, 0.4);
+}
+
+.btn-calculate:active {
+    transform: translateY(0);
+}
+
+.result {
+    margin-top: 20px;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    text-align: center;
+    animation: fadeIn 0.5s ease;
+}
+
+.result.hidden {
+    display: none;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.bmi-value {
+    font-size: 3em;
+    font-weight: bold;
+    color: #f5576c;
+    margin-bottom: 10px;
+}
+
+.bmi-category {
+    font-size: 1.5em;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.bmi-description {
+    color: #666;
+    line-height: 1.6;
+}
+
+.info {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 10px;
+}
+
+.info h3 {
+    color: #333;
+    margin-bottom: 15px;
+    font-size: 1.2em;
+}
+
+.info ul {
+    list-style: none;
+}
+
+.info li {
+    padding: 8px 0;
+    color: #555;
+}
+
+.badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 15px;
+    font-size: 0.9em;
+    font-weight: bold;
+    margin-right: 10px;
+    min-width: 60px;
+    text-align: center;
+}
+
+.badge.underweight {
+    background: #17a2b8;
+    color: white;
+}
+
+.badge.normal {
+    background: #28a745;
+    color: white;
+}
+
+.badge.overweight {
+    background: #ffc107;
+    color: #333;
+}
+
+.badge.obese {
+    background: #dc3545;
+    color: white;
+}

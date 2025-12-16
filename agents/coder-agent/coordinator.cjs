@@ -25,7 +25,7 @@ class Coordinator {
   constructor(config = {}) {
     // 依賴分析器
     this.dependencyAnalyzer = new DependencyAnalyzer();
-    
+
     // 動態 Contracts 提取器
     this.contractsExtractor = new ContractsExtractor();
 
@@ -123,7 +123,7 @@ class Coordinator {
       // logger.info('Phase -1: Running Contracts Agent preprocessing', requestId);
       // const contractsAgent = new ContractsAgent();
       // const enhancedPayload = await contractsAgent.processPayload(payload);
-      
+
       // 跳過 ContractsAgent，直接使用 Architect 的輸出
       const enhancedPayload = payload;
       logger.info('Phase -1: Skipped (using Architect contracts directly)', requestId);
@@ -518,8 +518,8 @@ class Coordinator {
         if (successfulLayerResults.length > 0) {
           const extracted = this.contractsExtractor.extractFromFiles(successfulLayerResults, requestId);
           dynamicContracts = this.contractsExtractor.mergeContracts(dynamicContracts, extracted, requestId);
-          
-          logger.info(`🔄 Dynamic contracts updated after Layer ${layerIdx + 1}`, requestId, {
+
+          logger.info(`Dynamic contracts updated after Layer ${layerIdx + 1}`, requestId, {
             domElements: dynamicContracts.dom.length,
             apiEndpoints: dynamicContracts.api.length,
             storageKeys: dynamicContracts.storage.length,
@@ -867,7 +867,7 @@ ${setup.dependencies.go.map(dep => `\t${dep}`).join('\n')}
       try {
         return await this.generateSkeletonsViaAPI(payload, requestId);
       } catch (error) {
-        logger.error('Skeleton API call failed, falling back to mock', requestId, { error: error.message });
+        logger.warn('Skeleton API call failed, falling back to mock', requestId, { error: error.message });
         return this.mockCloudAPI(payload, requestId);
       }
     }
@@ -883,10 +883,10 @@ ${setup.dependencies.go.map(dep => `\t${dep}`).join('\n')}
 
       logger.info('Calling Cloud API', requestId, {
         url: apiUrl,
-        model: 'gpt-4o' // Default assumption, adapter may override
+        model: 'gpt-5.1-codex-max' // Default assumption, adapter may override
       });
 
-      const response = await fetch(apiUrl, {
+      const response = await this.fetchWithRetry(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1114,7 +1114,7 @@ Return ONLY the JSON array, no markdown or explanation.`;
           }],
           generationConfig: {
             temperature: 0.3,
-            maxOutputTokens: 8192  // Gemini 1.5 Flash actual limit (previously set to 16384 but was capped at 8192)
+            maxOutputTokens: 64000  // Gemini 2.5 Flash 支援最高 65536 tokens 輸出
           }
         };
 
@@ -1126,15 +1126,14 @@ Return ONLY the JSON array, no markdown or explanation.`;
         let baseUrl = this.CLOUD_API_ENDPOINT;
         if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
 
-        // 使用 gemini-1.5-flash 生成骨架 (速度快且 Context Window 大)
-        const model = 'gemini-1.5-flash';
+        const model = 'gemini-2.5-pro'; // Coder Agent skeleton 生成使用
         const apiUrl = `${baseUrl}/models/${model}:generateContent?key=${this.CLOUD_API_KEY}`;
 
-        const response = await fetch(apiUrl, {
+        const response = await this.fetchWithRetry(apiUrl, {
           method: 'POST',
           headers: headers,
           body: JSON.stringify(requestBody)
-        });
+        }, requestId);
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -1203,35 +1202,147 @@ Return ONLY the JSON array, no markdown or explanation.`;
 
       } else {
         // OpenAI API 格式
+        // gpt-5.1-codex-max 使用 v1/responses endpoint
+        const apiUrl = `${this.CLOUD_API_ENDPOINT}/responses`;
+
+        // Responses API 使用 input (字符串) 而非 inputs (數組)
+        // 需要將 system 和 user prompts 合併為單一字符串
+        const combinedPrompt = `${systemPrompt}\n\nUser Request:\n${userPrompt}`;
+
         requestBody = {
-          model: 'gpt-4',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          temperature: 0.3,
-          max_tokens: 4000
+          model: 'gpt-5.1-codex-max',
+          input: combinedPrompt,
+          temperature: 1
+          // 注意：Responses API 不支持 max_tokens 參數
         };
 
         headers = {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.CLOUD_API_KEY}`
+          'Authorization': `Bearer ${this.CLOUD_API_KEY}`,
+          'Content-Type': 'application/json'
         };
 
-        const apiUrl = this._getChatCompletionUrl(this.CLOUD_API_ENDPOINT);
-        const response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: headers,
-          body: JSON.stringify(requestBody)
+        logger.info('Calling OpenAI Responses API', requestId, {
+          url: apiUrl,
+          model: 'gpt-5.1-codex-max'
         });
+
+        const response = await this.fetchWithRetry(apiUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(requestBody)
+        }, requestId);
 
         if (!response.ok) {
           const errorText = await response.text();
           throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
         }
 
-        const result = await response.json();
-        const generatedText = result.choices[0].message.content;
+        const data = await response.json();
+
+        // Responses API 響應格式
+        let generatedText = '';
+
+        // 實際內容在 output 字段中
+        if (data.output && Array.isArray(data.output) && data.output.length > 0) {
+          // output 是一個數組，過濾出 message 類型的內容
+          const messageBlocks = data.output.filter(block => {
+            if (typeof block === 'string') return true;
+            if (typeof block === 'object' && block.type === 'message') return true;
+            return false;
+          });
+
+
+          generatedText = messageBlocks
+            .map(block => {
+              if (typeof block === 'string') return block;
+              if (typeof block === 'object') {
+                // message 對象的 content 可能是字符串、數組或對象
+                let content = block.content;
+
+                // 如果 content 是數組，提取所有 text 字段
+                if (Array.isArray(content)) {
+                  return content
+                    .map(item => {
+                      if (typeof item === 'string') return item;
+                      if (typeof item === 'object') {
+                        return item.text || item.content || '';
+                      }
+                      return '';
+                    })
+                    .join('');
+                }
+
+                // 如果 content 是對象，提取 text 字段
+                if (typeof content === 'object' && content !== null) {
+                  return content.text || content.content || '';
+                }
+
+                // 如果 content 是字符串
+                if (typeof content === 'string') {
+                  return content;
+                }
+
+                // 備用：嘗試 text 字段
+                return block.text || '';
+              }
+              return '';
+            })
+            .filter(text => text.length > 0)
+            .join('');
+        } else if (data.output && typeof data.output === 'object') {
+          // output 是單個對象
+          if (data.output.text) {
+            generatedText = data.output.text;
+          } else if (data.output.content) {
+            generatedText = data.output.content;
+          } else {
+            // 嘗試序列化整個對象
+            generatedText = JSON.stringify(data.output);
+          }
+        } else if (data.output && typeof data.output === 'string') {
+          generatedText = data.output;
+        } else if (data.text && Array.isArray(data.text) && data.text.length > 0) {
+          // 備用：如果 text 是數組
+          generatedText = data.text
+            .map(block => {
+              if (typeof block === 'string') return block;
+              return block.text || block.content || '';
+            })
+            .join('');
+        } else if (data.text && typeof data.text === 'string') {
+          generatedText = data.text;
+        } else if (typeof data.output_text === 'string') {
+          generatedText = data.output_text;
+        } else if (data.choices && data.choices[0] && data.choices[0].message) {
+          // Fallback to Chat Completions format
+          generatedText = data.choices[0].message.content || '';
+        } else {
+          // 記錄詳細錯誤信息
+          logger.error('Cannot extract text from response', requestId, {
+            keys: Object.keys(data),
+            hasOutput: 'output' in data,
+            outputType: typeof data.output,
+            outputIsArray: Array.isArray(data.output),
+            hasText: 'text' in data,
+            textType: typeof data.text,
+            fullResponse: JSON.stringify(data).substring(0, 500)
+          });
+          throw new Error('Cannot extract text content from API response');
+        }
+
+        // 確保生成的文本不是 [object Object]
+        if (generatedText === '[object Object]' || generatedText.includes('[object Object]')) {
+          logger.error('Generated text contains [object Object]', requestId, {
+            generatedText: generatedText.substring(0, 200),
+            dataOutput: data.output ? JSON.stringify(data.output).substring(0, 200) : 'N/A'
+          });
+          throw new Error('Failed to properly extract text from response');
+        }
+
+        // 確保是字符串
+        if (typeof generatedText !== 'string') {
+          throw new Error(`Response is not a string: ${typeof generatedText}`);
+        }
 
         // 解析 JSON
         const jsonMatch = generatedText.match(/\[[\s\S]*\]/);
@@ -1243,7 +1354,7 @@ Return ONLY the JSON array, no markdown or explanation.`;
 
         logger.info('Skeleton generation via API completed', requestId, {
           fileCount: skeletons.length,
-          tokensUsed: result.usage?.total_tokens || 0
+          tokensUsed: data.usage?.total_tokens || 0
         });
 
         return { skeletons };
@@ -1447,6 +1558,48 @@ class App:
    */
   sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Fetch with retry logic for 502/503/504 errors
+   */
+  async fetchWithRetry(url, options, requestId, retries = 3, backoff = 1000) {
+    for (let i = 0; i < retries + 1; i++) {
+      try {
+        const response = await fetch(url, options);
+
+        // If successful or client error (4xx), return immediately
+        if (response.ok || response.status < 500) {
+          return response;
+        }
+
+        // If server error (5xx) and we have retries left
+        if (i < retries) {
+          const delay = backoff * Math.pow(2, i); // Exponential backoff
+          logger.warn(`API request failed with ${response.status}, retrying in ${delay}ms...`, requestId, {
+            attempt: i + 1,
+            maxRetries: retries
+          });
+          await this.sleep(delay);
+          continue;
+        }
+
+        return response;
+
+      } catch (error) {
+        // Network errors (e.g. DNS, connection refused)
+        if (i < retries) {
+          const delay = backoff * Math.pow(2, i);
+          logger.warn(`API request network error: ${error.message}, retrying in ${delay}ms...`, requestId, {
+            attempt: i + 1,
+            maxRetries: retries
+          });
+          await this.sleep(delay);
+        } else {
+          throw error;
+        }
+      }
+    }
   }
 }
 

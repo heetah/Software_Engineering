@@ -36,10 +36,13 @@ async function callCloudAPI({ endpoint, apiKey, systemPrompt, userPrompt, maxTok
       if (baseUrl.includes('/models/')) {
         baseUrl = baseUrl.replace(/\/models\/[^:]+:/, '/models/gemini-2.5-flash:');
       }
-      console.log(`[API Adapter] ⚡ Using FAST model (Gemini Flash)`);
+      console.log(`[API Adapter]  Using FAST model (Gemini 2.5 Flash)`);
     } else {
-      // Strong tier
-      console.log(`[API Adapter] Using Gemini model`);
+      // Strong tier - Coder Agent worker 使用
+      if (baseUrl.includes('/models/')) {
+        baseUrl = baseUrl.replace(/\/models\/[^:]+:/, '/models/gemini-2.5-pro:');
+      }
+      console.log(`[API Adapter]  Using STRONG model (Gemini 3 Pro)`);
     }
 
     apiUrl = `${baseUrl}?key=${apiKey}`;
@@ -58,37 +61,65 @@ async function callCloudAPI({ endpoint, apiKey, systemPrompt, userPrompt, maxTok
     };
   } else {
     // OpenAI API 格式
-    // 確保 endpoint 指向 chat/completions
+    // 確保 endpoint 指向正確的 API
     let baseUrl = endpoint;
-    if (!baseUrl.endsWith('/chat/completions')) {
-      baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-      baseUrl = `${baseUrl}/chat/completions`;
-    }
 
-    apiUrl = baseUrl;
-
-    // 自適應模型選 (Adaptive Model Selection)
-    let modelName = 'gpt-4o'; // Default strong
+    // 自適應模型選擇 (Adaptive Model Selection)
+    let modelName = 'gpt-5.1-codex-max'; // Pro tier 使用自定義強模型
     if (modelTier === 'fast') {
-      modelName = 'gpt-4o-mini';
-      console.log(`[API Adapter] ⚡ Using FAST model (GPT-4o-mini)`);
+      modelName = 'gpt-5-mini'; // Fast tier 使用標準模型
+      console.log(`[API Adapter] Using FAST model (gpt-5-mini)`);
     } else {
       console.log(`[API Adapter] Using STRONG model (${modelName})`);
     }
 
-    headers = {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    };
-    requestBody = {
-      model: modelName,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      max_tokens: maxTokens,
-      temperature: 0.7
-    };
+    // 根據模型選擇不同的 endpoint 和請求格式
+    const isProCodexModel = modelName === 'gpt-5.1-codex-max';
+
+    if (isProCodexModel) {
+      // Pro 模型: gpt-5.1-codex-max 使用 /responses endpoint + input 字符串格式
+      if (!baseUrl.endsWith('/responses')) {
+        baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+        baseUrl = `${baseUrl}/responses`;
+      }
+      apiUrl = baseUrl;
+
+      headers = {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      };
+
+      // Responses API 使用 input (字符串)，需要合併 prompts
+      const combinedPrompt = `${systemPrompt}\n\nUser Request:\n${userPrompt}`;
+
+      requestBody = {
+        model: modelName,
+        input: combinedPrompt,  // 使用 input (字符串)，不是 inputs (數組)
+        temperature: 1
+        // 注意：Responses API 不支持 max_tokens 參數
+      };
+    } else {
+      // Fast 模型: gpt-5-mini 使用標準 /chat/completions endpoint + messages 格式
+      if (!baseUrl.endsWith('/chat/completions')) {
+        baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+        baseUrl = `${baseUrl}/chat/completions`;
+      }
+      apiUrl = baseUrl;
+
+      headers = {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      };
+      requestBody = {
+        model: modelName,
+        messages: [  // 標準 OpenAI API 使用 messages
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        max_tokens: maxTokens,
+        temperature: 0.7
+      };
+    }
   }
 
   const response = await fetch(apiUrl, {
@@ -132,8 +163,63 @@ async function callCloudAPI({ endpoint, apiKey, systemPrompt, userPrompt, maxTok
       });
     }
   } else {
-    content = data.choices?.[0]?.message?.content || '';
-    tokensUsed = data.usage?.total_tokens || 0;
+    // OpenAI API 響應格式
+    // Responses API 的 output 可能是數組
+    if (data.output && Array.isArray(data.output) && data.output.length > 0) {
+      // 過濾出 message 類型並提取內容
+      const messageBlocks = data.output.filter(block =>
+        typeof block === 'object' && block.type === 'message'
+      );
+
+      content = messageBlocks
+        .map(block => {
+          let blockContent = block.content;
+          // content 可能是數組
+          if (Array.isArray(blockContent)) {
+            return blockContent
+              .map(item => {
+                if (typeof item === 'string') return item;
+                if (typeof item === 'object') {
+                  return item.text || item.content || '';
+                }
+                return '';
+              })
+              .join('');
+          }
+          // content 可能是對象
+          if (typeof blockContent === 'object' && blockContent !== null) {
+            return blockContent.text || blockContent.content || '';
+          }
+          // content 是字符串
+          if (typeof blockContent === 'string') {
+            return blockContent;
+          }
+          return '';
+        })
+        .join('');
+      tokensUsed = data.usage?.total_tokens || 0;
+    } else if (typeof data.output_text === 'string') {
+      // Responses API string format
+      content = data.output_text;
+      tokensUsed = data.usage?.total_tokens || 0;
+    } else if (typeof data.text === 'string') {
+      content = data.text;
+      tokensUsed = data.usage?.total_tokens || 0;
+    } else if (data.choices?.[0]?.text !== undefined) {
+      // Completions API 格式
+      content = data.choices?.[0]?.text || '';
+      tokensUsed = data.usage?.total_tokens || 0;
+    } else {
+      // Chat Completions API 格式
+      content = data.choices?.[0]?.message?.content || '';
+      tokensUsed = data.usage?.total_tokens || 0;
+    }
+
+    // 確保 content 是字符串
+    if (typeof content !== 'string') {
+      console.warn('[API Adapter] Content is not a string, converting...', { type: typeof content });
+      content = String(content || '');
+    }
   }
 
   return { content, tokensUsed };

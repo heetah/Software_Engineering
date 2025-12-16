@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>猜數字遊戲</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>🎲 猜數字遊戲</h1>
+
+        <div class="game-card">
+            <div class="settings">
+                <label>難度選擇：</label>
+                <select id="difficulty">
+                    <option value="easy">簡單 (1-50)</option>
+                    <option value="medium" selected>中等 (1-100)</option>
+                    <option value="hard">困難 (1-200)</option>
+                </select>
+            </div>
+
+            <div class="game-info">
+                <p id="instruction">我想了一個數字，你能猜到嗎？</p>
+                <div class="stats">
+                    <div class="stat">
+                        <span class="label">剩餘次數</span>
+                        <span class="value" id="attemptsLeft">10</span>
+                    </div>
+                    <div class="stat">
+                        <span class="label">最佳成績</span>
+                        <span class="value" id="bestScore">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-section">
+                <input type="number" id="guessInput" placeholder="輸入你的猜測..." min="1" />
+                <button id="guessBtn" class="btn-guess">猜測</button>
+            </div>
+
+            <div class="feedback" id="feedback"></div>
+
+            <div class="history">
+                <h3>猜測歷史</h3>
+                <div id="historyList" class="history-list"></div>
+            </div>
+
+            <button id="resetBtn" class="btn-reset">重新開始</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>

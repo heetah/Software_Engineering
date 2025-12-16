@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>碼表計時器</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>碼表計時器</h1>
+        <div class="stopwatch">
+            <div class="display" id="display">00:00:00.00</div>
+            <div class="controls">
+                <button id="startBtn" class="btn btn-start">開始</button>
+                <button id="pauseBtn" class="btn btn-pause" disabled>暫停</button>
+                <button id="resetBtn" class="btn btn-reset">重置</button>
+                <button id="lapBtn" class="btn btn-lap" disabled>計次</button>
+            </div>
+            <div class="laps" id="laps"></div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

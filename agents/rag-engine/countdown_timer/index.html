@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>倒數計時器</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>倒數計時器</h1>
+        <div class="timer">
+            <div class="time-inputs" id="timeInputs">
+                <div class="input-group">
+                    <label>小時</label>
+                    <input type="number" id="hours" min="0" max="23" value="0">
+                </div>
+                <div class="input-group">
+                    <label>分鐘</label>
+                    <input type="number" id="minutes" min="0" max="59" value="5">
+                </div>
+                <div class="input-group">
+                    <label>秒</label>
+                    <input type="number" id="seconds" min="0" max="59" value="0">
+                </div>
+            </div>
+            <div class="display hidden" id="display">
+                <div class="time-unit">
+                    <span class="value" id="displayHours">00</span>
+                    <span class="label">時</span>
+                </div>
+                <span class="separator">:</span>
+                <div class="time-unit">
+                    <span class="value" id="displayMinutes">00</span>
+                    <span class="label">分</span>
+                </div>
+                <span class="separator">:</span>
+                <div class="time-unit">
+                    <span class="value" id="displaySeconds">00</span>
+                    <span class="label">秒</span>
+                </div>
+            </div>
+            <div class="controls">
+                <button id="startBtn" class="btn btn-start">開始</button>
+                <button id="pauseBtn" class="btn btn-pause hidden">暫停</button>
+                <button id="resumeBtn" class="btn btn-resume hidden">繼續</button>
+                <button id="resetBtn" class="btn btn-reset">重置</button>
+            </div>
+        </div>
+        <div class="presets">
+            <h3>快速設定</h3>
+            <div class="preset-buttons">
+                <button class="preset-btn" data-minutes="1">1 分鐘</button>
+                <button class="preset-btn" data-minutes="5">5 分鐘</button>
+                <button class="preset-btn" data-minutes="10">10 分鐘</button>
+                <button class="preset-btn" data-minutes="15">15 分鐘</button>
+                <button class="preset-btn" data-minutes="30">30 分鐘</button>
+                <button class="preset-btn" data-minutes="60">1 小時</button>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>

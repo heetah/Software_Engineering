@@ -30,6 +30,22 @@ export default class ArchitectAgent extends BaseAgent {
     return endpoint;
   }
 
+  /**
+   * 根據模型選擇使用 messages 或 inputs
+   * @private
+   */
+  _buildPayload(messagesArray, options = {}) {
+    const model = options.model || 'gpt-5-mini';
+    const isCustomCodexModel = model === 'gpt-5.1-codex-max';
+    const messagesKey = isCustomCodexModel ? 'inputs' : 'messages';
+
+    return {
+      ...(options.model ? { model: options.model } : {}),
+      temperature: options.temperature !== undefined ? options.temperature : this.temperature,
+      [messagesKey]: messagesArray
+    };
+  }
+
   prompt(requirementOutput) {
     return `
 Based on the following requirement specification, generate a detailed system architecture:
@@ -66,19 +82,16 @@ Output rules:
   without asking to generate a full multi-file project.
 `;
 
-    const payload = {
-      temperature: 0,
-      messages: [
-        { role: "system", content: systemPrompt },
-        {
-          role: "user",
-          content: JSON.stringify({
-            user_input: prompt,
-            context: context || null
-          })
-        }
-      ]
-    };
+    const payload = this._buildPayload([
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: JSON.stringify({
+          user_input: prompt,
+          context: context || null
+        })
+      }
+    ], { temperature: 1 });
 
     try {
       const res = await this._executeAPI(payload);
@@ -121,19 +134,16 @@ Output rules:
 - Focus on giving a clear, concise, and practical answer.
 `;
 
-    const payload = {
-      temperature: 0.5,
-      messages: [
-        { role: "system", content: systemPrompt },
-        {
-          role: "user",
-          content: JSON.stringify({
-            user_input: prompt,
-            context: context || null
-          })
-        }
-      ]
-    };
+    const payload = this._buildPayload([
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: JSON.stringify({
+          user_input: prompt,
+          context: context || null
+        })
+      }
+    ], { temperature: 1 });
 
     const res = await this._executeAPI(payload);
     const usage = res?.data?.usage;
@@ -251,13 +261,10 @@ Rules:
 
     // 使用 BaseAgent 的重試機制（因為 BaseAgent.run 會自動添加 system message，我們需要自定義 payload）
     // 不指定 model，讓 API Provider Manager 使用默認模型
-    const payload = {
-      temperature: this.temperature,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ]
-    };
+    const payload = this._buildPayload([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt }
+    ], { temperature: this.temperature });
 
     try {
       // 使用 BaseAgent 的 _executeAPI 方法，自動處理重試和 429 錯誤
@@ -272,7 +279,7 @@ Rules:
 
       const content = res?.data?.choices?.[0]?.message?.content?.trim();
       if (!content) {
-        throw new Error('API 回傳無內容');
+        throw new Error('API return no content');
       }
 
       // 嘗試解析 JSON
@@ -406,14 +413,11 @@ Rules:
 - Mirror the user's request language when possible; otherwise use English.`;
 
     // 不指定 model，讓 API Provider Manager 使用默認模型
-    const payload = {
-      temperature: this.temperature,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: JSON.stringify(previous) },
-        { role: "user", content: JSON.stringify({ feedback }) }
-      ]
-    };
+    const payload = this._buildPayload([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: JSON.stringify(previous) },
+      { role: "user", content: JSON.stringify({ feedback }) }
+    ], { temperature: this.temperature });
 
     try {
       // 使用 BaseAgent 的 _executeAPI 方法，自動處理重試和 429 錯誤

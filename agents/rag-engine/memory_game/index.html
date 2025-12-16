@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>記憶卡片遊戲</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🎴 記憶卡片遊戲</h1>
+            <div class="game-stats">
+                <div class="stat">
+                    <span class="label">移動次數</span>
+                    <span class="value" id="moves">0</span>
+                </div>
+                <div class="stat">
+                    <span class="label">配對成功</span>
+                    <span class="value" id="matches">0/8</span>
+                </div>
+                <div class="stat">
+                    <span class="label">時間</span>
+                    <span class="value" id="timer">00:00</span>
+                </div>
+            </div>
+            <button id="restartBtn" class="btn-restart">重新開始</button>
+        </header>
+
+        <div class="game-board" id="gameBoard"></div>
+
+        <div class="modal hidden" id="winModal">
+            <div class="modal-content">
+                <h2>🎉 恭喜過關！</h2>
+                <p>你用了 <span id="finalMoves">0</span> 步</p>
+                <p>花費時間 <span id="finalTime">00:00</span></p>
+                <button id="playAgainBtn" class="btn-play-again">再玩一次</button>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>

@@ -41,11 +41,11 @@ class APIProvider {
   _getDefaultModel(type) {
     switch (type) {
       case API_PROVIDER_TYPES.OPENAI:
-        return 'gpt-4o-mini';
+        return 'gpt-5-mini';
       case API_PROVIDER_TYPES.GEMINI:
         return 'gemini-2.5-flash';
       default:
-        return 'gpt-4o-mini';
+        return 'gpt-5-mini';
     }
   }
 
@@ -93,16 +93,19 @@ class APIProvider {
     this.lastError = error;
     this.errorCount++;
     const statusCode = error?.response?.status;
+    // 401 認證錯誤：立即標記為不可用，不重試
+    if (statusCode === 401) {
+      this.isAvailable = false;
+      console.error(`[API Provider] ${this.name} authentication failed (401), marking as unavailable`);
+      return;
+    }
 
     // 429 錯誤特殊處理
     if (statusCode === 429) {
       this.markRateLimited();
     } else if (statusCode >= 500) {
-      // 伺服器錯誤，暫時標記為不可用
+      // 服務器錯誤
       this.isAvailable = false;
-      setTimeout(() => {
-        this.isAvailable = true;
-      }, 30000); // 30 秒後恢復
     }
   }
 
@@ -137,49 +140,95 @@ export class APIProviderManager {
 
   /**
    * 初始化提供者
-   * 優先註冊 OpenAI，然後是 Gemini（確保 failover 時優先使用 OpenAI）
+   * @param {string} llmProvider - 'auto', 'openai', 'gemini' 或 undefined
    */
-  initialize() {
+  initialize(llmProvider = 'auto') {
     this.providers = [];
 
-    // 優先添加 OpenAI 提供者（優先使用）
-    if (process.env.OPENAI_API_KEY) {
-      const openaiProvider = new APIProvider(
-        'OpenAI',
-        API_PROVIDER_TYPES.OPENAI,
-        'https://api.openai.com/v1',
-        process.env.OPENAI_API_KEY,
-        {
-          model: 'gpt-4o-mini',
-          timeout: config.api.timeout,
-          maxRetries: config.api.maxRetries,
-          retryDelay: config.api.retryDelay
-        }
-      );
-      this.providers.push(openaiProvider);
-      console.log('[API Provider Manager] OpenAI provider registered (primary)');
-    }
+    // 儲存 llmProvider 設定
+    this.llmProvider = (llmProvider || 'auto').toLowerCase();
+    console.log(`[API Provider Manager] Initializing with provider preference: ${this.llmProvider}`);
 
-    // 然後添加 Gemini 提供者（備用）
-    if (process.env.GOOGLE_API_KEY) {
-      const geminiProvider = new APIProvider(
-        'Gemini',
-        API_PROVIDER_TYPES.GEMINI,
-        'https://generativelanguage.googleapis.com/v1beta',
-        process.env.GOOGLE_API_KEY,
-        {
-          model: 'gemini-2.5-flash',
-          timeout: config.api.timeout, // 使用統一配置
-          maxRetries: config.api.maxRetries,
-          retryDelay: config.api.retryDelay
-        }
-      );
-      this.providers.push(geminiProvider);
-      console.log('[API Provider Manager] Gemini provider registered (fallback)');
+    // 根據 llmProvider 設定決定註冊順序和是否註冊某些 provider
+    if (this.llmProvider === 'openai') {
+      // 只使用 OpenAI
+      if (process.env.OPENAI_API_KEY) {
+        const openaiProvider = new APIProvider(
+          'OpenAI',
+          API_PROVIDER_TYPES.OPENAI,
+          'https://api.openai.com/v1',
+          process.env.OPENAI_API_KEY,
+          {
+            model: 'gpt-4o-mini',  // 使用正確的 chat 模型
+            timeout: config.api.timeout,
+            maxRetries: config.api.maxRetries,
+            retryDelay: config.api.retryDelay
+          }
+        );
+        this.providers.push(openaiProvider);
+        console.log('[API Provider Manager] OpenAI provider registered (exclusive)');
+      } else {
+        console.warn('[API Provider Manager] OpenAI selected but OPENAI_API_KEY not found');
+      }
+    } else if (this.llmProvider === 'gemini') {
+      // 只使用 Gemini
+      if (process.env.GOOGLE_API_KEY) {
+        const geminiProvider = new APIProvider(
+          'Gemini',
+          API_PROVIDER_TYPES.GEMINI,
+          'https://generativelanguage.googleapis.com/v1beta',
+          process.env.GOOGLE_API_KEY,
+          {
+            model: 'gemini-2.0-flash-exp',  // 使用免費且可用的 Gemini 模型
+            timeout: config.api.timeout,
+            maxRetries: config.api.maxRetries,
+            retryDelay: config.api.retryDelay
+          }
+        );
+        this.providers.push(geminiProvider);
+        console.log('[API Provider Manager] Gemini provider registered (exclusive)');
+      } else {
+        console.warn('[API Provider Manager] Gemini selected but GOOGLE_API_KEY not found');
+      }
+    } else {
+      // Auto 模式：優先 Gemini，OpenAI 作為備用
+      if (process.env.GOOGLE_API_KEY) {
+        const geminiProvider = new APIProvider(
+          'Gemini',
+          API_PROVIDER_TYPES.GEMINI,
+          'https://generativelanguage.googleapis.com/v1beta',
+          process.env.GOOGLE_API_KEY,
+          {
+            model: 'gemini-2.5-flash',  // Architect Agent 使用
+            timeout: config.api.timeout, // 使用統一配置
+            maxRetries: config.api.maxRetries,
+            retryDelay: config.api.retryDelay
+          }
+        );
+        this.providers.push(geminiProvider);
+        console.log('[API Provider Manager] Gemini provider registered (primary)');
+      }
+
+      if (process.env.OPENAI_API_KEY) {
+        const openaiProvider = new APIProvider(
+          'OpenAI',
+          API_PROVIDER_TYPES.OPENAI,
+          'https://api.openai.com/v1',
+          process.env.OPENAI_API_KEY,
+          {
+            model: 'gpt-5-mini',  // Architect Agent 使用
+            timeout: config.api.timeout,
+            maxRetries: config.api.maxRetries,
+            retryDelay: config.api.retryDelay
+          }
+        );
+        this.providers.push(openaiProvider);
+        console.log('[API Provider Manager] OpenAI provider registered (fallback)');
+      }
     }
 
     if (this.providers.length === 0) {
-      console.warn('[API Provider Manager] Warning: No API providers available! Please set OPENAI_API_KEY or GEMINI_API_KEY');
+      console.warn('[API Provider Manager] Warning: No API providers available! Please set OPENAI_API_KEY or GOOGLE_API_KEY');
     } else {
       console.log(`[API Provider Manager] Registered ${this.providers.length} API provider(s)`);
     }
@@ -195,10 +244,23 @@ export class APIProviderManager {
       throw new Error('No available API providers');
     }
 
-    // 過濾出可用的提供者（按註冊順序：OpenAI 優先），排除已嘗試的
-    const availableProviders = this.providers.filter(p =>
-      p.isReady() && !excludeProviders.includes(p.name)
-    );
+    // 過濾出可用的提供者，根據 llmProvider 設定
+    let availableProviders = this.providers.filter(p => {
+      // 排除已嘗試的和不可用的
+      if (!p.isReady() || excludeProviders.includes(p.name)) return false;
+
+      // 如果設定為 'openai'，只使用 OpenAI
+      if (this.llmProvider === 'openai' && p.type !== API_PROVIDER_TYPES.OPENAI) {
+        return false;
+      }
+
+      // 如果設定為 'gemini'，只使用 Gemini
+      if (this.llmProvider === 'gemini' && p.type !== API_PROVIDER_TYPES.GEMINI) {
+        return false;
+      }
+
+      return true;
+    });
 
     if (availableProviders.length === 0) {
       // 如果所有提供者都不可用，嘗試使用所有提供者（可能已經恢復），但排除已嘗試的
@@ -211,6 +273,12 @@ export class APIProviderManager {
 
       // 優先返回第一個（OpenAI）
       return allProviders[0];
+    }
+
+    // 'auto' 模式：優先使用 Gemini
+    if (this.llmProvider === 'auto') {
+      const geminiProvider = availableProviders.find(p => p.type === API_PROVIDER_TYPES.GEMINI);
+      if (geminiProvider) return geminiProvider;
     }
 
     // 根據策略選擇提供者
@@ -326,11 +394,16 @@ export class APIProviderManager {
     // 優先使用 payload 中的 model，否則使用提供者的默認模型
     const model = payload.model || provider.model;
 
-    // 如果 payload 已經有 messages，直接使用
+    // 根據模型選擇使用 messages 或 inputs
+    const isCustomCodexModel = model === 'gpt-5.1-codex-max';
+    const messagesKey = isCustomCodexModel ? 'inputs' : 'messages';
+    const messagesData = payload.inputs || payload.messages;
+
+    // 如果 payload 已經有 inputs 或 messages，直接使用
     // 否則構建標準的 OpenAI 格式
-    const requestPayload = payload.messages ? {
+    const requestPayload = messagesData ? {
       model: model,
-      messages: payload.messages,
+      [messagesKey]: messagesData,
       temperature: payload.temperature !== undefined ? payload.temperature : temperature,
       ...(maxTokens ? { max_tokens: maxTokens } : {}),
       ...(payload.max_tokens ? { max_tokens: payload.max_tokens } : {})
@@ -499,6 +572,7 @@ export class APIProviderManager {
 // 創建全局實例
 export const apiProviderManager = new APIProviderManager();
 
-// 自動初始化
+// 自動初始化（可以通過 LLM_PROVIDER 環境變數控制）
 apiProviderManager.initialize();
+
 

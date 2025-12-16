@@ -16,7 +16,7 @@ class StyleGenerator {
 
   async generate({ skeleton, fileSpec, context }) {
     console.log(`[Generator] Processing ${fileSpec.path}`);
-    
+
     // 優先級 1: 使用 template（Architect 明確指定的內容）
     if (fileSpec.template && fileSpec.template.trim()) {
       console.log(`[Generator] ✅ Using template (${fileSpec.template.length} chars)`);
@@ -26,17 +26,17 @@ class StyleGenerator {
         method: 'template'
       };
     }
-    
+
     // 優先級 2: 使用 contracts 結構（動態生成）
     const hasContracts = context.contracts && (
       (context.contracts.dom && context.contracts.dom.length > 0) ||
       (context.contracts.api && context.contracts.api.length > 0)
     );
-    
+
     if (hasContracts) {
       console.log(`[Generator] ✓ Using contracts-based generation`);
       console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
-      
+
       if (this.useMockApi) {
         return this.generateWithMock({ skeleton, fileSpec, context });
       } else {
@@ -62,7 +62,7 @@ class StyleGenerator {
         apiKey: this.cloudApiKey,
         systemPrompt: 'You are an expert CSS developer. Generate clean, modern CSS with proper organization. Output only the code.',
         userPrompt: prompt,
-        maxTokens: 16348  // Increased to 16k as requested
+        maxTokens: 81920
       });
 
       if (!content || content.trim() === '') {
@@ -219,39 +219,39 @@ body {
 
     // Include HTML selectors if available - check both completed files AND skeletons
     const htmlFiles = completedFiles.filter(f => f.language === 'html');
-    
+
     // 🔥 CRITICAL: Also check allFiles for HTML files and their skeletons
-    const allHtmlFiles = (allFiles || []).filter(f => 
+    const allHtmlFiles = (allFiles || []).filter(f =>
       f.path && (f.path.endsWith('.html') || f.path.endsWith('.htm'))
     );
-    
+
     // 從 allSkeletons 中獲取 HTML 骨架內容
     const allSkeletons = context.allSkeletons || {};
     const htmlSkeletons = allHtmlFiles
       .map(f => ({ path: f.path, content: allSkeletons[f.path] || skeleton }))
       .filter(s => s.content);
-    
+
     // 合併已完成的 HTML 和骨架中的 HTML
     const allHtmlSources = [...htmlFiles, ...htmlSkeletons];
-    
+
     if (allHtmlSources.length > 0) {
       prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
       prompt += `🔴 CRITICAL: HTML STRUCTURE ANALYSIS 🔴\n`;
       prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-      
+
       // 從 HTML 文件中提取所有的 ID 和 class
       const allIds = new Set();
       const allClasses = new Set();
-      
+
       allHtmlSources.forEach(htmlFile => {
         const content = htmlFile.content || '';
-        
+
         // 提取所有 id="..."
         const idMatches = content.matchAll(/id=["']([^"']+)["']/g);
         for (const match of idMatches) {
           allIds.add(match[1]);
         }
-        
+
         // 提取所有 class="..."
         const classMatches = content.matchAll(/class=["']([^"']+)["']/g);
         for (const match of classMatches) {
@@ -260,7 +260,7 @@ body {
           });
         }
       });
-      
+
       if (allIds.size > 0) {
         prompt += `IDs found in HTML (MUST style these with #id selector):\n`;
         Array.from(allIds).forEach(id => {
@@ -268,7 +268,7 @@ body {
         });
         prompt += `\n`;
       }
-      
+
       if (allClasses.size > 0) {
         prompt += `Classes found in HTML (MUST style these with .class selector):\n`;
         Array.from(allClasses).forEach(cls => {
@@ -276,14 +276,14 @@ body {
         });
         prompt += `\n`;
       }
-      
+
       prompt += `🚨 CRITICAL RULES:\n`;
       prompt += `1. Every ID and class listed above MUST have CSS rules\n`;
       prompt += `2. Use EXACT selectors: #id for IDs, .class for classes\n`;
       prompt += `3. DO NOT invent selectors that don't exist in HTML\n`;
       prompt += `4. DO NOT use wrong selector type (e.g., .id instead of #id)\n`;
       prompt += `5. If HTML has #calculator-container, use #calculator-container NOT .calculator-grid\n\n`;
-      
+
       prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
     }
 

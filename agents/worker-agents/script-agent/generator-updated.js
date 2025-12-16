@@ -32,7 +32,7 @@ class ScriptGenerator {
         apiKey: this.cloudApiKey,
         systemPrompt: 'You are an expert JavaScript developer. Generate clean, modern ES6+ JavaScript. Output only the code.',
         userPrompt: prompt,
-        maxTokens: 4000
+        maxTokens: 81920
       });
 
       const cleanContent = content

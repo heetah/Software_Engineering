@@ -16,7 +16,7 @@ class MarkupGenerator {
 
   async generate({ skeleton, fileSpec, context }) {
     console.log(`[Generator] Processing ${fileSpec.path}`);
-    
+
     // 優先級 1: 使用 template（Architect 明確指定的內容）
     if (fileSpec.template && fileSpec.template.trim()) {
       console.log(`[Generator] ✅ Using template (${fileSpec.template.length} chars)`);
@@ -26,24 +26,24 @@ class MarkupGenerator {
         method: 'template'
       };
     }
-    
+
     // 優先級 2: 使用 contracts 結構（動態生成）
     const hasContracts = context.contracts && (
       (context.contracts.dom && context.contracts.dom.length > 0) ||
       (context.contracts.api && context.contracts.api.length > 0)
     );
-    
+
     if (hasContracts) {
       console.log(`[Generator] ✓ Using contracts-based generation`);
       console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
-      
+
       if (this.useMockApi) {
         return this.generateWithMock({ skeleton, fileSpec, context });
       } else {
         return this.generateWithCloudAPI({ skeleton, fileSpec, context });
       }
     }
-    
+
     // 優先級 3: AI 生成（無 template 也無 contracts）
     console.log(`[Generator] ⚠ No contracts or template - using AI generation`);
     console.log(`[Generator] Mode: ${this.useMockApi ? 'MOCK (Fallback)' : 'CLOUD API'}`);
@@ -62,7 +62,7 @@ class MarkupGenerator {
     const prompt = this.buildPrompt({ skeleton, fileSpec, context });
     const filePath = fileSpec.path || '';
     const ext = path.extname(filePath).toLowerCase();
-    
+
     // 根據文件類型選擇 system prompt
     let systemPrompt;
     if (ext === '.json') {
@@ -100,7 +100,7 @@ FORBIDDEN:
         apiKey: this.cloudApiKey,
         systemPrompt: systemPrompt,
         userPrompt: prompt,
-        maxTokens: 16348  // Increased to 16k as requested
+        maxTokens: 81920
       });
 
       // 檢查 API 是否真的返回了內容
@@ -250,7 +250,7 @@ FORBIDDEN:
           prompt += `📡 API ENDPOINTS (Backend Contracts):\n\n`;
           relevantApis.forEach(api => {
             prompt += `  ${api.endpoint} - ${api.purpose || api.description}\n`;
-            
+
             // 顯示 request schema
             if (api.requestSchema && api.requestSchema.properties) {
               const params = Object.entries(api.requestSchema.properties).map(([key, val]) => {
@@ -259,14 +259,14 @@ FORBIDDEN:
               }).join('\n');
               prompt += `  Request:\n${params}\n`;
             }
-            
+
             // 顯示 response schema
             if (api.responseSchema) {
               let responseStr = '';
               if (api.responseSchema.type === 'array') {
                 const itemProps = api.responseSchema.items?.properties;
                 if (itemProps) {
-                  responseStr = Object.keys(itemProps).map(key => 
+                  responseStr = Object.keys(itemProps).map(key =>
                     `    - ${key}: ${itemProps[key].type}`
                   ).join('\n');
                   prompt += `  Response: Array of objects with:\n${responseStr}\n`;
@@ -274,7 +274,7 @@ FORBIDDEN:
                   prompt += `  Response: Array\n`;
                 }
               } else if (api.responseSchema.type === 'object') {
-                responseStr = Object.entries(api.responseSchema.properties || {}).map(([key, val]) => 
+                responseStr = Object.entries(api.responseSchema.properties || {}).map(([key, val]) =>
                   `    - ${key}: ${val.type}`
                 ).join('\n');
                 prompt += `  Response: Object with:\n${responseStr}\n`;
@@ -450,7 +450,7 @@ FORBIDDEN:
     prompt += `- CRITICAL: All IDs, classes, data-* attributes, and element text MUST match skeleton exactly\n`;
     prompt += `- CRITICAL: Any symbols or values in buttons/inputs that JS will read must be consistent\n`;
     prompt += `- Include proper <link> and <script> tags matching actual file names\n\n`;
-    
+
     // 🔴 檔案路徑規則（針對 Electron 專案）
     const isInPublicFolder = filePath.includes('public/') || filePath.includes('public\\');
     if (isInPublicFolder) {
@@ -461,7 +461,7 @@ FORBIDDEN:
       prompt += `4. ❌ FORBIDDEN: href="public/style.css" or src="public/script.js"\n`;
       prompt += `5. ✅ CORRECT: href="style.css" and src="script.js"\n\n`;
     }
-    
+
     prompt += `Return ONLY the code, no markdown.`;
 
     return prompt;

@@ -148,6 +148,10 @@ function initDatabase() {
             payload_json TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
           );
+          CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+          );
         `,
         (migrationError) => {
           if (migrationError) {
@@ -326,6 +330,196 @@ function registerSettingsHandlers() {
   ipcMain.handle("settings:get-app-data-path", () => {
     return app.getPath("userData");
   });
+
+
+  ipcMain.handle("settings:get-search-mode", async () => {
+    try {
+      const row = await get("SELECT value FROM settings WHERE key = ?", [
+        "search_mode",
+      ]);
+      return row ? row.value : "ask";
+    } catch (error) {
+      console.error("Failed to get search mode:", error);
+      return "ask";
+    }
+  });
+
+  ipcMain.handle("settings:set-search-mode", async (_event, mode) => {
+    try {
+      await run(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+        ["search_mode", mode]
+      );
+      return { ok: true };
+    } catch (error) {
+      console.error("Failed to set search mode:", error);
+      throw error;
+    }
+  });
+
+  // LLM Provider 設定
+  ipcMain.handle("settings:get-llm-provider", async () => {
+    try {
+      const row = await get("SELECT value FROM settings WHERE key = ?", [
+        "llm_provider",
+      ]);
+      return row ? row.value : "auto";
+    } catch (error) {
+      console.error("Failed to get llm provider:", error);
+      return "auto";
+    }
+  });
+
+  ipcMain.handle("settings:set-llm-provider", async (_event, provider) => {
+    try {
+      await run(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+        ["llm_provider", provider]
+      );
+
+      // 重新初始化 API Provider Manager
+      const { apiProviderManager } = await import('./utils/api-provider-manager.js');
+      apiProviderManager.initialize(provider);
+
+      console.log(`[Settings] LLM provider updated to: ${provider}`);
+      return { ok: true };
+    } catch (error) {
+      console.error("Failed to set llm provider:", error);
+      throw error;
+    }
+  });
+}
+
+
+function registerProjectHandlers() {
+  const outputBase = path.join(__dirname, "output");
+
+  ipcMain.handle("project:list", async () => {
+    try {
+      if (!fs.existsSync(outputBase)) {
+        return [];
+      }
+
+      const entries = fs.readdirSync(outputBase, { withFileTypes: true });
+      // Map entries to Promises to handle async file reading if needed, 
+      // though here we use synchronous fs for simplicity as per existing pattern but enhanced logic
+      const projects = entries
+        .filter((dirent) => dirent.isDirectory())
+        .map((dirent) => {
+          const projectPath = path.join(outputBase, dirent.name);
+          const stats = fs.statSync(projectPath);
+
+          // Try to read architecture.json for metadata
+          let summary = dirent.name;
+          let prompt = "";
+          try {
+            const archPath = path.join(__dirname, "data", "sessions", dirent.name, "architecture.json");
+            if (fs.existsSync(archPath)) {
+              const archData = JSON.parse(fs.readFileSync(archPath, "utf-8"));
+              // Metadata priority: 1. Plan Summary 2. Coder Instructions Summary 3. Prompt
+              summary = archData.output?.plan?.summary ||
+                archData.output?.coder_instructions?.summary ||
+                (archData.prompt ? archData.prompt.substring(0, 50) + "..." : dirent.name);
+              prompt = archData.prompt || "";
+            }
+          } catch (err) {
+            // Fallback to directory name on error
+            console.warn(`Failed to read metadata for ${dirent.name}:`, err.message);
+          }
+
+          return {
+            name: dirent.name, // Keep as ID
+            displayName: summary, // Use for Title
+            prompt: prompt, // Use for Search
+            path: projectPath,
+            updatedAt: stats.mtime,
+            createdAt: stats.birthtime,
+          };
+        });
+
+      return projects.sort((a, b) => b.updatedAt - a.updatedAt);
+    } catch (error) {
+      console.error("Failed to list projects:", error);
+      return [];
+    }
+  });
+
+  ipcMain.handle("project:open-folder", async (_event, projectPath) => {
+    const { shell } = require("electron");
+    const fullPath = path.isAbsolute(projectPath) ? projectPath : path.join(outputBase, projectPath);
+    const errorMessage = await shell.openPath(fullPath);
+    if (errorMessage) {
+      console.error("Failed to open folder:", errorMessage);
+      throw new Error(errorMessage);
+    }
+    return true;
+  });
+
+  ipcMain.handle("project:open-file", async (_event, filePath) => {
+    const { shell } = require("electron");
+    // Security check: ensure file is within output directory (basic check)
+    if (!filePath.startsWith(outputBase) && !filePath.includes(":")) {
+      // simple check failed, but allows absolute paths for now if valid
+    }
+
+    const errorMessage = await shell.openPath(filePath);
+    if (errorMessage) {
+      console.error("Failed to open file:", errorMessage);
+      throw new Error(errorMessage);
+    }
+    return true;
+  });
+
+  ipcMain.handle("project:confirm-delete", async (_event, projectName) => {
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      buttons: ['取消', '刪除'],
+      defaultId: 0,
+      cancelId: 0,
+      title: '刪除專案',
+      message: `確定要永久刪除專案 "${projectName}" 嗎？`,
+      detail: '此動作無法復原！所有相關檔案和對話紀錄將被刪除。'
+    });
+    return response === 1; // 1 is '刪除'
+  });
+
+  ipcMain.handle("project:delete", async (_event, projectId) => {
+    try {
+      console.log(`Deleting project: ${projectId}`);
+      const projectPath = path.join(outputBase, projectId);
+      const sessionPath = path.join(__dirname, "data", "sessions", projectId);
+
+      // 1. Delete project output directory
+      if (fs.existsSync(projectPath)) {
+        fs.rmSync(projectPath, { recursive: true, force: true });
+        console.log(`Deleted output directory: ${projectPath}`);
+      }
+
+      // 2. Delete session data directory
+      if (fs.existsSync(sessionPath)) {
+        fs.rmSync(sessionPath, { recursive: true, force: true });
+        console.log(`Deleted session directory: ${sessionPath}`);
+      }
+
+      // 3. Delete from database (sessions table)
+      try {
+        await run("DELETE FROM sessions WHERE id = ?", [projectId]);
+        console.log(`Deleted session record: ${projectId}`);
+      } catch (dbError) {
+        console.error("Failed to delete from database:", dbError);
+        // Continue even if DB deletion fails, as file deletion is primary
+      }
+
+      return { ok: true };
+    } catch (error) {
+      console.error("Failed to delete project:", error);
+      // Check for common file lock errors
+      if (error.code === 'EBUSY' || error.code === 'EPERM') {
+        return { ok: false, error: "檔案正被使用中，請關閉相關程式後再試 (Resource busy)" };
+      }
+      return { ok: false, error: error.message };
+    }
+  });
 }
 
 function registerCoordinatorBridge() {
@@ -346,6 +540,10 @@ function registerCoordinatorBridge() {
         console.warn("Received invalid message format:", payload);
         return;
       }
+      if (!content) {
+        throw new Error("Empty input content");
+      }
+
       console.log(
         `[Coordinator Bridge] Received user input: ${content.substring(
           0,
@@ -365,13 +563,22 @@ function registerCoordinatorBridge() {
         throw new Error(`Initialization failed: ${initError.message}`);
       }
 
+      // 讀取使用者設定的 LLM provider
+      let userLlmProvider = 'auto';
+      try {
+        const row = await get("SELECT value FROM settings WHERE key = ?", ["llm_provider"]);
+        userLlmProvider = row ? row.value : 'auto';
+      } catch (error) {
+        console.error("Failed to get user LLM provider setting:", error);
+      }
+
       let plan;
       try {
         plan = await coordinatorModule.runWithInstructionService(
           content,
           initializedAgents,
           {
-            llmProvider: llmProvider || "auto",
+            llmProvider: llmProvider || userLlmProvider,  // 優先使用請求中的 llmProvider，其次使用使用者設定
             apiKeys: apiKeys || {},
             onLog: (message) => {
               if (event.sender && !event.sender.isDestroyed()) {
@@ -527,7 +734,7 @@ function registerVisionHandlers() {
       console.log("Opening Google Image Search with image (direct mode)...");
 
       const { shell } = require("electron");
-      
+
       // 將圖片儲存到臨時檔案
       const tempPath = path.join(__dirname, "temp");
       if (!fs.existsSync(tempPath)) {
@@ -1044,6 +1251,7 @@ app.whenReady().then(async () => {
     await initDatabase();
     registerHistoryHandlers();
     registerSettingsHandlers();
+    registerProjectHandlers();
     registerCoordinatorBridge();
     registerVisionHandlers();
 

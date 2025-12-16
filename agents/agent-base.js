@@ -18,7 +18,7 @@ export default class BaseAgent {
     this.role = role; // 角色
     this.format = format; // 格式
     this.logicalName = logicalName; // 邏輯模型
-    this.temperature = 0.3; // 控制參數
+    this.temperature = 1; // 控制參數
     this.maxTokens = undefined; // 可用的最大 tokens，由子類設定
 
     // 解析 options 中的 API Key 和 Provider 設定
@@ -147,13 +147,17 @@ export default class BaseAgent {
     }
 
     // 確保 payload 包含 model 參數（OpenAI API 必需）
-    const model = payload.model || 'gpt-4o-mini';
+    const model = payload.model || 'gpt-5-mini';
 
     // 構建完整的請求負載
+    // 根據模型選擇使用 messages 或 inputs
+    const isCustomCodexModel = model === 'gpt-5.1-codex-max';
+    const messagesKey = isCustomCodexModel ? 'inputs' : 'messages';
+
     const requestPayload = {
       model: model,
       temperature: payload.temperature !== undefined ? payload.temperature : this.temperature,
-      messages: payload.messages || [],
+      [messagesKey]: payload.inputs || payload.messages || [],
       ...(payload.max_tokens ? { max_tokens: payload.max_tokens } : {}),
       ...(this.maxTokens ? { max_tokens: this.maxTokens } : {})
     };
@@ -233,7 +237,7 @@ export default class BaseAgent {
   async _executeGeminiFallback(payload, retries = this.maxRetries) {
     // 準備模型名稱 (將 OpenAI 模型映射到 Gemini，如果需要)
     let model = payload.model || 'gemini-2.5-flash';
-    if (model === 'gpt-4o-mini' || model.includes('gpt')) {
+    if (!(model === 'gpt-5-mini' || model.includes('gpt'))) {
       model = 'gemini-2.5-flash';
     }
 
@@ -338,18 +342,24 @@ export default class BaseAgent {
    * @param {number} retries - 重試次數（可選，覆蓋默認值）
    * @returns {Promise<string>} 輸出
    */
-  async run(input, retries = this.maxRetries) {
+  async run(input, retries = this.maxRetries, options = {}) {
     // 打印正在執行的角色
     console.log(`\n Running ${this.role}...`);
 
+    // 根據模型選擇使用 messages 或 inputs
+    const model = options.model || 'gpt-5-mini';
+    const isCustomCodexModel = model === 'gpt-5.1-codex-max';
+    const messagesKey = isCustomCodexModel ? 'inputs' : 'messages';
+
     const payload = {
-      // 不指定 model，讓 API Provider Manager 使用默認模型
+      // 允許通過 options 指定模型,否則讓 API Provider Manager 使用默認模型
+      ...(options.model ? { model: options.model } : {}),
       // 控制參數
-      temperature: this.temperature,
+      temperature: options.temperature !== undefined ? options.temperature : this.temperature,
       // 可用的最大 tokens
       ...(this.maxTokens ? { max_tokens: this.maxTokens } : {}),
       // system是給模型看的，user是給用戶看的
-      messages: [
+      [messagesKey]: [
         { role: "system", content: `You are the ${this.role}. Follow your role strictly and output only in ${this.format}.` },
         { role: "user", content: input }
       ]
@@ -372,8 +382,8 @@ export default class BaseAgent {
         const raw = JSON.stringify(res?.data || {}, null, 2);
         throw new AgentError(
           this.role,
-          `API 回傳無 choices`,
-          new Error(`原始資料：\n${raw}`),
+          `API return no choices`,
+          new Error(`API response: \n${raw}`),
           usage
         );
       }
@@ -384,8 +394,8 @@ export default class BaseAgent {
         const raw = JSON.stringify(choices[0] || {}, null, 2);
         throw new AgentError(
           this.role,
-          `choices[0].message.content 非字串`,
-          new Error(`資料：\n${raw}`),
+          `choices[0].message.content is not a string`,
+          new Error(`API response: \n${raw}`),
           usage
         );
       }
@@ -412,7 +422,7 @@ export default class BaseAgent {
       // 否則包裝為 AgentError
       throw new AgentError(
         this.role,
-        `執行失敗: ${err.message}`,
+        `API call failed: ${err.message}`,
         err
       );
     }

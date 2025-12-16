@@ -1,98 +1,188 @@
-// Image data (replace with your own images)
-const images = [
-    { src: 'https://picsum.photos/id/10/400/400', title: 'Mountain Vista', description: 'Beautiful mountain landscape' },
-    { src: 'https://picsum.photos/id/20/400/400', title: 'Ocean Waves', description: 'Calm ocean at sunset' },
-    { src: 'https://picsum.photos/id/30/400/400', title: 'Forest Path', description: 'Serene forest trail' },
-    { src: 'https://picsum.photos/id/40/400/400', title: 'City Lights', description: 'Urban skyline at night' },
-    { src: 'https://picsum.photos/id/50/400/400', title: 'Desert Dunes', description: 'Golden sand dunes' },
-    { src: 'https://picsum.photos/id/60/400/400', title: 'Tropical Beach', description: 'Paradise island beach' },
-    { src: 'https://picsum.photos/id/70/400/400', title: 'Ancient Ruins', description: 'Historical architecture' },
-    { src: 'https://picsum.photos/id/80/400/400', title: 'Wildlife', description: 'Nature photography' },
-    { src: 'https://picsum.photos/id/90/400/400', title: 'Waterfall', description: 'Cascading waterfall' }
+let images = JSON.parse(localStorage.getItem('galleryImages')) || [
+    { id: 1, src: 'https://picsum.photos/400/400?random=1', category: 'landscape' },
+    { id: 2, src: 'https://picsum.photos/400/400?random=2', category: 'portrait' },
+    { id: 3, src: 'https://picsum.photos/400/400?random=3', category: 'nature' },
+    { id: 4, src: 'https://picsum.photos/400/400?random=4', category: 'urban' },
+    { id: 5, src: 'https://picsum.photos/400/400?random=5', category: 'landscape' },
+    { id: 6, src: 'https://picsum.photos/400/400?random=6', category: 'nature' }
 ];
 
+let currentFilter = 'all';
 let currentImageIndex = 0;
 
-// Initialize gallery
-function initGallery() {
-    const gallery = document.getElementById('gallery');
+const gallery = document.getElementById('gallery');
+const uploadBtn = document.getElementById('uploadBtn');
+const fileInput = document.getElementById('fileInput');
+const clearBtn = document.getElementById('clearBtn');
+const filterButtons = document.querySelectorAll('.filter-btn');
+const lightbox = document.getElementById('lightbox');
+const lightboxImage = document.getElementById('lightboxImage');
+const closeBtn = document.getElementById('closeBtn');
+const prevBtn = document.getElementById('prevBtn');
+const nextBtn = document.getElementById('nextBtn');
+const imageInfo = document.getElementById('imageInfo');
 
-    images.forEach((image, index) => {
-        const item = document.createElement('div');
-        item.className = 'gallery-item';
-        item.onclick = () => openLightbox(index);
+function displayImages() {
+    const filteredImages = currentFilter === 'all'
+        ? images
+        : images.filter(img => img.category === currentFilter);
 
-        item.innerHTML = `
-            <img src="${image.src}" alt="${image.title}">
-            <div class="overlay">
-                <h3>${image.title}</h3>
-                <p>${image.description}</p>
+    gallery.innerHTML = '';
+
+    if (filteredImages.length === 0) {
+        gallery.innerHTML = `
+            <div class="empty-state" style="grid-column: 1 / -1;">
+                <div class="icon">📷</div>
+                <p>沒有圖片</p>
             </div>
         `;
+        return;
+    }
+
+    filteredImages.forEach((image, index) => {
+        const item = document.createElement('div');
+        item.className = 'gallery-item';
+        item.innerHTML = `
+            <img src="${image.src}" alt="Gallery image">
+            <div class="overlay">
+                <span class="category">${getCategoryName(image.category)}</span>
+            </div>
+            <button class="delete-btn" onclick="deleteImage(${image.id})">×</button>
+        `;
+
+        item.querySelector('img').addEventListener('click', () => {
+            openLightbox(index, filteredImages);
+        });
 
         gallery.appendChild(item);
     });
 }
 
-// Open lightbox
-function openLightbox(index) {
+function getCategoryName(category) {
+    const names = {
+        landscape: '風景',
+        portrait: '人像',
+        nature: '自然',
+        urban: '都市',
+        other: '其他'
+    };
+    return names[category] || '其他';
+}
+
+function uploadImages() {
+    fileInput.click();
+}
+
+function handleFileSelect(e) {
+    const files = Array.from(e.target.files);
+
+    files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const newImage = {
+                id: Date.now() + Math.random(),
+                src: event.target.result,
+                category: 'other'
+            };
+            images.push(newImage);
+            saveImages();
+            displayImages();
+        };
+        reader.readAsDataURL(file);
+    });
+
+    fileInput.value = '';
+}
+
+function deleteImage(id) {
+    if (confirm('確定要刪除這張圖片嗎？')) {
+        images = images.filter(img => img.id !== id);
+        saveImages();
+        displayImages();
+    }
+}
+
+function clearAll() {
+    if (confirm('確定要清除所有圖片嗎？')) {
+        images = [];
+        saveImages();
+        displayImages();
+    }
+}
+
+function filterImages(filter) {
+    currentFilter = filter;
+
+    filterButtons.forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.getAttribute('data-filter') === filter) {
+            btn.classList.add('active');
+        }
+    });
+
+    displayImages();
+}
+
+function openLightbox(index, imageArray) {
     currentImageIndex = index;
-    const lightbox = document.getElementById('lightbox');
-    const img = document.getElementById('lightboxImg');
-    const caption = document.getElementById('caption');
-
-    img.src = images[index].src;
-    caption.textContent = images[index].title;
-    lightbox.classList.add('active');
-
-    // Prevent body scroll
-    document.body.style.overflow = 'hidden';
+    lightboxImage.src = imageArray[index].src;
+    imageInfo.textContent = `${index + 1} / ${imageArray.length}`;
+    lightbox.classList.remove('hidden');
 }
 
-// Close lightbox
 function closeLightbox() {
-    const lightbox = document.getElementById('lightbox');
-    lightbox.classList.remove('active');
-    document.body.style.overflow = 'auto';
+    lightbox.classList.add('hidden');
 }
 
-// Change image in lightbox
-function changeImage(direction) {
+function navigateLightbox(direction) {
+    const filteredImages = currentFilter === 'all'
+        ? images
+        : images.filter(img => img.category === currentFilter);
+
     currentImageIndex += direction;
 
     if (currentImageIndex < 0) {
-        currentImageIndex = images.length - 1;
-    } else if (currentImageIndex >= images.length) {
+        currentImageIndex = filteredImages.length - 1;
+    } else if (currentImageIndex >= filteredImages.length) {
         currentImageIndex = 0;
     }
 
-    const img = document.getElementById('lightboxImg');
-    const caption = document.getElementById('caption');
-
-    img.src = images[currentImageIndex].src;
-    caption.textContent = images[currentImageIndex].title;
+    lightboxImage.src = filteredImages[currentImageIndex].src;
+    imageInfo.textContent = `${currentImageIndex + 1} / ${filteredImages.length}`;
 }
 
-// Keyboard navigation
-document.addEventListener('keydown', (e) => {
-    const lightbox = document.getElementById('lightbox');
-    if (lightbox.classList.contains('active')) {
-        if (e.key === 'Escape') {
-            closeLightbox();
-        } else if (e.key === 'ArrowLeft') {
-            changeImage(-1);
-        } else if (e.key === 'ArrowRight') {
-            changeImage(1);
-        }
-    }
+function saveImages() {
+    // 只儲存非 URL 的圖片（用戶上傳的）
+    const imagesToSave = images.filter(img => img.src.startsWith('data:'));
+    localStorage.setItem('galleryImages', JSON.stringify(imagesToSave));
+}
+
+uploadBtn.addEventListener('click', uploadImages);
+fileInput.addEventListener('change', handleFileSelect);
+clearBtn.addEventListener('click', clearAll);
+closeBtn.addEventListener('click', closeLightbox);
+prevBtn.addEventListener('click', () => navigateLightbox(-1));
+nextBtn.addEventListener('click', () => navigateLightbox(1));
+
+filterButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+        const filter = btn.getAttribute('data-filter');
+        filterImages(filter);
+    });
 });
 
-// Close lightbox when clicking outside image
-document.getElementById('lightbox').addEventListener('click', (e) => {
-    if (e.target.id === 'lightbox') {
+// ESC 鍵關閉 lightbox
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !lightbox.classList.contains('hidden')) {
         closeLightbox();
     }
+    if (e.key === 'ArrowLeft' && !lightbox.classList.contains('hidden')) {
+        navigateLightbox(-1);
+    }
+    if (e.key === 'ArrowRight' && !lightbox.classList.contains('hidden')) {
+        navigateLightbox(1);
+    }
 });
 
-// Initialize on load
-document.addEventListener('DOMContentLoaded', initGallery);
+// 初始化
+displayImages();

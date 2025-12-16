@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>剪刀石頭布遊戲</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>✊✋✌️ 剪刀石頭布</h1>
+
+        <div class="scoreboard">
+            <div class="score-item">
+                <span class="label">你</span>
+                <span class="score" id="playerScore">0</span>
+            </div>
+            <div class="score-divider">:</div>
+            <div class="score-item">
+                <span class="label">電腦</span>
+                <span class="score" id="computerScore">0</span>
+            </div>
+        </div>
+
+        <div class="game-area">
+            <div class="choice-display">
+                <div class="player-choice">
+                    <span class="choice-label">你的選擇</span>
+                    <div class="choice-icon" id="playerChoice">?</div>
+                </div>
+                <div class="vs">VS</div>
+                <div class="computer-choice">
+                    <span class="choice-label">電腦選擇</span>
+                    <div class="choice-icon" id="computerChoice">?</div>
+                </div>
+            </div>
+
+            <div class="result" id="result">選擇你的出拳！</div>
+        </div>
+
+        <div class="controls">
+            <button class="choice-btn" data-choice="rock">
+                <span class="icon">✊</span>
+                <span class="name">石頭</span>
+            </button>
+            <button class="choice-btn" data-choice="paper">
+                <span class="icon">✋</span>
+                <span class="name">布</span>
+            </button>
+            <button class="choice-btn" data-choice="scissors">
+                <span class="icon">✌️</span>
+                <span class="name">剪刀</span>
+            </button>
+        </div>
+
+        <button id="resetBtn" class="reset-btn">重置分數</button>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>

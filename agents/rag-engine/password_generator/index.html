@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>密碼產生器</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔒 密碼產生器</h1>
+        <div class="password-generator">
+            <div class="password-display">
+                <input type="text" id="password" readonly>
+                <button id="copyBtn" class="icon-btn" title="複製密碼">📋</button>
+            </div>
+
+            <div class="strength-meter">
+                <div class="strength-bar" id="strengthBar"></div>
+                <span id="strengthText">密碼強度</span>
+            </div>
+
+            <div class="options">
+                <div class="option-group">
+                    <label>
+                        密碼長度：<span id="lengthValue">12</span>
+                    </label>
+                    <input type="range" id="lengthSlider" min="4" max="32" value="12">
+                </div>
+
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="uppercase" checked>
+                        <span>包含大寫字母 (A-Z)</span>
+                    </label>
+
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="lowercase" checked>
+                        <span>包含小寫字母 (a-z)</span>
+                    </label>
+
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="numbers" checked>
+                        <span>包含數字 (0-9)</span>
+                    </label>
+
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="symbols" checked>
+                        <span>包含符號 (!@#$%^&*)</span>
+                    </label>
+                </div>
+            </div>
+
+            <button id="generateBtn" class="btn-generate">產生密碼</button>
+
+            <div class="history">
+                <h3>歷史紀錄</h3>
+                <div id="historyList" class="history-list"></div>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>

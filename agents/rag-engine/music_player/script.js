@@ -1,147 +1,138 @@
-// Playlist data (note: these are placeholder URLs, replace with actual audio files)
-const playlist = [
-    { title: 'Summer Vibes', artist: 'Artist One', duration: 180 },
-    { title: 'Midnight Dreams', artist: 'Artist Two', duration: 240 },
-    { title: 'Urban Rhythm', artist: 'Artist Three', duration: 200 },
-    { title: 'Ocean Waves', artist: 'Artist Four', duration: 210 },
-    { title: 'Mountain Echo', artist: 'Artist Five', duration: 195 }
+const songs = [
+    { title: '夏日微風', artist: '輕音樂', duration: 180 },
+    { title: '星空下的旋律', artist: '鋼琴曲', duration: 240 },
+    { title: '城市夜景', artist: '電子音樂', duration: 210 },
+    { title: '回憶的片段', artist: '輕音樂', duration: 195 },
+    { title: '晨光序曲', artist: '古典音樂', duration: 225 }
 ];
 
-// Player state
 let currentSongIndex = 0;
 let isPlaying = false;
 let currentTime = 0;
-let songDuration = 0;
-let updateInterval = null;
+let interval = null;
 
-// Initialize player
-function initPlayer() {
-    renderPlaylist();
-    loadSong(0);
-}
+const albumArt = document.getElementById('albumArt');
+const songTitle = document.getElementById('songTitle');
+const artist = document.getElementById('artist');
+const currentTimeDisplay = document.getElementById('currentTime');
+const durationDisplay = document.getElementById('duration');
+const progress = document.getElementById('progress');
+const playBtn = document.getElementById('playBtn');
+const prevBtn = document.getElementById('prevBtn');
+const nextBtn = document.getElementById('nextBtn');
+const playlistItems = document.getElementById('playlistItems');
 
-// Render playlist
-function renderPlaylist() {
-    const playlistUl = document.getElementById('playlistUl');
-
-    playlist.forEach((song, index) => {
-        const li = document.createElement('li');
-        li.className = `playlist-item ${index === 0 ? 'active' : ''}`;
-        li.onclick = () => loadSong(index);
-
-        li.innerHTML = `
-            <h4>${song.title}</h4>
-            <p>${song.artist}</p>
-        `;
-
-        playlistUl.appendChild(li);
-    });
-}
-
-// Load song
-function loadSong(index) {
-    currentSongIndex = index;
-    const song = playlist[index];
-
-    document.getElementById('songTitle').textContent = song.title;
-    document.getElementById('artist').textContent = song.artist;
-    songDuration = song.duration;
-    currentTime = 0;
-
-    updateProgress();
-    updatePlaylistHighlight();
-}
-
-// Toggle play/pause
-function togglePlay() {
-    isPlaying = !isPlaying;
-    const playBtn = document.getElementById('playBtn');
-    const vinyl = document.getElementById('vinyl');
-
-    if (isPlaying) {
-        playBtn.textContent = '⏸️';
-        vinyl.classList.add('spinning');
-        startProgress();
-    } else {
-        playBtn.textContent = '▶️';
-        vinyl.classList.remove('spinning');
-        stopProgress();
-    }
-}
-
-// Previous song
-function previousSong() {
-    currentSongIndex = currentSongIndex > 0 ? currentSongIndex - 1 : playlist.length - 1;
-    loadSong(currentSongIndex);
-    if (isPlaying) {
-        togglePlay();
-        togglePlay();
-    }
-}
-
-// Next song
-function nextSong() {
-    currentSongIndex = currentSongIndex < playlist.length - 1 ? currentSongIndex + 1 : 0;
-    loadSong(currentSongIndex);
-    if (isPlaying) {
-        togglePlay();
-        togglePlay();
-    }
-}
-
-// Start progress
-function startProgress() {
-    updateInterval = setInterval(() => {
-        currentTime++;
-        if (currentTime >= songDuration) {
-            nextSong();
-        }
-        updateProgress();
-    }, 1000);
-}
-
-// Stop progress
-function stopProgress() {
-    clearInterval(updateInterval);
-}
-
-// Update progress display
-function updateProgress() {
-    const progressPercent = (currentTime / songDuration) * 100;
-    document.getElementById('progress').style.width = `${progressPercent}%`;
-    document.getElementById('currentTime').textContent = formatTime(currentTime);
-    document.getElementById('duration').textContent = formatTime(songDuration);
-}
-
-// Seek to position
-function seek(event) {
-    const progressBar = event.currentTarget;
-    const clickPosition = event.offsetX;
-    const barWidth = progressBar.offsetWidth;
-    const seekPercent = clickPosition / barWidth;
-
-    currentTime = Math.floor(seekPercent * songDuration);
-    updateProgress();
-}
-
-// Format time
 function formatTime(seconds) {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-// Update playlist highlight
-function updatePlaylistHighlight() {
-    const items = document.querySelectorAll('.playlist-item');
-    items.forEach((item, index) => {
+function loadSong(index) {
+    const song = songs[index];
+    songTitle.textContent = song.title;
+    artist.textContent = song.artist;
+    durationDisplay.textContent = formatTime(song.duration);
+    currentTime = 0;
+    currentTimeDisplay.textContent = '0:00';
+    progress.style.width = '0%';
+    updatePlaylist();
+}
+
+function togglePlay() {
+    isPlaying = !isPlaying;
+
+    if (isPlaying) {
+        playBtn.textContent = '⏸️';
+        albumArt.classList.add('playing');
+        startProgress();
+    } else {
+        playBtn.textContent = '▶️';
+        albumArt.classList.remove('playing');
+        stopProgress();
+    }
+}
+
+function startProgress() {
+    interval = setInterval(() => {
+        const song = songs[currentSongIndex];
+        currentTime++;
+
+        if (currentTime >= song.duration) {
+            nextSong();
+        } else {
+            updateProgress();
+        }
+    }, 1000);
+}
+
+function stopProgress() {
+    if (interval) {
+        clearInterval(interval);
+        interval = null;
+    }
+}
+
+function updateProgress() {
+    const song = songs[currentSongIndex];
+    const percentage = (currentTime / song.duration) * 100;
+    progress.style.width = percentage + '%';
+    currentTimeDisplay.textContent = formatTime(currentTime);
+}
+
+function prevSong() {
+    currentSongIndex = (currentSongIndex - 1 + songs.length) % songs.length;
+    loadSong(currentSongIndex);
+    if (isPlaying) {
+        togglePlay();
+        setTimeout(togglePlay, 100);
+    }
+}
+
+function nextSong() {
+    currentSongIndex = (currentSongIndex + 1) % songs.length;
+    loadSong(currentSongIndex);
+    if (isPlaying) {
+        togglePlay();
+        setTimeout(togglePlay, 100);
+    }
+}
+
+function createPlaylist() {
+    playlistItems.innerHTML = '';
+    songs.forEach((song, index) => {
+        const item = document.createElement('div');
+        item.className = 'playlist-item';
         if (index === currentSongIndex) {
             item.classList.add('active');
-        } else {
-            item.classList.remove('active');
         }
+
+        item.innerHTML = `
+            <div class="playlist-item-title">${song.title}</div>
+            <div class="playlist-item-artist">${song.artist} • ${formatTime(song.duration)}</div>
+        `;
+
+        item.addEventListener('click', () => {
+            if (isPlaying) togglePlay();
+            currentSongIndex = index;
+            loadSong(index);
+            togglePlay();
+        });
+
+        playlistItems.appendChild(item);
     });
 }
 
-// Initialize on load
-document.addEventListener('DOMContentLoaded', initPlayer);
+function updatePlaylist() {
+    const items = playlistItems.querySelectorAll('.playlist-item');
+    items.forEach((item, index) => {
+        item.classList.toggle('active', index === currentSongIndex);
+    });
+}
+
+playBtn.addEventListener('click', togglePlay);
+prevBtn.addEventListener('click', prevSong);
+nextBtn.addEventListener('click', nextSong);
+
+loadSong(0);
+createPlaylist();
