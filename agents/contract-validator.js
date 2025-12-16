@@ -325,6 +325,34 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
         validationResult.isValid = false;
       }
 
+      // 額外驗證：檢查 HTML 路徑錯誤
+      const htmlPathIssues = this.validateHtmlPaths(htmlFiles);
+      if (htmlPathIssues.length > 0) {
+        validationResult.issues.htmlPathErrors = htmlPathIssues;
+        validationResult.isValid = false;
+      }
+
+      // 額外驗證：檢查 ES6 export 語法錯誤
+      const exportIssues = this.validateExportSyntax(files);
+      if (exportIssues.length > 0) {
+        validationResult.issues.exportSyntaxErrors = exportIssues;
+        validationResult.isValid = false;
+      }
+
+      // 額外驗證：檢查 main.js 路徑錯誤
+      const mainJsPathIssues = this.validateMainJsPaths(files);
+      if (mainJsPathIssues.length > 0) {
+        validationResult.issues.mainJsPathErrors = mainJsPathIssues;
+        validationResult.isValid = false;
+      }
+
+      // 額外驗證：檢查 preload.js IPC 參數格式
+      const preloadIpcIssues = this.validatePreloadIpcParameters(files);
+      if (preloadIpcIssues.length > 0) {
+        validationResult.issues.preloadIpcErrors = preloadIpcIssues;
+        validationResult.isValid = false;
+      }
+
       // 生成修復建議
       const suggestions = this.generateFixSuggestions(validationResult);
 
@@ -333,7 +361,11 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
         suggestions,
         architecture: architectureContracts,
         extracted: extractedContracts,
-        selectIssues
+        selectIssues,
+        htmlPathIssues,
+        exportIssues,
+        mainJsPathIssues,
+        preloadIpcIssues
       };
     } catch (error) {
       return {
@@ -562,6 +594,207 @@ ipcMain.handle('${missing.endpoint}', async (event, ...args) => {
               }
             }
           }
+        }
+      }
+    }
+    
+    return issues;
+  }
+
+  /**
+   * 檢查 HTML 檔案中的路徑錯誤
+   * 檢測 public/ 前綴錯誤：如 public/style.css 應該是 style.css
+   */
+  validateHtmlPaths(htmlFiles) {
+    const issues = [];
+    
+    for (const htmlFile of htmlFiles) {
+      // 只檢查 public 資料夾內的 HTML 檔案
+      if (!htmlFile.path.includes('public')) continue;
+      
+      // 檢查 CSS 連結中的 public/ 前綴
+      const cssLinkRegex = /<link[^>]*href\s*=\s*["']public\/([^"']+\.css)["'][^>]*>/gi;
+      let match;
+      while ((match = cssLinkRegex.exec(htmlFile.content)) !== null) {
+        issues.push({
+          type: 'html-path-error',
+          file: htmlFile.path,
+          pattern: 'CSS link',
+          incorrect: `public/${match[1]}`,
+          correct: match[1],
+          line: htmlFile.content.substring(0, match.index).split('\n').length
+        });
+      }
+      
+      // 檢查 script 標籤中的 public/ 前綴
+      const scriptRegex = /<script[^>]*src\s*=\s*["']public\/([^"']+\.js)["'][^>]*>/gi;
+      while ((match = scriptRegex.exec(htmlFile.content)) !== null) {
+        issues.push({
+          type: 'html-path-error',
+          file: htmlFile.path,
+          pattern: 'Script src',
+          incorrect: `public/${match[1]}`,
+          correct: match[1],
+          line: htmlFile.content.substring(0, match.index).split('\n').length
+        });
+      }
+    }
+    
+    return issues;
+  }
+
+  /**
+   * 檢查 ES6 export 語法在 Node.js 環境中的錯誤使用
+   * preload.js 和某些前端檔案不應使用 export
+   */
+  validateExportSyntax(files) {
+    const issues = [];
+    
+    for (const file of files) {
+      // 只檢查 .js 檔案
+      if (!file.path.endsWith('.js')) continue;
+      
+      // preload.js 不應使用 export（Node.js 環境，需要 CommonJS）
+      if (file.path.includes('preload.js')) {
+        const exportMatch = file.content.match(/export\s+(class|function|const|let|var|default)/);
+        if (exportMatch) {
+          issues.push({
+            type: 'export-syntax-error',
+            file: file.path,
+            context: 'preload.js',
+            reason: 'preload.js runs in Node.js environment, should use module.exports instead of ES6 export',
+            foundPattern: exportMatch[0],
+            suggestion: 'Remove "export" keyword and use module.exports at the end'
+          });
+        }
+      }
+      
+      // public 資料夾內的 JS 檔案使用 export 但沒有在 HTML 中宣告為 module
+      if (file.path.includes('public') && file.path.endsWith('.js')) {
+        const exportMatch = file.content.match(/export\s+(class|function|const|let|var|default)/);
+        if (exportMatch) {
+          issues.push({
+            type: 'export-syntax-error',
+            file: file.path,
+            context: 'browser-script',
+            reason: 'Browser scripts using export need type="module" in HTML, or remove export',
+            foundPattern: exportMatch[0],
+            suggestion: 'Remove "export" keyword for non-module scripts'
+          });
+        }
+      }
+    }
+    
+    return issues;
+  }
+
+  /**
+   * 檢查 main.js 中的檔案路徑錯誤
+   * 例如：path.join(__dirname, '..', 'public', 'index.html') 應該是 path.join(__dirname, 'public', 'index.html')
+   */
+  validateMainJsPaths(files) {
+    const issues = [];
+    
+    const mainJsFiles = files.filter(f => f.path.includes('main.js') && !f.path.includes('node_modules'));
+    
+    for (const file of mainJsFiles) {
+      // 檢查 loadFile 路徑中多餘的 '..'
+      const loadFilePattern = /loadFile\s*\(\s*path\.join\s*\(\s*__dirname\s*,\s*['"]\.\.['"],\s*['"]public['"]/g;
+      let match;
+      
+      while ((match = loadFilePattern.exec(file.content)) !== null) {
+        const lineNum = file.content.substring(0, match.index).split('\n').length;
+        issues.push({
+          type: 'main-js-path-error',
+          file: file.path,
+          line: lineNum,
+          pattern: 'loadFile path',
+          issue: "Using '..', 'public' but public/ folder is at same level as main.js",
+          incorrect: "path.join(__dirname, '..', 'public', 'index.html')",
+          correct: "path.join(__dirname, 'public', 'index.html')",
+          suggestion: "Remove the '..' from path.join - public/ folder is beside main.js, not one level up"
+        });
+      }
+    }
+    
+    return issues;
+  }
+
+  /**
+   * 檢查 preload.js 中的 IPC 參數格式是否與 main.js 一致
+   */
+  validatePreloadIpcParameters(files) {
+    const issues = [];
+    
+    // 找到 main.js 和 preload.js
+    const mainJsFile = files.find(f => f.path.includes('main.js') && !f.path.includes('node_modules'));
+    const preloadFile = files.find(f => f.path.includes('preload.js'));
+    
+    if (!mainJsFile || !preloadFile) {
+      return issues; // 如果找不到檔案就跳過
+    }
+    
+    // 從 main.js 提取 ipcMain.handle 的參數格式
+    const handlePattern = /ipcMain\.handle\s*\(\s*['"]([^'"]+)['"]\s*,\s*(?:async\s+)?\(\s*event\s*,\s*(\{[^}]+\}|[^)]+)\s*\)/g;
+    let mainMatch;
+    const mainHandlers = {};
+    
+    while ((mainMatch = handlePattern.exec(mainJsFile.content)) !== null) {
+      const channel = mainMatch[1];
+      const params = mainMatch[2].trim();
+      const usesObjectDestructuring = params.startsWith('{');
+      mainHandlers[channel] = {
+        params,
+        usesObjectDestructuring,
+        line: mainJsFile.content.substring(0, mainMatch.index).split('\n').length
+      };
+    }
+    
+    // 從 preload.js 提取 ipcRenderer.invoke 的調用格式
+    const invokePattern = /(\w+)\s*:\s*(?:async\s+)?\(([^)]*)\)\s*=>\s*(?:await\s+)?ipcRenderer\.invoke\s*\(\s*['"]([^'"]+)['"]\s*,\s*([^)]+)\)/g;
+    let preloadMatch;
+    
+    while ((preloadMatch = invokePattern.exec(preloadFile.content)) !== null) {
+      const methodName = preloadMatch[1];
+      const methodParams = preloadMatch[2].trim();
+      const channel = preloadMatch[3];
+      const invokeArgs = preloadMatch[4].trim();
+      const lineNum = preloadFile.content.substring(0, preloadMatch.index).split('\n').length;
+      
+      // 檢查這個 channel 是否在 main.js 中定義
+      if (mainHandlers[channel]) {
+        const mainHandler = mainHandlers[channel];
+        const preloadUsesObject = invokeArgs.startsWith('{');
+        const preloadMethodUsesDestructuring = methodParams.startsWith('{');
+        
+        // 如果 main.js 使用物件解構，preload.js 也應該使用物件解構
+        if (mainHandler.usesObjectDestructuring && !preloadMethodUsesDestructuring) {
+          issues.push({
+            type: 'preload-ipc-parameter-mismatch',
+            channel,
+            file: preloadFile.path,
+            line: lineNum,
+            mainJsFormat: mainHandler.params,
+            preloadFormat: methodParams,
+            issue: `main.js expects object destructuring ${mainHandler.params}, but preload.js method uses ${methodParams}`,
+            suggestion: `Change preload.js method signature from '${methodParams}' to '${mainHandler.params.replace('event, ', '')}'`,
+            correctPattern: `${methodName}: async ${mainHandler.params.replace('event, ', '')} => ipcRenderer.invoke('${channel}', ${invokeArgs})`
+          });
+        }
+        
+        // 如果 main.js 使用物件解構，preload.js 傳遞參數時也應該用物件
+        if (mainHandler.usesObjectDestructuring && !preloadUsesObject) {
+          issues.push({
+            type: 'preload-ipc-invoke-mismatch',
+            channel,
+            file: preloadFile.path,
+            line: lineNum,
+            mainJsFormat: mainHandler.params,
+            invokeArgs,
+            issue: `main.js expects object ${mainHandler.params}, but preload.js invokes with ${invokeArgs}`,
+            suggestion: `Change invoke call to pass object: ipcRenderer.invoke('${channel}', { ${invokeArgs} })`,
+            correctPattern: `ipcRenderer.invoke('${channel}', ${mainHandler.params.replace(/\s/g, '')})`
+          });
         }
       }
     }

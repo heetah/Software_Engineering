@@ -116,6 +116,14 @@ export async function runWithInstructionService(
   options = {}
 ) {
   let { architect, verifier, tester } = agents;
+  const { onLog } = options;
+
+  const logProgress = (message) => {
+    console.log(message);
+    if (typeof onLog === 'function') {
+      onLog(message);
+    }
+  };
 
   // 如果提供了動態選項 (API Keys / Provider)，重新實例化 Verifier 和 Tester 以應用設定
   if (options && (options.apiKeys || options.llmProvider)) {
@@ -134,16 +142,18 @@ export async function runWithInstructionService(
       { userInput }
     );
 
-    // Architect Agent 直接處理用戶需求並生成計劃或單純問答回覆
     // （不再需要 Requirement Agent，Architect Agent 會同時處理需求分析和架構設計）
     const plan = await withErrorHandling(
       'InstructionService.createPlan',
-      () => instructionService.createPlan({
-        prompt: userInput,
-        context: {
-          timestamp: new Date().toISOString()
-        }
-      }),
+      async () => {
+        logProgress(`[Coordinator] Analyzing requirements and creating plan...`);
+        return await instructionService.createPlan({
+          prompt: userInput,
+          context: {
+            timestamp: new Date().toISOString()
+          }
+        });
+      },
       { userInput }
     );
 
@@ -153,7 +163,7 @@ export async function runWithInstructionService(
       return plan;
     }
 
-    console.log(`\nPlan created, Session ID: ${plan.id}`);
+    logProgress(`\nPlan created, Session ID: ${plan.id}`);
     console.log(`Workspace directory: ${plan.workspaceDir || 'N/A'}`);
     console.log(`File operations: Created=${plan.fileOps.created.length}, Skipped=${plan.fileOps.skipped.length}, Errors=${plan.fileOps.errors.length}`);
 
@@ -222,8 +232,11 @@ export async function runWithInstructionService(
         { planId: plan.id }
       );
 
+
+
       // 直接寫入檔案系統（Cursor 常用方式）
       try {
+        logProgress(`[Coordinator] Generating project files...`);
         const result = await withErrorHandling(
           'writeProjectDirectly',
           () => Promise.resolve(
@@ -231,7 +244,7 @@ export async function runWithInstructionService(
           ),
           { workspaceDir: plan.workspaceDir }
         );
-        console.log(`\nProject generated at ${result.outDir}`);
+        logProgress(`\nProject generated at ${result.outDir}`);
         console.log(`Total files: ${result.files.length}`);
         console.log(`\nGenerated files:`);
         result.files.forEach(file => {
@@ -257,35 +270,35 @@ export async function runWithInstructionService(
           });
         }
       }
-      
+
       // ===== Contract Validation & Auto-Fix: 驗證並自動修復契約不一致 =====
-      console.log("\n" + "=".repeat(60));
-      console.log("Contract Validator: Checking & Auto-Fixing contracts");
-      console.log("=".repeat(60));
-      
+      logProgress("\n" + "=".repeat(60));
+      logProgress("Contract Validator: Checking & Auto-Fixing contracts");
+      logProgress("=".repeat(60));
+
       try {
         const contractValidator = new ContractValidator();
         const contractAutoFixer = new ContractAutoFixer();
-        
+
         // 第一層：快速程式化驗證和修復
         const checkResult = await withErrorHandling(
           'ContractAutoFixer.checkAndFix',
           () => contractAutoFixer.checkAndFix(plan.id, contractValidator),
           { sessionId: plan.id }
         );
-        
+
         if (checkResult.fixResult) {
           console.log(`\n📊 程式化修復結果: 成功 ${checkResult.fixResult.successCount}，失敗 ${checkResult.fixResult.failCount}`);
         }
-        
+
         // 第二層：AI 深度修復（無論程式化修復是否成功都執行）
         console.log("\n" + "=".repeat(60));
         console.log("🤖 AI Contract Repair: 深度分析並修復");
         console.log("=".repeat(60));
-        
+
         // 重新驗證以獲取最新問題
         const finalValidation = await contractValidator.validateSession(plan.id);
-        
+
         if (!finalValidation.isValid || checkResult.needsAI) {
           // 創建一個簡單的 GeminiService 包裝
           const geminiService = {
@@ -297,21 +310,21 @@ export async function runWithInstructionService(
               return { response: { text: () => result.response } };
             }
           };
-          
+
           const contractRepairAgent = new ContractRepairAgent(geminiService);
-          
+
           const repairResult = await withErrorHandling(
             'ContractRepairAgent.repair',
             () => contractRepairAgent.repair(plan.id, finalValidation),
             { sessionId: plan.id }
           );
-          
+
           if (repairResult.success) {
             console.log("\n✅ AI 修復完成！");
             console.log(`   修復文件數: ${repairResult.summary.fixedFileCount}`);
             console.log(`   總變更數: ${repairResult.summary.totalChanges}`);
             console.log(`   修復的文件: ${repairResult.summary.files.join(', ')}\n`);
-            
+
             // 最終驗證
             const postRepairValidation = await contractValidator.validateSession(plan.id);
             if (postRepairValidation.isValid) {
@@ -329,9 +342,9 @@ export async function runWithInstructionService(
           const validationReport = contractValidator.generateReport(finalValidation);
           console.log(validationReport);
         }
-        
+
       } catch (validationError) {
-        errorLogger.warn("Contract validation/repair failed", { 
+        errorLogger.warn("Contract validation/repair failed", {
           error: validationError.message,
           sessionId: plan.id
         });
@@ -339,9 +352,9 @@ export async function runWithInstructionService(
     }
 
     // ===== Verifier Agent: 生成測試計劃 =====
-    console.log("\n" + "=".repeat(60));
-    console.log("Verifier Agent: Generate test plan");
-    console.log("=".repeat(60));
+    logProgress("\n" + "=".repeat(60));
+    logProgress("Verifier Agent: Generate test plan");
+    logProgress("=".repeat(60));
 
     let testPlan = null;
     try {
@@ -370,9 +383,9 @@ export async function runWithInstructionService(
 
     // ===== Tester Agent: 生成測試碼並執行測試 =====
     if (testPlan && testPlan.testFiles && testPlan.testFiles.length > 0) {
-      console.log("\n" + "=".repeat(60));
-      console.log("Tester Agent: Generate test code and execute tests");
-      console.log("=".repeat(60));
+      logProgress("\n" + "=".repeat(60));
+      logProgress("Tester Agent: Generate test code and execute tests");
+      logProgress("=".repeat(60));
 
       try {
         const testResult = await withErrorHandling(
@@ -381,29 +394,64 @@ export async function runWithInstructionService(
           { sessionId: plan.id }
         );
 
-        const { testReport, errorReport } = testResult;
-        console.log(`\nTests executed successfully!`);
-        console.log(`Test statistics:`);
-        console.log(`   - Test files: ${testReport.totals.files}`);
-        console.log(`   - Total tests: ${testReport.totals.tests}`);
-        console.log(`   - Passed: ${testReport.totals.passed}`);
-        console.log(`   - Failed: ${testReport.totals.failed} ${testReport.totals.failed > 0 ? '' : ''}`);
+        // 適配 Tester Agent 的返回結構
+        const { reportPath, jestResults } = testResult;
 
-        if (testReport.totals.failed > 0) {
-          console.log(`\nThere are ${testReport.totals.failed} failed tests`);
-          if (errorReport.failures && errorReport.failures.length > 0) {
-            console.log(`\nFailed case details:`);
-            errorReport.failures.slice(0, 5).forEach((failure, idx) => {
-              console.log(`  ${idx + 1}. ${failure.title}`);
-              console.log(`     File: ${failure.filename}`);
-              if (failure.failureMessages && failure.failureMessages[0]) {
-                const msg = failure.failureMessages[0].substring(0, 100);
-                console.log(`     Error: ${msg}${failure.failureMessages[0].length > 100 ? '...' : ''}`);
+        // 檢查 jestResults 是否有效
+        if (!jestResults || !jestResults.results) {
+          console.log(`\n 測試執行失敗或無結果`);
+          console.log(`   報告已產生：${reportPath}`);
+        } else {
+          const results = jestResults.results;
+
+          console.log(`\n✓ Tests executed successfully!`);
+          console.log(`Test statistics:`);
+          console.log(`   - Test files: ${results.numTotalTestSuites || 0}`);
+          console.log(`   - Total tests: ${results.numTotalTests || 0}`);
+          console.log(`   - Passed: ${results.numPassedTests || 0} ✓`);
+          console.log(`   - Failed: ${results.numFailedTests || 0}${results.numFailedTests > 0 ? ' ✗' : ''}`);
+
+          if (results.numFailedTests > 0) {
+            console.log(`\nThere are ${results.numFailedTests} failed tests`);
+
+            // 提取失敗的測試
+            const failures = [];
+            if (results.testResults) {
+              results.testResults.forEach(testFile => {
+                if (testFile.assertionResults) {
+                  testFile.assertionResults
+                    .filter(test => test.status === 'failed')
+                    .forEach(test => {
+                      failures.push({
+                        title: test.title,
+                        filename: path.basename(testFile.name || testFile.testFilePath || 'unknown'),
+                        failureMessages: test.failureMessages
+                      });
+                    });
+                }
+              });
+            }
+
+            if (failures.length > 0) {
+              console.log(`\nFailed case details:`);
+              failures.slice(0, 5).forEach((failure, idx) => {
+                console.log(`  ${idx + 1}. ${failure.title}`);
+                console.log(`     File: ${failure.filename}`);
+                if (failure.failureMessages && failure.failureMessages[0]) {
+                  const msg = failure.failureMessages[0].substring(0, 100);
+                  console.log(`     Error: ${msg}${failure.failureMessages[0].length > 100 ? '...' : ''}`);
+                }
+              });
+
+              if (failures.length > 5) {
+                console.log(`  ... There are ${failures.length - 5} more failed cases`);
               }
             });
             if (errorReport.failures.length > 5) {
               console.log(`  ... There are ${errorReport.failures.length - 5} more failed cases`);
             }
+          } else {
+            console.log(`\nAll tests passed!`);
           }
         } else {
           console.log(`\nAll tests passed!`);

@@ -450,6 +450,18 @@ FORBIDDEN:
     prompt += `- CRITICAL: All IDs, classes, data-* attributes, and element text MUST match skeleton exactly\n`;
     prompt += `- CRITICAL: Any symbols or values in buttons/inputs that JS will read must be consistent\n`;
     prompt += `- Include proper <link> and <script> tags matching actual file names\n\n`;
+    
+    // 🔴 檔案路徑規則（針對 Electron 專案）
+    const isInPublicFolder = filePath.includes('public/') || filePath.includes('public\\');
+    if (isInPublicFolder) {
+      prompt += `🔴 CRITICAL FILE PATH RULES (Electron project - HTML in public/ folder):\n`;
+      prompt += `1. For CSS files: <link rel="stylesheet" href="style.css">  ← Use RELATIVE path, NOT "public/style.css"\n`;
+      prompt += `2. For JS files: <script src="script.js"></script>  ← Use RELATIVE path, NOT "public/script.js"\n`;
+      prompt += `3. The HTML file is ALREADY in the public/ folder, so paths are relative to IT\n`;
+      prompt += `4. ❌ FORBIDDEN: href="public/style.css" or src="public/script.js"\n`;
+      prompt += `5. ✅ CORRECT: href="style.css" and src="script.js"\n\n`;
+    }
+    
     prompt += `Return ONLY the code, no markdown.`;
 
     return prompt;

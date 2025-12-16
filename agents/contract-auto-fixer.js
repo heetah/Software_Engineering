@@ -192,6 +192,104 @@ export default class ContractAutoFixer {
         }
       }
 
+      // 修復 HTML 路徑錯誤
+      for (const pathError of validationResult.issues.htmlPathErrors || []) {
+        try {
+          const fixed = await this.fixHtmlPath(outputDir, pathError);
+          if (fixed) {
+            fixes.push({
+              type: 'html-path-error',
+              file: pathError.file,
+              from: pathError.incorrect,
+              to: pathError.correct,
+              status: 'success'
+            });
+            successCount++;
+          }
+        } catch (error) {
+          fixes.push({
+            type: 'html-path-error',
+            file: pathError.file,
+            error: error.message,
+            status: 'failed'
+          });
+          failCount++;
+        }
+      }
+
+      // 修復 export 語法錯誤
+      for (const exportError of validationResult.issues.exportSyntaxErrors || []) {
+        try {
+          const fixed = await this.fixExportSyntax(outputDir, exportError);
+          if (fixed) {
+            fixes.push({
+              type: 'export-syntax-error',
+              file: exportError.file,
+              context: exportError.context,
+              status: 'success'
+            });
+            successCount++;
+          }
+        } catch (error) {
+          fixes.push({
+            type: 'export-syntax-error',
+            file: exportError.file,
+            error: error.message,
+            status: 'failed'
+          });
+          failCount++;
+        }
+      }
+
+      // 修復 main.js 路徑錯誤
+      for (const pathError of validationResult.issues.mainJsPathErrors || []) {
+        try {
+          const fixed = await this.fixMainJsPath(outputDir, pathError);
+          if (fixed) {
+            fixes.push({
+              type: 'main-js-path-error',
+              file: pathError.file,
+              line: pathError.line,
+              status: 'success'
+            });
+            successCount++;
+          }
+        } catch (error) {
+          fixes.push({
+            type: 'main-js-path-error',
+            file: pathError.file,
+            error: error.message,
+            status: 'failed'
+          });
+          failCount++;
+        }
+      }
+
+      // 修復 preload.js IPC 參數格式錯誤
+      for (const ipcError of validationResult.issues.preloadIpcErrors || []) {
+        try {
+          const fixed = await this.fixPreloadIpcParameter(outputDir, ipcError);
+          if (fixed) {
+            fixes.push({
+              type: 'preload-ipc-parameter-error',
+              file: ipcError.file,
+              channel: ipcError.channel,
+              status: 'success'
+            });
+            successCount++;
+          }
+        } catch (error) {
+          fixes.push({
+            type: 'preload-ipc-parameter-error',
+            file: ipcError.file,
+            channel: ipcError.channel,
+            error: error.message,
+            status: 'failed'
+          });
+          failCount++;
+        }
+      }
+
       this.fixHistory = fixes;
 
       return {
@@ -745,6 +843,141 @@ ipcMain.handle('${channel}', async (event, ...args) => {
       
     } catch (error) {
       console.error(`   ❌ 修復失敗: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * 修復 HTML 路徑錯誤（移除 public/ 前綴）
+   */
+  async fixHtmlPath(outputDir, pathError) {
+    try {
+      const filePath = path.join(outputDir, pathError.file);
+      let content = await fs.readFile(filePath, 'utf-8');
+      
+      // 替換錯誤路徑為正確路徑
+      const searchPattern = new RegExp(
+        this.escapeRegex(pathError.incorrect).replace(/\//g, '\\/'),
+        'g'
+      );
+      
+      const newContent = content.replace(searchPattern, pathError.correct);
+      
+      if (newContent !== content) {
+        await fs.writeFile(filePath, newContent, 'utf-8');
+        console.log(`   ✓ 修復 HTML 路徑: ${pathError.incorrect} → ${pathError.correct}`);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error(`   ❌ 修復 HTML 路徑失敗: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * 修復 export 語法錯誤
+   */
+  async fixExportSyntax(outputDir, exportError) {
+    try {
+      const filePath = path.join(outputDir, exportError.file);
+      let content = await fs.readFile(filePath, 'utf-8');
+      
+      // 移除 export 關鍵字
+      const exportPattern = /^(\s*)export\s+(class|function|const|let|var)\s+/gm;
+      const newContent = content.replace(exportPattern, '$1$2 ');
+      
+      // 也移除 export default
+      const exportDefaultPattern = /^(\s*)export\s+default\s+/gm;
+      const finalContent = newContent.replace(exportDefaultPattern, '$1');
+      
+      if (finalContent !== content) {
+        await fs.writeFile(filePath, finalContent, 'utf-8');
+        console.log(`   ✓ 修復 export 語法: ${exportError.file}`);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error(`   ❌ 修復 export 語法失敗: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * 修復 main.js 中多餘的 '..' 路徑
+   */
+  async fixMainJsPath(outputDir, pathError) {
+    try {
+      const filePath = path.join(outputDir, pathError.file);
+      let content = await fs.readFile(filePath, 'utf-8');
+      
+      // 替換 path.join(__dirname, '..', 'public', ...) 為 path.join(__dirname, 'public', ...)
+      const incorrectPattern = /path\.join\s*\(\s*__dirname\s*,\s*['"]\.\.['"],\s*['"]public['"]/g;
+      const newContent = content.replace(incorrectPattern, "path.join(__dirname, 'public'");
+      
+      if (newContent !== content) {
+        await fs.writeFile(filePath, newContent, 'utf-8');
+        console.log(`   ✓ 修復 main.js 路徑: ${pathError.file} (line ${pathError.line})`);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error(`   ❌ 修復 main.js 路徑失敗: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * 修復 preload.js 中的 IPC 參數格式
+   */
+  async fixPreloadIpcParameter(outputDir, ipcError) {
+    try {
+      const filePath = path.join(outputDir, ipcError.file);
+      let content = await fs.readFile(filePath, 'utf-8');
+      
+      // 根據錯誤類型修復
+      if (ipcError.type === 'preload-ipc-parameter-mismatch') {
+        // 修復方法簽名：從 (param) 改為 ({ param })
+        // 例如：calculate: async (expression) => ... 改為 calculate: async ({ expression }) => ...
+        const channel = ipcError.channel;
+        const currentFormat = ipcError.preloadFormat;
+        const targetFormat = ipcError.mainJsFormat.replace('event, ', '');
+        
+        // 找到對應的方法定義並替換
+        const methodPattern = new RegExp(`(${this.escapeRegex(channel)}\\s*:\\s*(?:async\\s+)?\\()${this.escapeRegex(currentFormat)}(\\)\\s*=>)`, 'g');
+        const newContent = content.replace(methodPattern, `$1${targetFormat}$2`);
+        
+        if (newContent !== content) {
+          await fs.writeFile(filePath, newContent, 'utf-8');
+          console.log(`   ✓ 修復 preload.js 方法簽名: ${channel} ${currentFormat} → ${targetFormat}`);
+          content = newContent; // 繼續用更新的內容檢查 invoke
+        }
+      }
+      
+      if (ipcError.type === 'preload-ipc-invoke-mismatch') {
+        // 修復 invoke 調用：從 invoke('channel', param) 改為 invoke('channel', { param })
+        const channel = ipcError.channel;
+        const invokeArgs = ipcError.invokeArgs;
+        
+        // 如果參數不是以 { 開頭，將其包裝成物件
+        if (!invokeArgs.trim().startsWith('{')) {
+          const invokePattern = new RegExp(`ipcRenderer\\.invoke\\s*\\(\\s*['"]${this.escapeRegex(channel)}['"]\\s*,\\s*${this.escapeRegex(invokeArgs)}\\s*\\)`, 'g');
+          const newContent = content.replace(invokePattern, `ipcRenderer.invoke('${channel}', { ${invokeArgs} })`);
+          
+          if (newContent !== content) {
+            await fs.writeFile(filePath, newContent, 'utf-8');
+            console.log(`   ✓ 修復 preload.js invoke 調用: ${channel} ${invokeArgs} → { ${invokeArgs} }`);
+            return true;
+          }
+        }
+      }
+      
+      return false;
+    } catch (error) {
+      console.error(`   ❌ 修復 preload.js IPC 參數失敗: ${error.message}`);
       return false;
     }
   }
