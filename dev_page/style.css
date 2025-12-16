@@ -1,5 +1,5 @@
 @charset "UTF-8";
-/* dev_page/scss/style.scss (完整整合版 v2.1) */
+/* dev_page/scss/style.scss (最終修復版 v3.0) */
 
 /*
  * ====================================================================
@@ -16,6 +16,7 @@ html {
   --color-shadow-dark: #c8d0e0;
   --color-shadow-light: transparent;
 
+  /* Accent 1: 淺色模式下的主色 (藍紫色) */
   --color-accent-1: #8692fd;
   --color-accent-2: #6272f4;
   --color-accent-text: #ffffff;
@@ -46,6 +47,7 @@ html.dark-mode {
 
   --color-shadow-dark: #1a1a1a;
 
+  /* Accent 1: 深色模式下的主色 (金色) - 這樣氣泡流光會自動變金 */
   --color-accent-1: #f0c54d;
   --color-accent-2: #d4a03a;
   --color-accent-text: #2c2c2c;
@@ -102,8 +104,14 @@ body {
   background: transparent;
   box-shadow: none;
   transition: all 0.2s ease-in-out;
+
+  /* [關鍵新增] 確保側邊欄浮在內容區之上 */
+  position: relative;
+  z-index: 50;
+  /* 設定一個較高的層級 */
 }
 
+/* 2. 壓低內容區層級 */
 .content-area {
   flex-grow: 1;
   display: flex;
@@ -113,6 +121,13 @@ body {
   background: var(--color-bg);
   box-shadow: var(--shadow-concave);
   transition: all 0.2s ease-in-out;
+
+  /* [關鍵新增] 確保它在側邊欄之下 */
+  position: relative;
+  z-index: 1;
+
+  /* [選用] 防止內容區的陰影或邊界溢出影響點擊 */
+  overflow: hidden;
 }
 
 .chat-display {
@@ -136,21 +151,28 @@ body {
 
 /*
  * ====================================================================
- * 4. 側邊欄元件
+ * 4. 側邊欄元件 (包含按鈕點擊修復)
  * ====================================================================
  */
 
-/* 側邊欄頂部容器 */
+/* [關鍵修復] 側邊欄頂部容器 - 設定為可拖曳區域 */
 .sidebar-header {
   display: flex;
   gap: 10px;
   justify-content: center;
   margin-bottom: 20px;
-  padding: 0 5px;
+  padding: 10px 5px 0 5px;
+  /* 讓這個區塊可以拖動視窗 */
+  -webkit-app-region: drag !important;
+  position: relative;
+  z-index: 100;
 }
 
-/* 側邊欄頂部按鈕樣式 (新手教學 & 刷新) */
+/* [關鍵修復] 側邊欄頂部按鈕 - 強制設定不可拖曳，以接收點擊 */
 .sidebar-header-btn {
+  /* 告訴 Electron 這裡是按鈕，不是標題列 */
+  -webkit-app-region: no-drag !important;
+
   flex: 1;
   max-width: 45%;
   height: 44px;
@@ -159,20 +181,25 @@ body {
   background: var(--color-bg);
   box-shadow: var(--shadow-convex);
   font-size: 20px;
-  cursor: pointer;
+
+  /* 強制滑鼠手型 */
+  cursor: pointer !important;
+
   transition: all 0.2s ease-in-out;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--color-text);
-  /* 確保圖示顏色正確 */
+
+  /* 提高層級 */
+  position: relative;
+  z-index: 101;
 }
 
 .sidebar-header-btn:hover {
   transform: translateY(-2px);
   box-shadow: 8px 8px 16px var(--color-shadow-dark);
   color: var(--color-accent-2);
-  /* 懸停時變色 */
 }
 
 .sidebar-header-btn:active {
@@ -180,7 +207,14 @@ body {
   box-shadow: var(--shadow-concave);
 }
 
-/* 確保 SVG icon 顏色跟隨文字 */
+/* [關鍵修復] 確保 SVG icon 不會擋住滑鼠事件 */
+.sidebar-header-btn .icon,
+.sidebar-header-btn svg,
+.sidebar-header-btn path,
+.sidebar-header-btn line {
+  pointer-events: none !important;
+}
+
 .sidebar-header-btn .icon {
   display: flex;
   align-items: center;
@@ -283,7 +317,6 @@ body {
   transition: all 0.2s ease;
   margin-bottom: 5px;
   opacity: 0;
-  /* 動畫起始狀態 */
   animation: slideInStagger 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
   animation-delay: calc(var(--i) * 0.05s);
 }
@@ -384,7 +417,6 @@ body {
   border-radius: 20px;
   background: var(--color-bg);
   box-shadow: var(--shadow-convex);
-
   color: var(--color-text);
   word-wrap: break-word;
   width: fit-content;
@@ -394,7 +426,7 @@ body {
   z-index: 1;
 }
 
-/* [修改] 泡泡膜反光動畫 - 使用變數適配淺色(藍紫)與深色(金) */
+/* 泡泡膜反光動畫 - 使用變數 */
 .message-bubble::after {
   content: "";
   position: absolute;
@@ -408,13 +440,11 @@ body {
   background: linear-gradient(125deg,
       rgba(255, 255, 255, 0) 30%,
       rgba(134, 146, 253, 0.2) 35%,
-      /* 弱光帶 */
       rgba(255, 255, 255, 0) 40%,
       var(--color-accent-1) 50%,
-      /* 強光帶 (使用變數) */
+      /* 強光帶 (變數) */
       rgba(255, 255, 255, 0) 60%,
       rgba(134, 146, 253, 0.2) 65%,
-      /* 弱光帶 */
       rgba(255, 255, 255, 0) 70%);
 
   background-size: 200% 200%;
@@ -514,7 +544,6 @@ body {
   font-size: 13px;
   gap: 6px;
 }
-
 
 /*
  * ====================================================================
@@ -678,6 +707,9 @@ body {
   background: var(--color-bg);
   box-shadow: var(--shadow-convex);
   transition: all 0.2s ease-in-out;
+  /* [關鍵修復] 讓卡片有明確邊界，幫助 Spotlignt 定位 */
+  position: relative;
+  transform: translateZ(0);
 }
 
 .settings-card__title {
@@ -877,7 +909,7 @@ body {
   transition: all 0.2s ease;
 }
 
-/* [修改] 懸停時變亮 (Filter) 而不是換色，適配所有主題 */
+/* 懸停時變亮 (Filter) */
 .action-button--save:hover {
   background: var(--gradient-accent);
   filter: brightness(1.1);
@@ -1144,7 +1176,7 @@ html.dark-mode .log-content {
   justify-content: flex-end;
 }
 
-/* [修正版] 新手教學下一步按鈕 (流動光澤邊框) */
+/* 新手教學下一步按鈕 (流動光澤邊框) */
 #tutorial-next-btn {
   position: relative;
   cursor: pointer;
@@ -1461,4 +1493,64 @@ html.dark-mode .log-content {
   .library-sort-btn {
     justify-content: center;
   }
+}
+
+/* style.scss - 請貼在檔案最下方 */
+
+/* ====================================================================
+ * 🚨 強制修復補丁 (Fix Patch)
+ * ====================================================================
+ */
+
+/* 1. 解決按鈕點擊問題 (Electron Drag Region & Event Blocking) */
+
+.sidebar-header {
+  /* 設定這塊區域為可拖曳 (標題列行為) */
+  -webkit-app-region: drag !important;
+  /* 確保層級夠高 */
+  position: relative;
+  z-index: 100;
+}
+
+/* 針對按鈕本身 */
+.sidebar-header-btn {
+  /* 關鍵：設定按鈕區域 "不可拖曳"，這樣才能接收點擊 */
+  -webkit-app-region: no-drag !important;
+
+  /* 強制滑鼠手型 */
+  cursor: pointer !important;
+
+  /* 提高層級，確保浮在 header 之上 */
+  position: relative;
+  z-index: 1000 !important;
+}
+
+/* [關鍵] 防止 icons.css 的樣式擋住滑鼠 */
+/* 使用更強的選擇器權重覆蓋 icons.css */
+button.sidebar-header-btn .icon,
+button.sidebar-header-btn svg,
+button.sidebar-header-btn path {
+  pointer-events: none !important;
+}
+
+/* 2. 解決亮框對齊問題 */
+
+/* 確保設定卡片有明確的邊界與背景，避免透明度造成視覺誤差 */
+.settings-card {
+  position: relative;
+  background-color: var(--color-bg) !important;
+  /* 確保不透明 */
+  z-index: 1;
+  /* 建立堆疊上下文 */
+}
+
+/* 確保新手教學遮罩層級最高，但在按鈕之下 */
+.tutorial-overlay {
+  z-index: 999 !important;
+  /* 比按鈕(1000)低，比其他內容高 */
+}
+
+.tutorial-bubble {
+  z-index: 1001 !important;
+  /* 氣泡要比按鈕高 */
 }
