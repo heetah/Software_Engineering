@@ -440,7 +440,7 @@ class Coordinator {
           // Speed Optimization: Determine Model Tier (Adaptive Selection)
           // Simple files use 'fast' tier (Quantized/Mobile models)
           const ext = path.extname(file.path).toLowerCase();
-          const fastExtensions = ['.css', '.scss', '.sass', '.less', '.html', '.htm', '.json', '.xml', '.md', '.txt', '.env', '.gitignore'];
+          const fastExtensions = ['.json', '.txt', '.env', '.gitignore'];
           const isSimpleFile = fastExtensions.includes(ext);
           const modelTier = isSimpleFile ? 'fast' : 'strong';
 

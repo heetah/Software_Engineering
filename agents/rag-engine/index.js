@@ -42,7 +42,10 @@ class RagEngine {
             try {
                 Settings.embedModel = new OpenAIEmbedding({
                     apiKey: cloudApiKey,
-                    model: "text-embedding-3-small" // Efficient and capable model
+                    model: "text-embedding-3-small", // Efficient and capable model
+                    additionalSessionOptions: {
+                        baseURL: cloudApiEndpoint || "https://api.openai.com/v1/embeddings"
+                    }
                 });
                 console.log('[RagEngine] Embedding model configured: text-embedding-3-small');
             } catch (err) {
