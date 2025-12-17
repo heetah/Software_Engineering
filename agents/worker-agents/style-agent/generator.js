@@ -17,6 +17,37 @@ class StyleGenerator {
   async generate({ skeleton, fileSpec, context }) {
     console.log(`[Generator] Processing ${fileSpec.path}`);
 
+    // 優先級 0: 🔥 Advanced RAG Integration (LlamaIndex / LangChain)
+    try {
+      if (context.allFiles && context.allFiles.length > 0) {
+        // Dynamically import the ESM module
+        const { default: ragEngine } = await import('../../rag-engine/index.js');
+
+        // 0. Initialize with current config (API Keys)
+        ragEngine.init(this.config);
+
+        // 1. Ingest Knowledge Base (Static Example Code)
+        await ragEngine.ingestKnowledgeBase();
+
+        // 2. Ingest known files to RAG Engine (demo purpose: real-time ingest)
+        for (const file of context.allFiles) {
+          if (file.content) {
+            await ragEngine.ingestFile(file.path, file.content);
+          }
+        }
+        await ragEngine.buildIndex();
+
+        // Query Semantic Context
+        const query = `${fileSpec.description || ''} ${fileSpec.path}`;
+        context.semanticContext = await ragEngine.query(query);
+        if (context.semanticContext) {
+          console.log(`[Generator] 🧠 Retrieved Semantic Context (${context.semanticContext.length} chars)`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[Generator] RAG Engine warning: ${err.message}`);
+    }
+
     // 優先級 1: 使用 template（Architect 明確指定的內容）
     if (fileSpec.template && fileSpec.template.trim()) {
       console.log(`[Generator] ✅ Using template (${fileSpec.template.length} chars)`);
@@ -126,6 +157,18 @@ body {
     const contracts = context.contracts || null;
 
     let prompt = `Generate CSS for: ${filePath}\n\n`;
+
+    // ========== 📚 RAG SEMANTIC CONTEXT (FROM VECTOR DB) ==========
+    if (context.semanticContext) {
+      prompt += `\n📚 SEMANTIC KNOWLEDGE BASE (Similar Code Examples)\n`;
+      prompt += `The following code snippets were retrieved from the knowledge base and might be relevant:\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      prompt += `${context.semanticContext}\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      prompt += `USAGE RULES:\n`;
+      prompt += `1. Use these examples to understand project patterns, coding style, or specific API usage.\n`;
+      prompt += `2. If the examples contradict the "Contracts" or "Skeleton", priority is: Contracts > Skeleton > Knowledge Base.\n\n`;
+    }
 
     // 🚨 CONTRACTS FIRST - 顯示需要樣式化的 DOM 元素
     if (contracts && contracts.dom && contracts.dom.length > 0) {
