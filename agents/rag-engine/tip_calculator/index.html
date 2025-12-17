@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小費計算器</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>💸 小費計算器</h1>
+
+        <div class="calculator-card">
+            <div class="input-group">
+                <label>帳單金額</label>
+                <div class="input-wrapper">
+                    <span class="currency">$</span>
+                    <input type="number" id="bill" placeholder="0" min="0">
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label>服務品質 (小費 %)</label>
+                <div class="tip-options">
+                    <button class="tip-btn" data-value="0.05">5%</button>
+                    <button class="tip-btn active" data-value="0.10">10%</button>
+                    <button class="tip-btn" data-value="0.15">15%</button>
+                    <button class="tip-btn" data-value="0.20">20%</button>
+                    <input type="number" id="customTip" placeholder="自訂" min="0">
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label>分攤人數</label>
+                <div class="people-wrapper">
+                    <button id="minusPeople">-</button>
+                    <span id="peopleCount">1</span>
+                    <button id="addPeople">+</button>
+                </div>
+            </div>
+
+            <div class="results">
+                <div class="result-row">
+                    <div>
+                        <span class="label">小費金額</span>
+                        <span class="sub-label">/ 人</span>
+                    </div>
+                    <div class="amount" id="tipPerPerson">$0.00</div>
+                </div>
+                <div class="result-row">
+                    <div>
+                        <span class="label">總金額</span>
+                        <span class="sub-label">/ 人</span>
+                    </div>
+                    <div class="amount total" id="totalPerPerson">$0.00</div>
+                </div>
+            </div>
+
+            <button id="resetBtn" class="btn-reset">重置</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>

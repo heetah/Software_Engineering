@@ -1,0 +1,201 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #a8c0ff 0%, #3f2b96 100%);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.container {
+    width: 100%;
+    max-width: 450px;
+}
+
+h1 {
+    text-align: center;
+    color: white;
+    margin-bottom: 20px;
+    letter-spacing: 2px;
+}
+
+.calculator-card {
+    background: white;
+    padding: 30px;
+    border-radius: 20px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+}
+
+.input-group {
+    margin-bottom: 25px;
+}
+
+label {
+    display: block;
+    color: #555;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.input-wrapper {
+    position: relative;
+    background: #f4f7f6;
+    border-radius: 8px;
+    padding: 5px 15px;
+}
+
+.currency {
+    color: #9aabb0;
+    font-size: 1.2em;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+#bill {
+    width: 100%;
+    border: none;
+    background: transparent;
+    font-size: 1.5em;
+    color: #00474b;
+    text-align: right;
+    padding: 10px 0;
+    outline: none;
+    font-weight: bold;
+}
+
+.tip-options {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.tip-btn {
+    background: #00474b;
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 1.1em;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.tip-btn:hover {
+    background: #26c0ab;
+    color: #00474b;
+}
+
+.tip-btn.active {
+    background: #26c0ab;
+    color: #00474b;
+    font-weight: bold;
+}
+
+#customTip {
+    width: 100%;
+    border: none;
+    background: #f4f7f6;
+    border-radius: 5px;
+    text-align: center;
+    font-size: 1.1em;
+    color: #00474b;
+    font-weight: bold;
+    outline: none;
+}
+
+#customTip:focus {
+    border: 2px solid #26c0ab;
+}
+
+.people-wrapper {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f4f7f6;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.people-wrapper button {
+    background: #00474b;
+    color: white;
+    border: none;
+    width: 35px;
+    height: 35px;
+    border-radius: 50%;
+    font-size: 1.2em;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#peopleCount {
+    font-weight: bold;
+    font-size: 1.5em;
+    color: #00474b;
+}
+
+.results {
+    background: #00474b;
+    border-radius: 15px;
+    padding: 25px;
+    color: white;
+    margin-bottom: 20px;
+}
+
+.result-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.result-row:last-child {
+    margin-bottom: 0;
+}
+
+.label {
+    display: block;
+    font-size: 0.9em;
+}
+
+.sub-label {
+    font-size: 0.75em;
+    color: #7f9c9f;
+}
+
+.amount {
+    font-size: 2em;
+    color: #26c0ab;
+    font-weight: bold;
+}
+
+.amount.total {
+    font-size: 2.5em;
+}
+
+.btn-reset {
+    width: 100%;
+    background: #26c0ab;
+    color: #00474b;
+    border: none;
+    padding: 12px;
+    border-radius: 8px;
+    font-size: 1.2em;
+    font-weight: bold;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: opacity 0.2s;
+}
+
+.btn-reset:hover {
+    opacity: 0.8;
+}

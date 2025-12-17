@@ -55,6 +55,12 @@ class RagEngine {
             console.warn('[RagEngine] ⚠️ Gemini API detected. LlamaIndex JS Support for Gemini Embeddings is limited.');
             console.warn('[RagEngine] Indexing might fail if no OpenAI Key is present for Embeddings.');
         }
+
+        // 🔥 OPTIMIZATION: Generous Token Usage
+        // Increase chunk size to provide more context per retrieval
+        Settings.chunkSize = 4096;   // Default 1024 -> 4096 (4x)
+        Settings.chunkOverlap = 512; // Default 20 -> 512 (Better continuity)
+        console.log('[RagEngine] Generous token usage enabled: ChunkSize=4096, Overlap=512');
     }
 
     /**
@@ -133,9 +139,16 @@ class RagEngine {
         if (this.documents.length === 0) return;
 
         // console.log(`[RagEngine] Building Vector Index for ${this.documents.length} files...`);
-        this.index = await VectorStoreIndex.fromDocuments(this.documents);
-        this.isInitialized = true;
-        console.log(`[RagEngine] Index built successfully.`);
+        try {
+            this.index = await VectorStoreIndex.fromDocuments(this.documents);
+            this.isInitialized = true;
+            console.log(`[RagEngine] Index built successfully.`);
+        } catch (error) {
+            console.warn(`[RagEngine] ⚠️ Failed to build index: ${error.message}`);
+            console.warn(`[RagEngine] RAG is disabled. To enable, ensure an OpenAI API Key is available for Embeddings, or configure a custom EmbeddingModel.`);
+            this.isInitialized = false;
+            this.index = null;
+        }
     }
 
     /**
@@ -144,7 +157,7 @@ class RagEngine {
      * @param {number} topK 
      * @returns {Promise<string>} Combined context chunks
      */
-    async query(queryText, topK = 5) {
+    async query(queryText, topK = 10) {
         if (!this.isInitialized || !this.index) {
             return "";
         }

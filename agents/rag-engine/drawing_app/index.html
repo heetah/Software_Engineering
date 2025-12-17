@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>簡易畫板</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="toolbar">
+            <div class="tool-group">
+                <label>顏色</label>
+                <input type="color" id="colorPicker" value="#000000">
+            </div>
+            <div class="tool-group">
+                <label>筆刷大小 <span id="sizeValue">5</span></label>
+                <input type="range" id="sizeSlider" min="1" max="50" value="5">
+            </div>
+            <div class="tool-group">
+                <button id="eraserBtn" class="btn">橡皮擦</button>
+                <button id="clearBtn" class="btn btn-danger">清除畫布</button>
+                <button id="saveBtn" class="btn btn-success">下載圖片</button>
+            </div>
+        </div>
+        <canvas id="canvas"></canvas>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>食譜搜尋器</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🍳 食譜搜尋器</h1>
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="搜尋食譜 (例如: 義大利麵, 雞肉)...">
+            </div>
+            <div class="tags" id="tags">
+                <span class="tag" onclick="search('早餐')">早餐</span>
+                <span class="tag" onclick="search('午餐')">午餐</span>
+                <span class="tag" onclick="search('晚餐')">晚餐</span>
+                <span class="tag" onclick="search('甜點')">甜點</span>
+                <span class="tag" onclick="search('健康')">健康</span>
+            </div>
+        </header>
+
+        <div class="results" id="results">
+            <!-- Recipes will appear here -->
+        </div>
+    </div>
+
+    <!-- Recipe Modal -->
+    <div id="modal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <div id="recipeDetails"></div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
