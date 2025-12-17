@@ -378,6 +378,18 @@ document.addEventListener('DOMContentLoaded', () => {
       prompt += `4. If an imported function is NOT in the reference, do NOT invent it. Use available alternatives or mock it.\n\n`;
     }
 
+    // ========== 📚 RAG SEMANTIC CONTEXT (FROM VECTOR DB) ==========
+    if (context.semanticContext) {
+      prompt += `\n📚 SEMANTIC KNOWLEDGE BASE (Similar Code Examples)\n`;
+      prompt += `The following code snippets were retrieved from the knowledge base and might be relevant:\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      prompt += `${context.semanticContext}\n`;
+      prompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      prompt += `USAGE RULES:\n`;
+      prompt += `1. Use these examples to understand project patterns, coding style, or specific API usage.\n`;
+      prompt += `2. If the examples contradict the "Contracts" or "Skeleton", priority is: Contracts > Skeleton > Knowledge Base.\n\n`;
+    }
+
     // ========== 自動檢測：window.APP_CONFIG 使用規範 ==========
     const hasConfigJs = allFiles.some(f => f.path === 'config.js' || f.path.endsWith('/config.js'));
 
